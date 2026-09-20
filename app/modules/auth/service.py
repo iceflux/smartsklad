@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.modules.audit.service import log_action
 from app.modules.auth.models import AuthSession, Role, User
+from app.modules.notifications.email import send_email
 
 
 def hash_password(password: str) -> str:
@@ -69,3 +70,57 @@ def logout(db: Session, token: str) -> None:
     if session:
         db.delete(session)
         db.commit()
+
+
+def request_password_reset(db: Session, username_or_email: str) -> str | None:
+    user = (
+        db.query(User)
+        .filter((User.username == username_or_email) | (User.email == username_or_email))
+        .first()
+    )
+    if user is None or user.email is None:
+        return None
+
+    token = secrets.token_urlsafe(32)
+    user.reset_token = token
+    user.reset_token_expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    db.commit()
+
+    link = f"{settings.base_url}/reset-password?token={token}"
+    send_email(
+        user.email,
+        "Восстановление пароля — СмартСклад",
+        f"Для сброса пароля перейдите по ссылке: {link}",
+    )
+    return user.email
+
+
+def reset_password(db: Session, token: str, new_password: str) -> bool:
+    user = (
+        db.query(User)
+        .filter(User.reset_token == token, User.reset_token_expires_at.isnot(None))
+        .first()
+    )
+    if user is None:
+        return False
+    expires_at = user.reset_token_expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        return False
+    user.password_hash = hash_password(new_password)
+    user.reset_token = None
+    user.reset_token_expires_at = None
+    db.commit()
+    log_action(db, action="password_reset", entity_type="user", entity_id=user.id, user_id=user.id)
+    return True
+
+
+def admin_reset_password(db: Session, admin: User, target: User) -> str:
+    temp = secrets.token_urlsafe(12)
+    target.password_hash = hash_password(temp)
+    target.reset_token = None
+    target.reset_token_expires_at = None
+    db.commit()
+    log_action(db, action="admin_password_reset", entity_type="user", entity_id=target.id, user_id=admin.id)
+    return temp

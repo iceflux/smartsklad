@@ -39,6 +39,13 @@ def create_app() -> FastAPI:
     def login_page(request: Request):
         return templates.TemplateResponse(request, "login.html", {"title": "Вход"})
 
+    @app.get("/reset-password")
+    def reset_password_page(request: Request):
+        token = request.query_params.get("token", "")
+        return templates.TemplateResponse(
+            request, "reset_password.html", {"title": "Восстановление пароля", "token": token}
+        )
+
     @app.post("/logout")
     def page_logout(
         session_cookie: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
