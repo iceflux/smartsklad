@@ -1,0 +1,11 @@
+# Служебная директория
+.system_folder/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Env
+.env
