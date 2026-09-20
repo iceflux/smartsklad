@@ -7,10 +7,7 @@ from fastapi.testclient import TestClient
 from app.db import Base, get_db
 from app.main import create_app
 
-try:
-    import app.modules.audit.models  # noqa: F401 - регистрация таблиц в Base.metadata
-except ImportError:
-    pass  # модуль audit появится в Task 3
+import app.modules.audit.models  # noqa: F401 - регистрация таблиц в Base.metadata
 
 
 @pytest.fixture
