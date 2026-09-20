@@ -18,7 +18,20 @@
 
 - `tests/` на **pytest** + `httpx` (`TestClient`).
 - БД в тестах — **SQLite in-memory** (`StaticPool`), таблицы создаются из `Base.metadata` в `tests/conftest.py` — `pytest` запускается одной командой, Docker не нужен.
-- Сейчас: 2 теста (health-check, audit).
+- Сейчас: 13 тестов (health, audit, auth models/service/api, password recovery).
+
+## Аутентификация (`app/modules/auth/`)
+
+- Роли — фиксированный enum `Role` (admin, seller, warehouseman, manager).
+- Сессии — запись в БД (`sessions`), токен в cookie `session` (httpOnly, samesite=lax). JWT нет.
+- `service.py`: bcrypt-хэши, логин/логаут, создание сессии (запись в `audit_log`), восстановление пароля по токену, сброс пароля админом.
+- `dependencies.py`: `get_current_user` (401), `require_roles` (403).
+- Seed админа: `create_admin_if_empty()` в lifespan при старте, если БД пуста и заданы `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
+
+## Уведомления (`app/modules/notifications/`)
+
+- `email.py`: `send_email(to, subject, body)` на stdlib `smtplib` — без SMTP-зависимости, отправляет через `SMTP_HOST`; при пустом хосте молча пропускает (дизайн «письма не обязательны»).
+- Используется модулем auth для отправки ссылки восстановления пароля.
 
 ## Зависимости и окружение
 
