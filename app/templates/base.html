@@ -7,6 +7,19 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 text-gray-900">
+    <header class="flex items-center justify-between p-4 border-b">
+        <a href="/" class="text-xl font-bold">СмартСклад</a>
+        <nav>
+            {% if user %}
+                <span class="mr-4">{{ user.username }} ({{ user.role.value }})</span>
+                <form method="post" action="/logout" class="inline">
+                    <button class="border px-3 py-1">Выйти</button>
+                </form>
+            {% else %}
+                <a href="/login" class="border px-3 py-1">Войти</a>
+            {% endif %}
+        </nav>
+    </header>
     {% block content %}{% endblock %}
 </body>
 </html>
