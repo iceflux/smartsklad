@@ -5,3 +5,4 @@ alembic
 psycopg[binary]
 jinja2
 pydantic-settings
+bcrypt

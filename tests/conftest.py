@@ -8,6 +8,7 @@ from app.db import Base, get_db
 from app.main import create_app
 
 import app.modules.audit.models  # noqa: F401 - регистрация таблиц в Base.metadata
+import app.modules.auth.models  # noqa: F401
 
 
 @pytest.fixture
@@ -41,6 +42,7 @@ def client(db_engine):
             db.close()
 
     app = create_app()
+    app.state.skip_seed_admin = True
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as c:
         yield c
