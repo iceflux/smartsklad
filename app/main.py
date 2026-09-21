@@ -19,6 +19,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.auth.service import create_admin_if_empty, get_user_by_token, logout
 from app.modules.auth.users_router import router as users_router
 import app.modules.inventory.models  # noqa: F401
+from app.modules.inventory.router import router as inventory_router
 
 APP_DIR = Path(__file__).parent
 
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(roles_router, prefix="/api")
     app.include_router(users_router, prefix="/api")
+    app.include_router(inventory_router, prefix="/api")
 
     @app.get("/")
     def index(request: Request):
