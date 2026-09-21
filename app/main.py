@@ -70,8 +70,12 @@ def create_app() -> FastAPI:
     app.include_router(audit_router)
 
     @app.get("/")
-    def index(request: Request):
-        return templates.TemplateResponse(request, "index.html", {"title": "СмартСклад", "user": None})
+    def index(request: Request, user: Annotated[User | None, Depends(_page_user)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        return templates.TemplateResponse(
+            request, "index.html", {"title": "СмартСклад", "user": user, **_page_context(user)}
+        )
 
     @app.get("/login")
     def login_page(request: Request):
