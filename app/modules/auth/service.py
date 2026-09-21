@@ -9,6 +9,38 @@ from app.modules.audit.service import log_action
 from app.modules.auth.models import AuthSession, Role, User
 from app.modules.notifications.email import send_email
 
+DEFAULT_PERMISSIONS = {
+    "admin": [],
+    "seller": ["products.view", "orders.view", "orders.create", "orders.edit", "orders.status", "customers.manage"],
+    "warehouseman": ["products.view", "stock.change", "orders.view", "orders.status"],
+    "manager": [
+        "products.view", "price.change",
+        "orders.view", "orders.create", "orders.edit", "orders.delete", "orders.status",
+        "customers.manage", "analytics.view", "reports.export",
+    ],
+}
+
+
+def ensure_default_roles(db: Session) -> dict[str, Role]:
+    roles = {}
+    for name, perms in DEFAULT_PERMISSIONS.items():
+        role = db.query(Role).filter(Role.name == name).first()
+        if role is None:
+            role = Role(
+                name=name,
+                is_system=True,
+                is_super=(name == "admin"),
+                permissions=perms,
+            )
+            db.add(role)
+            db.commit()
+        roles[name] = role
+    return roles
+
+
+def get_role_by_name(db: Session, name: str) -> Role | None:
+    return db.query(Role).filter(Role.name == name).first()
+
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -23,10 +55,11 @@ def create_admin_if_empty(db: Session) -> bool:
         return False
     if db.query(User).first() is not None:
         return False
+    roles = ensure_default_roles(db)
     user = User(
         username=settings.admin_username,
         password_hash=hash_password(settings.admin_password),
-        role=Role.admin,
+        role_id=roles["admin"].id,
     )
     db.add(user)
     db.commit()

@@ -1,8 +1,9 @@
 from app.config import settings
-from app.modules.auth.models import Role, User
+from app.modules.auth.models import User
 from app.modules.auth.service import (
     create_admin_if_empty,
     create_session,
+    get_role_by_name,
     get_user_by_token,
     hash_password,
     login,
@@ -23,7 +24,7 @@ def test_login_wrong_user_returns_none(db_session):
 
 
 def test_login_logout_flow(db_session):
-    u = User(username="seller1", password_hash=hash_password("password123"), role=Role.seller)
+    u = User(username="seller1", password_hash=hash_password("password123"), role_id=get_role_by_name(db_session, "seller").id)
     db_session.add(u)
     db_session.commit()
 

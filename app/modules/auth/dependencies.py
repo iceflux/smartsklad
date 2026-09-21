@@ -4,7 +4,8 @@ from fastapi import Cookie, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.modules.auth.models import Role, User
+from app.modules.auth.models import User
+from app.modules.auth.permissions import Permission
 from app.modules.auth.service import get_user_by_token
 
 SESSION_COOKIE = "session"
@@ -22,10 +23,18 @@ def get_current_user(
     return user
 
 
-def require_roles(*roles: Role):
+def user_has_permission(user: User, perm: Permission) -> bool:
+    return user.role.is_super or perm.value in (user.role.permissions or [])
+
+
+def ensure_permissions(user: User, *perms: Permission) -> None:
+    if not all(user_has_permission(user, p) for p in perms):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+
+def require_permissions(*perms: Permission):
     def checker(user: Annotated[User, Depends(get_current_user)]) -> User:
-        if user.role not in roles:
-            raise HTTPException(status_code=403, detail="Недостаточно прав")
+        ensure_permissions(user, *perms)
         return user
 
     return checker

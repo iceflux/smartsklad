@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.modules.auth.dependencies import SESSION_COOKIE, require_roles
-from app.modules.auth.models import Role, User
+from app.modules.auth.dependencies import SESSION_COOKIE, require_permissions
+from app.modules.auth.models import User
+from app.modules.auth.permissions import Permission
 from app.modules.auth.service import (
     admin_reset_password,
     login,
@@ -78,7 +79,7 @@ def api_reset(body: ResetRequest, db: Annotated[Session, Depends(get_db)]):
 @router.post("/users/{user_id}/admin-reset")
 def api_admin_reset(
     user_id: int,
-    admin: Annotated[User, Depends(require_roles(Role.admin))],
+    admin: Annotated[User, Depends(require_permissions(Permission.users_manage))],
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     target = db.get(User, user_id)

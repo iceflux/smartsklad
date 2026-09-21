@@ -9,6 +9,7 @@ from app.main import create_app
 
 import app.modules.audit.models  # noqa: F401 - регистрация таблиц в Base.metadata
 import app.modules.auth.models  # noqa: F401
+from app.modules.auth.service import ensure_default_roles
 
 
 @pytest.fixture
@@ -19,6 +20,9 @@ def db_engine():
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    with Session() as s:
+        ensure_default_roles(s)
     yield engine
     Base.metadata.drop_all(engine)
 

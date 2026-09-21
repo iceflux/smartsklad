@@ -2,15 +2,15 @@ from fastapi.testclient import TestClient
 
 
 def test_recovery_sends_email(client, db_session, monkeypatch):
-    from app.modules.auth.models import Role, User
-    from app.modules.auth.service import hash_password
+    from app.modules.auth.models import User
+    from app.modules.auth.service import get_role_by_name, hash_password
 
     sent = {}
     def fake_send(to, subject, body):
         sent["to"], sent["subject"], sent["body"] = to, subject, body
 
     monkeypatch.setattr("app.modules.auth.service.send_email", fake_send)
-    u = User(username="seller1", password_hash=hash_password("password123"), role=Role.seller, email="s@s.ru")
+    u = User(username="seller1", password_hash=hash_password("password123"), role_id=get_role_by_name(db_session, "seller").id, email="s@s.ru")
     db_session.add(u)
     db_session.commit()
 
@@ -37,12 +37,12 @@ def test_reset_with_wrong_token(client, db_session):
 
 
 def test_admin_reset_requires_admin(client, db_session):
-    from app.modules.auth.models import Role, User
-    from app.modules.auth.service import hash_password, login
+    from app.modules.auth.models import User
+    from app.modules.auth.service import get_role_by_name, hash_password, login
 
-    u = User(username="seller1", password_hash=hash_password("password123"), role=Role.seller, email="s@s.ru")
+    u = User(username="seller1", password_hash=hash_password("password123"), role_id=get_role_by_name(db_session, "seller").id, email="s@s.ru")
     db_session.add(u)
-    a = User(username="boss", password_hash=hash_password("password123"), role=Role.admin, email="a@a.ru")
+    a = User(username="boss", password_hash=hash_password("password123"), role_id=get_role_by_name(db_session, "admin").id, email="a@a.ru")
     db_session.add(a)
     db_session.commit()
 
