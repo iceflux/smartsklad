@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -148,3 +149,107 @@ def change_status(db: Session, order_id: int, new_status: str, *, user=None) -> 
     log_action(db, action="order.status_change", entity_type="order", entity_id=order.id,
                old_value=old_status, new_value=new_status, user_id=user.id if user else None)
     return order
+
+
+def update_order(db, order_id, *, customer_id=None, discount=None, items=None, user=None):
+    order = db.get(Order, order_id)
+    if order is None or order.deleted_at is not None:
+        raise ValueError("order not found")
+    if order.status == "done":
+        raise ValueError("cannot edit done order")
+    old_value = json.dumps(_order_dict(order), ensure_ascii=False)
+    if customer_id is not None:
+        c = _get_customer(db, customer_id)
+        order.customer_id = c.id
+    if discount is not None:
+        order.discount = _validate_discount(discount)
+    if items is not None:
+        if not items:
+            raise ValueError("items required")
+        _validate_items(db, items)
+        order.items.clear()
+        for spec in items:
+            product = db.get(Product, spec["product_id"])
+            order.items.append(OrderItem(
+                product_id=product.id,
+                product_name_snapshot=product.name,
+                product_price_snapshot=product.price,
+                discount_snapshot=_validate_discount(spec["discount"], "item discount"),
+                quantity=int(spec["quantity"]),
+                unit_snapshot=product.unit,
+            ))
+    _recalc_total(order)
+    db.commit()
+    new_value = json.dumps(_order_dict(order), ensure_ascii=False)
+    log_action(db, action="order.update", entity_type="order", entity_id=order.id,
+               old_value=old_value, new_value=new_value, user_id=user.id if user else None)
+    return order
+
+
+def delete_order(db, order_id, *, user=None):
+    order = db.get(Order, order_id)
+    if order is None or order.deleted_at is not None:
+        raise ValueError("order not found")
+    order.deleted_at = datetime.now()
+    db.commit()
+    log_action(db, action="order.delete", entity_type="order", entity_id=order_id,
+               new_value=order.number, user_id=user.id if user else None)
+
+
+def restore_order(db, order_id, *, user=None):
+    order = db.get(Order, order_id)
+    if order is None or order.deleted_at is None:
+        raise ValueError("order not found")
+    order.deleted_at = None
+    db.commit()
+    log_action(db, action="order.restore", entity_type="order", entity_id=order_id,
+               new_value=order.number, user_id=user.id if user else None)
+
+
+def copy_order(db, order_id, *, user=None):
+    src = db.get(Order, order_id)
+    if src is None:
+        raise ValueError("order not found")
+    items = [
+        {"product_id": it.product_id, "quantity": it.quantity, "discount": it.discount_snapshot}
+        for it in src.items
+    ]
+    return create_order(db, customer_id=src.customer_id,
+                        discount=src.discount, items=items, user=user)
+
+
+def list_orders(db, *, date_from=None, date_to=None, customer_id=None, status=None,
+                min_amount=None, include_deleted=False, page=1, page_size=25):
+    q = db.query(Order)
+    if date_from is not None:
+        q = q.filter(Order.created_at >= date_from)
+    if date_to is not None:
+        q = q.filter(Order.created_at <= date_to)
+    if customer_id is not None:
+        q = q.filter(Order.customer_id == customer_id)
+    if status:
+        q = q.filter(Order.status == status)
+    if min_amount is not None:
+        q = q.filter(Order.total_amount >= min_amount)
+    if not include_deleted:
+        q = q.filter(Order.deleted_at.is_(None))
+    total = q.count()
+    items = q.order_by(Order.number.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return items, total
+
+
+def get_order(db, order_id):
+    return db.get(Order, order_id)
+
+
+def customer_order_stats(db, customer_id):
+    q = db.query(Order).filter(
+        Order.customer_id == customer_id,
+        Order.deleted_at.is_(None),
+        Order.status != "cancelled",
+    )
+    rows = q.all()
+    total_sum = round(sum(o.total_amount for o in rows), 2)
+    count = len(rows)
+    return {"orders_count": count, "total_sum": total_sum,
+            "avg_check": round(total_sum / count, 2) if count else 0.0}
