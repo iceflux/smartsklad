@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="max-w-4xl mx-auto p-4">
+    <div class="flex items-center justify-between mb-4">
+        <h1 class="text-2xl font-bold">Роли</h1>
+        <a href="/roles/new" class="bg-blue-600 text-white px-3 py-1">Создать роль</a>
+    </div>
+    <table class="w-full border-collapse">
+        <thead>
+            <tr class="border-b text-left">
+                <th class="p-2">Название</th>
+                <th class="p-2">Системная</th>
+                <th class="p-2">Пользователей</th>
+                <th class="p-2">Права</th>
+                <th class="p-2"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in roles %}
+            <tr class="border-b">
+                <td class="p-2">{{ r.name }}
+                    {% if r.is_super %}<span class="ml-1 text-xs bg-yellow-100 px-1">Суперроль</span>{% endif %}
+                </td>
+                <td class="p-2">{% if r.is_system %}да{% else %}нет{% endif %}</td>
+                <td class="p-2">{{ r.user_count }}</td>
+                <td class="p-2">
+                    {% if r.is_super %}
+                        <span class="text-xs text-gray-500">Все права</span>
+                    {% elif r.permissions %}
+                        {% for p in r.permissions %}<span class="text-xs bg-gray-100 px-1 mr-1">{{ p }}</span>{% endfor %}
+                    {% else %}
+                        <span class="text-xs text-gray-400">нет прав</span>
+                    {% endif %}
+                </td>
+                <td class="p-2"><a href="/roles/{{ r.id }}/edit" class="text-blue-600">Редактировать</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</main>
+{% endblock %}

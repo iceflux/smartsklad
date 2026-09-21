@@ -38,6 +38,10 @@ class User(Base):
 
     role: Mapped[Role] = relationship()
 
+    @property
+    def role_name(self) -> str:
+        return self.role.name if self.role else ""
+
 
 class AuthSession(Base):
     __tablename__ = "sessions"

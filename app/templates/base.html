@@ -11,7 +11,11 @@
         <a href="/" class="text-xl font-bold">СмартСклад</a>
         <nav>
             {% if user %}
-                <span class="mr-4">{{ user.username }} ({{ user.role.value }})</span>
+                {% if user.role.is_super or 'users.manage' in (user.role.permissions or []) %}
+                    <a href="/roles" class="mr-4">Роли</a>
+                    <a href="/users" class="mr-4">Пользователи</a>
+                {% endif %}
+                <span class="mr-4">{{ user.username }} ({{ user.role.name }})</span>
                 <form method="post" action="/logout" class="inline">
                     <button class="border px-3 py-1">Выйти</button>
                 </form>
