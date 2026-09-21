@@ -57,4 +57,5 @@ def page_context(user: User) -> dict[str, bool]:
         "can_view_roles": user_has_permission(user, Permission.users_manage),
         "can_view_users": user_has_permission(user, Permission.users_manage),
         "can_view_audit": user_has_permission(user, Permission.audit_view),
+        "can_view_customers": user_has_permission(user, Permission.customers_manage),
     }

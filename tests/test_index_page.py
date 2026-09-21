@@ -35,6 +35,15 @@ def test_index_renders_for_admin(client, db_session):
     assert "Каркас проекта готов" not in body
 
 
+def test_index_shows_customers_link_by_permission(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    r = client.get("/")
+    assert "/customers" in r.text
+    _login_as(client, db_session, "handy", "warehouseman")
+    r = client.get("/")
+    assert "/customers" not in r.text
+
+
 def test_index_shows_products_links_for_seller(client, db_session):
     _login_as(client, db_session, "sailor", "seller")
     r = client.get("/")

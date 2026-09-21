@@ -15,6 +15,9 @@
                     <a href="/products" class="mr-4">Товары</a>
                     <a href="/categories" class="mr-4">Категории</a>
                 {% endif %}
+                {% if can_view_customers|default(false) %}
+                    <a href="/customers" class="mr-4">Клиенты</a>
+                {% endif %}
                 {% if can_view_roles|default(false) %}
                     <a href="/roles" class="mr-4">Роли</a>
                     <a href="/users" class="mr-4">Пользователи</a>
