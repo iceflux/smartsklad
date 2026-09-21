@@ -90,6 +90,19 @@ def test_post_rest_requires_stock_change(client, db_session):
     assert r.status_code == 403
 
 
+def test_post_price_requires_price_change(client, db_session):
+    _admin(client, db_session)
+    role = Role(name="creator", is_system=False, is_super=False,
+                permissions=["products.view", "products.edit"])
+    db_session.add(role)
+    db_session.commit()
+    _user(client, db_session, "creator1", "creator")
+    r = client.post("/api/products", json={"name": "Без цены", "sku": "NOPRICE-1"})
+    assert r.status_code == 201
+    r = client.post("/api/products", json={"name": "С ценой", "sku": "PRICE-1", "price": 100.0})
+    assert r.status_code == 403
+
+
 def test_seller_patch_rest_forbidden_warehouseman_allowed(client, db_session):
     _admin(client, db_session)
     p = _make_product(client)

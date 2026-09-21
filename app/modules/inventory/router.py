@@ -163,6 +163,8 @@ def api_create_product(payload: ProductIn, user=Depends(get_current_user), db=De
     perms = [Permission.products_edit]
     if "rest" in payload.model_fields_set:
         perms.append(Permission.stock_change)
+    if "price" in payload.model_fields_set:
+        perms.append(Permission.price_change)
     _ensure(user, *perms)
     if not payload.name.strip() or not payload.sku.strip():
         raise HTTPException(status_code=400, detail="Название и артикул обязательны")
