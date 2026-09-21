@@ -18,15 +18,37 @@
 
 - `tests/` на **pytest** + `httpx` (`TestClient`).
 - БД в тестах — **SQLite in-memory** (`StaticPool`), таблицы создаются из `Base.metadata` в `tests/conftest.py` — `pytest` запускается одной командой, Docker не нужен.
-- Сейчас: 13 тестов (health, audit, auth models/service/api, password recovery).
+- Сейчас: 74 теста (health, audit, auth models/service/api, roles/users API+UI, inventory service/API/UI, audit UI).
 
-## Аутентификация (`app/modules/auth/`)
+## Аутентификация и роли (`app/modules/auth/`)
 
-- Роли — фиксированный enum `Role` (admin, seller, warehouseman, manager).
+- Роли — таблица `roles` (name unique, permissions JSON, is_super, is_system) вместо фиксированного enum; `User.role_id` — FK.
+- Права — enum `Permission` (17 кодов) в `auth/permissions.py`, хранятся как строки в `roles.permissions`.
+- Роль admin — суперроль (`is_super`): все права всегда, независимо от списка прав.
+- Системные роли: admin (is_super), seller, warehouseman, manager — права редактируются в UI; кастомные роли создаются через UI.
 - Сессии — запись в БД (`sessions`), токен в cookie `session` (httpOnly, samesite=lax). JWT нет.
 - `service.py`: bcrypt-хэши, логин/логаут, создание сессии (запись в `audit_log`), восстановление пароля по токену, сброс пароля админом.
-- `dependencies.py`: `get_current_user` (401), `require_roles` (403).
+- `dependencies.py`: `get_current_user` (401), `require_permissions(*perms)` (403), `ensure_permissions`, `user_has_permission`, `get_role_by_name`, `page_context(user)` (флаги прав для шаблонов), `is_super`.
+- API: `/api/roles` (CRUD, справка по правам), `/api/users` (смена роли). Page: `/login`, `/roles`, `/roles/{id}/edit`, `/users` (303→`/login` анониму, 403 без права).
 - Seed админа: `create_admin_if_empty()` в lifespan при старте, если БД пуста и заданы `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
+
+## Инвентарь (`app/modules/inventory/`)
+
+- Модели: `Category` (id, name, parent_id → дерево, is_deleted), `Product` (name, sku unique, category_id FK, unit, price, characteristic JSON, rest, is_deleted), `PriceHistory` (product_id, old_price, new_price, changed_by FK users).
+- `service.py` (HTTP-agnostic, конфликты → `ValueError`): CRUD категорий и товаров, `get_category_tree` (2 уровня), поиск по name/sku (ILIKE), пагинация, мягкое удаление/восстановление, массовая смена категории, экспорт CSV (BOM + `;`), запись `PriceHistory` при смене цены.
+- API (`/api`, права по-полям): категории GET (products_view), POST/PATCH/DELETE (categories_manage); товары — GET products_view, POST products_edit (+stock_change при `rest` в теле), PATCH по-полям (`rest`→stock_change, `price`→price_change, остальное→products_edit, несколько полей = AND), DELETE/restore/bulk — products_edit, export.csv — reports_export. 403 — прав нет, 404 — не найдено, 409 — конфликт (duplicate/self-parent/непустая категория).
+- Page: `/products`, `/products/new`, `/products/{id}`, `/products/{id}/edit`, `/categories`, `/categories/new`, `/categories/{id}/edit`; действия — 303-редиректы с `?msg=`.
+- Аудит каждого изменяющего действия: `category.create/update/delete`, `product.create/update/delete/restore/bulk_category`.
+
+## Audit UI (`app/modules/audit/`)
+
+- `log_action(db, *, action, entity_type, entity_id, old_value, new_value, user_id, ip)` — keyword-only, коммитит сама.
+- `list_audit_logs(db, user_id, action, entity_type, from_, to_, page, page_size)` — фильтры SQL AND, возвращает `(rows, total)`.
+- Page `/audit` (audit_view): фильтры, таблица (время/пользователь/действие/сущность/old→new/IP), prev/next пагинация, page_size=50.
+
+## Навигация
+
+- `base.html`: ссылки Товары/Категории/Роли/Пользователи/Журнал аудита, видимость по флагам прав из `page_context(user)` (в `auth/dependencies.py`), передаются через контекст каждого page-роута.
 
 ## Уведомления (`app/modules/notifications/`)
 
