@@ -1,7 +1,7 @@
 import pytest
 
 from app.modules.inventory.models import Product
-from app.modules.orders.service import create_order
+from app.modules.orders.service import create_order, change_status
 from app.modules.customers.models import Customer
 
 
@@ -50,3 +50,40 @@ def test_create_order_invalid_customer(db_session, product):
     with pytest.raises(ValueError):
         create_order(db_session, customer_id=999,
                      items=[{"product_id": product.id, "quantity": 1, "discount": 0.0}])
+
+
+@pytest.fixture
+def setup(db_session):
+    p = Product(name="Гвозди", sku="NAIL-1", unit="шт", price=100.0, rest=5)
+    c = Customer(name="ООО Строй")
+    db_session.add_all([p, c])
+    db_session.commit()
+    order = create_order(db_session, customer_id=c.id,
+                         items=[{"product_id": p.id, "quantity": 3, "discount": 0.0}])
+    return db_session, p, c, order
+
+
+def test_status_flow_writes_off_and_returns(setup):
+    db, product, _c, order = setup
+    change_status(db, order.id, "processing")
+    assert product.rest == 5  # ещё не списали
+    change_status(db, order.id, "done")
+    assert db.get(Product, product.id).rest == 2  # списали 3
+    change_status(db, order.id, "cancelled")
+    assert db.get(Product, product.id).rest == 5  # вернули
+
+
+def test_status_done_insufficient_stock_rejected(setup):
+    db, product, _c, order = setup
+    change_status(db, order.id, "processing")
+    product.rest = 1
+    db.commit()
+    with pytest.raises(ValueError):
+        change_status(db, order.id, "done")
+    assert db.get(Product, product.id).rest == 1  # не тронули
+
+
+def test_forbidden_transition(setup):
+    db, _p, _c, order = setup
+    with pytest.raises(ValueError):
+        change_status(db, order.id, "done")  # new -> done нельзя

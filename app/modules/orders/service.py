@@ -8,6 +8,14 @@ from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
 
 
+VALID_STATUSES = {"new", "processing", "done", "cancelled"}
+NEXT_POSSIBLE = {
+    "new": {"processing", "cancelled"},
+    "processing": {"done", "cancelled"},
+    "done": {"processing", "cancelled"},
+}
+
+
 def _validate_discount(value: float, field: str = "discount") -> float:
     value = float(value)
     if value < 0 or value > 99:
@@ -96,3 +104,47 @@ def _validate_items(db: Session, items: list[dict]) -> None:
             raise ValueError("product not found")
         if int(spec["quantity"]) < 1:
             raise ValueError("quantity must be >= 1")
+        if product.rest < int(spec["quantity"]):
+            raise ValueError(
+                f"insufficient stock for product {product.name}: "
+                f"need {int(spec['quantity'])}, have {product.rest}"
+            )
+
+
+def _check_and_writeoff(db: Session, order: Order) -> None:
+    for it in order.items:
+        product = db.get(Product, it.product_id)
+        if product.rest < it.quantity:
+            raise ValueError(
+                f"insufficient stock for product {it.product_name_snapshot}: "
+                f"need {it.quantity}, have {product.rest}"
+            )
+    for it in order.items:
+        db.get(Product, it.product_id).rest -= it.quantity
+
+
+def _return_stock(db: Session, order: Order) -> None:
+    for it in order.items:
+        db.get(Product, it.product_id).rest += it.quantity
+
+
+def change_status(db: Session, order_id: int, new_status: str, *, user=None) -> Order:
+    order = db.get(Order, order_id)
+    if order is None or order.deleted_at is not None:
+        raise ValueError("order not found")
+    if new_status not in VALID_STATUSES:
+        raise ValueError("invalid status")
+    if new_status == order.status:
+        raise ValueError("status unchanged")
+    if new_status not in NEXT_POSSIBLE.get(order.status, set()):
+        raise ValueError("invalid status transition")
+    old_status = order.status
+    if new_status == "done":
+        _check_and_writeoff(db, order)
+    elif old_status == "done":
+        _return_stock(db, order)
+    order.status = new_status
+    db.commit()
+    log_action(db, action="order.status_change", entity_type="order", entity_id=order.id,
+               old_value=old_status, new_value=new_status, user_id=user.id if user else None)
+    return order
