@@ -129,6 +129,27 @@ def test_patch_rest_and_price_requires_both(client, db_session):
     assert r.status_code == 403
 
 
+def test_patch_name_and_price_requires_both_permissions(client, db_session):
+    _admin(client, db_session)
+    p = _make_product(client)
+    role = Role(name="pricer", is_system=False, is_super=False,
+                permissions=["products.view", "price.change"])
+    db_session.add(role)
+    db_session.commit()
+    _user(client, db_session, "pricer1", "pricer")
+    r = client.patch(f"/api/products/{p['id']}", json={"name": "Переименован", "price": 90.0})
+    assert r.status_code == 403
+    role = Role(name="pricer2", is_system=False, is_super=False,
+                permissions=["products.view", "products.edit", "price.change"])
+    db_session.add(role)
+    db_session.commit()
+    _user(client, db_session, "pricer2", "pricer2")
+    r = client.patch(f"/api/products/{p['id']}", json={"name": "Переименован", "price": 90.0})
+    assert r.status_code == 200
+    assert r.json()["name"] == "Переименован"
+    assert r.json()["price"] == 90.0
+
+
 def test_lists_visible_with_products_view(client, db_session):
     _admin(client, db_session)
     cat = _make_category(client, admin=None)

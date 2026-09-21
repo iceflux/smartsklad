@@ -26,10 +26,9 @@ def _ensure(user, *perms: Permission):
 
 
 def _patch_permissions(fields: set[str]) -> list[Permission]:
-    rights = [PERM_FIELD[f] for f in fields if f in PERM_FIELD]
-    if not rights:
-        rights = [Permission.products_edit]
-    return rights
+    rights = {PERM_FIELD[f] for f in fields if f in PERM_FIELD}
+    rights.update(Permission.products_edit for f in fields if f not in PERM_FIELD)
+    return list(rights) if rights else [Permission.products_edit]
 
 
 class CategoryIn(BaseModel):
