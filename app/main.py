@@ -39,6 +39,12 @@ from app.modules.inventory.service import (
     restore_product,
     update_product,
 )
+from app.modules.customers.service import (
+    delete_customer,
+    get_customer,
+    list_customers,
+    restore_customer,
+)
 
 APP_DIR = Path(__file__).parent
 PAGE_SIZE = 25
@@ -377,6 +383,94 @@ def create_app() -> FastAPI:
             "tree": get_category_tree(db),
             **_page_context(user),
         })
+
+    @app.get("/customers")
+    def customers_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.customers_manage)
+        search = request.query_params.get("search") or None
+        include_deleted = request.query_params.get("include_deleted") == "1"
+        raw_page = request.query_params.get("page") or "1"
+        page = max(1, int(raw_page)) if raw_page.isdigit() else 1
+        items, total = list_customers(db, search=search, include_deleted=include_deleted, page=page)
+        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+        customers = [{
+            "id": c.id, "name": c.name, "inn": c.inn, "phone": c.phone,
+            "email": c.email, "personal_discount": c.personal_discount,
+            "is_deleted": c.is_deleted,
+        } for c in items]
+        qs = urlencode({k: v for k, v in {
+            "search": search, "include_deleted": "1" if include_deleted else None,
+        }.items() if v not in (None, "")})
+        return templates.TemplateResponse(request, "customers.html", {
+            "title": "Клиенты", "user": user, "customers": customers, "total": total,
+            "page": page, "pages": pages, "base_qs": qs,
+            "search": search or "", "include_deleted": include_deleted,
+            "msg": request.query_params.get("msg"),
+            "can_edit": user_has_permission(user, Permission.customers_manage),
+            **_page_context(user),
+        })
+
+    @app.get("/customers/new")
+    def customers_new_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.customers_manage)
+        return templates.TemplateResponse(request, "customer_form.html", {
+            "title": "Новый клиент", "user": user, "customer": None, "is_new": True,
+            "can_edit": True, **_page_context(user),
+        })
+
+    @app.get("/customers/{customer_id}")
+    def customers_detail_page(customer_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.customers_manage)
+        customer = get_customer(db, customer_id)
+        if customer is None:
+            raise HTTPException(status_code=404, detail="Клиент не найден")
+        return templates.TemplateResponse(request, "customer_detail.html", {
+            "title": customer.name, "user": user, "customer": customer,
+            "msg": request.query_params.get("msg"),
+            "can_edit": user_has_permission(user, Permission.customers_manage),
+            **_page_context(user),
+        })
+
+    @app.get("/customers/{customer_id}/edit")
+    def customers_edit_page(customer_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.customers_manage)
+        customer = get_customer(db, customer_id)
+        if customer is None:
+            raise HTTPException(status_code=404, detail="Клиент не найден")
+        return templates.TemplateResponse(request, "customer_form.html", {
+            "title": f"Клиент {customer.name}", "user": user, "customer": customer,
+            "is_new": False, "can_edit": True, **_page_context(user),
+        })
+
+    @app.post("/customers/{customer_id}/delete")
+    def customers_delete_page(customer_id: int, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.customers_manage)
+        try:
+            delete_customer(db, customer_id, user=user)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Клиент не найден")
+        return RedirectResponse("/customers?msg=Клиент удалён", status_code=303)
+
+    @app.post("/customers/{customer_id}/restore")
+    def customers_restore_page(customer_id: int, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.customers_manage)
+        try:
+            restore_customer(db, customer_id, user=user)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Клиент не найден")
+        return RedirectResponse("/customers?include_deleted=1&msg=Клиент восстановлен", status_code=303)
 
     return app
 
