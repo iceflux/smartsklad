@@ -18,6 +18,7 @@ from app.modules.auth.roles_router import router as roles_router
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.service import create_admin_if_empty, get_user_by_token, logout
 from app.modules.auth.users_router import router as users_router
+import app.modules.inventory.models  # noqa: F401
 
 APP_DIR = Path(__file__).parent
 

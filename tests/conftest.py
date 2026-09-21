@@ -9,6 +9,7 @@ from app.main import create_app
 
 import app.modules.audit.models  # noqa: F401 - регистрация таблиц в Base.metadata
 import app.modules.auth.models  # noqa: F401
+import app.modules.inventory.models  # noqa: F401
 from app.modules.auth.service import ensure_default_roles
 
 
