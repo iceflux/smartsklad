@@ -25,8 +25,8 @@ def _validate_inn(inn: str | None) -> str | None:
     return inn
 
 
-def _validate_discount(value: float) -> float:
-    if value < 0 or value > 99:
+def _validate_discount(value: float | None) -> float:
+    if value is None or value < 0 or value > 99:
         raise ValueError("discount must be between 0 and 99")
     return value
 

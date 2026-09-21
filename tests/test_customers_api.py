@@ -63,6 +63,13 @@ def test_patch_customer(client, db_session):
     assert r.status_code == 404
 
 
+def test_patch_customer_null_discount_422(client, db_session):
+    _admin(client, db_session)
+    cid = client.post("/api/customers", json={"name": "A"}).json()["id"]
+    r = client.patch(f"/api/customers/{cid}", json={"personal_discount": None})
+    assert r.status_code == 422
+
+
 def test_delete_and_restore_customer(client, db_session):
     _admin(client, db_session)
     cid = client.post("/api/customers", json={"name": "A"}).json()["id"]
