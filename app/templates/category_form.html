@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="max-w-2xl mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4">{% if is_new %}Новая категория{% else %}Редактирование категории {{ category.name }}{% endif %}</h1>
+    <form id="category-form" class="space-y-4">
+        <div>
+            <label class="block mb-1">Название</label>
+            <input name="name" required value="{{ category.name if category else '' }}" class="w-full border p-2">
+        </div>
+        <div>
+            <label class="block mb-1">Родительская категория</label>
+            <select name="parent_id" class="w-full border p-2">
+                <option value="">— нет (корневая) —</option>
+                {% for root in tree %}
+                    {% if not category or category.id != root.id %}
+                    <option value="{{ root.id }}" {% if category and category.parent_id == root.id %}selected{% endif %}>{{ root.name }}</option>
+                    {% endif %}
+                    {% for child in root.children %}
+                        {% if not category or category.id != child.id %}
+                        <option value="{{ child.id }}" {% if category and category.parent_id == child.id %}selected{% endif %}>&nbsp;&nbsp;{{ child.name }}</option>
+                        {% endif %}
+                    {% endfor %}
+                {% endfor %}
+            </select>
+        </div>
+        <p id="error" class="text-red-600 hidden"></p>
+        <button class="bg-blue-600 text-white px-4 py-2">Сохранить</button>
+        <a href="/categories" class="ml-2 border px-4 py-2">Отмена</a>
+    </form>
+    <script>
+        var categoryId = {{ category.id if category else 'null' }};
+        document.getElementById('category-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            var f = e.target;
+            var body = {
+                name: f.name.value,
+                parent_id: f.parent_id.value ? parseInt(f.parent_id.value) : null,
+            };
+            var url = categoryId ? '/api/categories/' + categoryId : '/api/categories';
+            var method = categoryId ? 'PATCH' : 'POST';
+            var res = await fetch(url, {method: method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+            if (res.ok) { window.location.href = '/categories'; }
+            else {
+                var d = await res.json().catch(function () { return {}; });
+                var err = document.getElementById('error');
+                err.textContent = d.detail || 'Ошибка';
+                err.classList.remove('hidden');
+            }
+        });
+    </script>
+</main>
+{% endblock %}

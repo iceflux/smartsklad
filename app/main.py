@@ -1,16 +1,20 @@
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import parse_qs, urlencode
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
-from app.modules.auth.dependencies import SESSION_COOKIE, ensure_permissions
+from app.modules.auth.dependencies import (
+    SESSION_COOKIE, ensure_permissions, user_has_permission,
+)
 from app.modules.auth.models import Role, User
 from app.modules.auth.permissions import Permission
 from app.modules.auth.roles_router import PERMISSION_LABELS
@@ -19,9 +23,29 @@ from app.modules.auth.router import router as auth_router
 from app.modules.auth.service import create_admin_if_empty, get_user_by_token, logout
 from app.modules.auth.users_router import router as users_router
 import app.modules.inventory.models  # noqa: F401
+from app.modules.inventory.models import Category, PriceHistory
 from app.modules.inventory.router import router as inventory_router
+from app.modules.inventory.service import (
+    change_bulk_category,
+    delete_product,
+    export_products_csv,
+    get_category_tree,
+    get_product,
+    list_products,
+    restore_product,
+    update_product,
+)
 
 APP_DIR = Path(__file__).parent
+PAGE_SIZE = 25
+
+
+def _category_label(category: Category | None) -> str:
+    if category is None:
+        return ""
+    if category.parent is not None:
+        return f"{category.parent.name} → {category.name}"
+    return category.name
 
 
 def create_app() -> FastAPI:
@@ -126,6 +150,216 @@ def create_app() -> FastAPI:
             request, "users.html",
             {"title": "Пользователи", "user": user, "users": users_view, "roles": roles, "current_user": user},
         )
+
+    @app.get("/products")
+    def products_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.products_view)
+        search = request.query_params.get("search") or None
+        raw_category = request.query_params.get("category_id")
+        category_id = int(raw_category) if raw_category and raw_category.isdigit() else None
+        include_deleted = request.query_params.get("include_deleted") == "1"
+        raw_page = request.query_params.get("page") or "1"
+        page = max(1, int(raw_page)) if raw_page.isdigit() else 1
+        items, total = list_products(db, search=search, category_id=category_id,
+                                     include_deleted=include_deleted, page=page)
+        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+        products = [
+            {
+                "id": p.id, "name": p.name, "sku": p.sku,
+                "category_name": _category_label(p.category),
+                "unit": p.unit, "price": p.price, "rest": p.rest,
+                "is_deleted": p.is_deleted,
+            }
+            for p in items
+        ]
+        qs = urlencode({k: v for k, v in {
+            "search": search, "category_id": category_id,
+            "include_deleted": "1" if include_deleted else None,
+        }.items() if v not in (None, "")})
+        return templates.TemplateResponse(request, "products.html", {
+            "title": "Товары", "user": user, "products": products, "total": total,
+            "page": page, "pages": pages, "base_qs": qs, "msg": request.query_params.get("msg"),
+            "search": search or "", "category_id": category_id, "include_deleted": include_deleted,
+            "tree": get_category_tree(db),
+            "can_edit": user_has_permission(user, Permission.products_edit),
+            "can_stock": user_has_permission(user, Permission.stock_change),
+            "can_price": user_has_permission(user, Permission.price_change),
+            "can_export": user_has_permission(user, Permission.reports_export),
+        })
+
+    @app.get("/products/new")
+    def products_new_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.products_edit)
+        return templates.TemplateResponse(request, "product_form.html", {
+            "title": "Новый товар", "user": user, "product": None, "is_new": True,
+            "tree": get_category_tree(db), "characteristic_json": "",
+            "can_edit": True, "can_price": True,
+            "can_stock": user_has_permission(user, Permission.stock_change),
+        })
+
+    @app.get("/products/export.csv")
+    def products_export_page(user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.reports_export)
+        return Response(
+            content=export_products_csv(db),
+            media_type="application/csv",
+            headers={"Content-Disposition": 'attachment; filename="products.csv"'},
+        )
+
+    @app.get("/products/{product_id}")
+    def products_detail_page(product_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.products_view)
+        product = get_product(db, product_id)
+        if product is None:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+        history = (
+            db.query(PriceHistory)
+            .filter(PriceHistory.product_id == product_id)
+            .order_by(PriceHistory.changed_at.desc())
+            .all()
+        )
+        price_history = [
+            {
+                "old_price": h.old_price, "new_price": h.new_price,
+                "changed_by": h.changer.username if h.changer else None,
+                "changed_at": h.changed_at.strftime("%Y-%m-%d %H:%M") if h.changed_at else "",
+            }
+            for h in history
+        ]
+        return templates.TemplateResponse(request, "product_detail.html", {
+            "title": product.name, "user": user, "product": product,
+            "category_name": _category_label(product.category),
+            "characteristic": product.characteristic or {},
+            "price_history": price_history,
+            "msg": request.query_params.get("msg"),
+            "can_edit": user_has_permission(user, Permission.products_edit),
+            "can_stock": user_has_permission(user, Permission.stock_change),
+            "can_price": user_has_permission(user, Permission.price_change),
+        })
+
+    @app.get("/products/{product_id}/edit")
+    def products_edit_page(product_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        can_edit = user_has_permission(user, Permission.products_edit)
+        can_price = user_has_permission(user, Permission.price_change)
+        can_stock = user_has_permission(user, Permission.stock_change)
+        if not (can_edit or can_price or can_stock):
+            raise HTTPException(status_code=403, detail="Недостаточно прав")
+        product = get_product(db, product_id)
+        if product is None:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+        return templates.TemplateResponse(request, "product_form.html", {
+            "title": f"Товар {product.name}", "user": user, "product": product, "is_new": False,
+            "tree": get_category_tree(db),
+            "characteristic_json": json.dumps(product.characteristic, ensure_ascii=False) if product.characteristic else "",
+            "can_edit": can_edit, "can_price": can_price, "can_stock": can_stock,
+        })
+
+    @app.post("/products/bulk-category")
+    async def products_bulk_category_page(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.products_edit)
+        form = parse_qs((await request.body()).decode())
+        product_ids = [int(v) for v in form.get("product_ids", []) if v.isdigit()]
+        raw_category = (form.get("category_id") or [""])[0]
+        if not product_ids:
+            return RedirectResponse("/products?msg=Не выбрано ни одного товара", status_code=303)
+        if not raw_category or not str(raw_category).isdigit():
+            return RedirectResponse("/products?msg=Категория не выбрана", status_code=303)
+        try:
+            updated = change_bulk_category(db, product_ids, int(raw_category), user)
+        except ValueError:
+            return RedirectResponse("/products?msg=Категория не найдена", status_code=303)
+        return RedirectResponse(f"/products?msg=Обновлено товаров: {updated}", status_code=303)
+
+    @app.post("/products/{product_id}/delete")
+    def products_delete_page(product_id: int, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.products_edit)
+        try:
+            delete_product(db, product_id, user)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+        return RedirectResponse("/products?msg=Товар удалён", status_code=303)
+
+    @app.post("/products/{product_id}/restore")
+    def products_restore_page(product_id: int, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.products_edit)
+        try:
+            restore_product(db, product_id, user)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+        return RedirectResponse("/products?include_deleted=1&msg=Товар восстановлен", status_code=303)
+
+    @app.post("/products/{product_id}/stock")
+    async def products_stock_page(
+        product_id: int,
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.stock_change)
+        form = parse_qs((await request.body()).decode())
+        raw_rest = (form.get("rest") or [""])[0]
+        rest = int(raw_rest) if raw_rest.lstrip("-").isdigit() else 0
+        try:
+            update_product(db, product_id, {"rest": rest}, user)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+        return RedirectResponse(f"/products/{product_id}?msg=Остаток обновлён", status_code=303)
+
+    @app.get("/categories")
+    def categories_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.products_view)
+        return templates.TemplateResponse(request, "categories.html", {
+            "title": "Категории", "user": user, "tree": get_category_tree(db),
+            "msg": request.query_params.get("msg"),
+            "can_manage": user_has_permission(user, Permission.categories_manage),
+        })
+
+    @app.get("/categories/new")
+    def categories_new_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.categories_manage)
+        return templates.TemplateResponse(request, "category_form.html", {
+            "title": "Новая категория", "user": user, "category": None, "is_new": True,
+            "tree": get_category_tree(db),
+        })
+
+    @app.get("/categories/{category_id}/edit")
+    def categories_edit_page(category_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.categories_manage)
+        category = db.get(Category, category_id)
+        if category is None:
+            raise HTTPException(status_code=404, detail="Категория не найдена")
+        return templates.TemplateResponse(request, "category_form.html", {
+            "title": f"Категория {category.name}", "user": user, "category": category, "is_new": False,
+            "tree": get_category_tree(db),
+        })
 
     return app
 
