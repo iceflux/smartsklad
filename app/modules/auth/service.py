@@ -101,8 +101,11 @@ def login(db: Session, username: str, password: str, ip: str | None = None) -> A
 def logout(db: Session, token: str) -> None:
     session = db.query(AuthSession).filter(AuthSession.token == token).first()
     if session:
+        user_id = session.user_id
+        entity_id = session.id
         db.delete(session)
         db.commit()
+        log_action(db, action="logout", entity_type="session", entity_id=entity_id, user_id=user_id)
 
 
 def request_password_reset(db: Session, username_or_email: str) -> str | None:

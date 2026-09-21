@@ -35,3 +35,19 @@ def test_login_logout_flow(db_session):
 
     logout(db_session, s.token)
     assert get_user_by_token(db_session, s.token) is None
+
+
+def test_logout_writes_audit_entry(db_session):
+    from app.modules.audit.models import AuditLog
+
+    u = User(username="seller1", password_hash=hash_password("password123"), role_id=get_role_by_name(db_session, "seller").id)
+    db_session.add(u)
+    db_session.commit()
+
+    s = login(db_session, "seller1", "password123")
+    logout(db_session, s.token)
+
+    entries = db_session.query(AuditLog).filter_by(action="logout").all()
+    assert len(entries) == 1
+    assert entries[0].user_id == u.id
+    assert entries[0].entity_type == "session"
