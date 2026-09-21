@@ -1,10 +1,16 @@
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
 from app.db import Base, get_db
+
+
+def _sqlite_unicode_lower(value):
+    # PostgreSQL's lower() folds Unicode (Cyrillic etc.); SQLite's built-in lower()
+    # is ASCII-only. Emulate PG so ilike searches behave identically in tests.
+    return None if value is None else value.lower() if isinstance(value, str) else value
 from app.main import create_app
 
 import app.modules.audit.models  # noqa: F401 - регистрация таблиц в Base.metadata
@@ -21,6 +27,9 @@ def db_engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    event.listen(engine, "connect", lambda dbapi_connection, _: dbapi_connection.create_function(
+        "lower", 1, _sqlite_unicode_lower
+    ))
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     with Session() as s:

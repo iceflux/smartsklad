@@ -211,7 +211,7 @@ def test_search_products(client, db_session):
     _seller(client, db_session)
     r = client.get("/api/products", params={"search": "сыр"})
     assert r.status_code == 200
-    assert r.json()["total"] == 0
+    assert r.json()["total"] == 1
     r = client.get("/api/products", params={"search": "Сыр"})
     assert r.status_code == 200
     assert r.json()["total"] == 1
