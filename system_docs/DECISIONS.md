@@ -15,3 +15,6 @@
 - 2026-09-21: упрощённая модель inventory по запросу владельца — характеристики одним JSON-полем `characteristic` вместо таблицы `product_attributes`; поля товара сведены к name/sku/unit/price/rest (без full_name/vat_rate/weight/image_url/min_stock).
 - 2026-09-21: права на PATCH товара — по-полям (rest→stock_change, price→price_change, остальное→products_edit, несколько полей = AND) — нельзя обойти products_edit чрез price_change.
 - 2026-09-21: Спринт 3 реализован as-designed: роли/права, inventory, UI audit-логов.
+- 2026-09-21: карточка клиента с полем `comment` — запрос владельца.
+- 2026-09-21: удаление клиентов — мягкое (`is_deleted`), как у товаров; жёсткое удаление сломает историю заказов FK в Спринте 5.
+- 2026-09-21: право на клиентов — одно `customers.manage` (view+edit), по task.md §14; статистика клиента — Спринт 5.
