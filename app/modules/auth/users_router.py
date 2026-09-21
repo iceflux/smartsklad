@@ -40,6 +40,8 @@ def api_user_role(user_id: int, payload: UserRoleIn, request: Request, db=Depend
     role = db.get(Role, payload.role_id)
     if not role:
         raise HTTPException(status_code=404, detail="Роль не найдена")
+    if not user.role.is_super and (role.is_super or (target.role and target.role.is_super)):
+        raise HTTPException(status_code=403, detail="Только администратор может менять супер-роли")
     old = target.role.name if target.role else None
     target.role_id = role.id
     db.commit()

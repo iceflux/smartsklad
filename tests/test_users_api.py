@@ -120,3 +120,39 @@ def test_super_admin_reset_returns_temporary_password_and_resets_super(client, d
     r = client.post(f"/api/auth/users/{other_admin.id}/admin-reset")
     assert r.status_code == 200
     assert r.json()["temporary_password"]
+
+
+def test_non_super_cannot_promote_to_super_role(client, db_session):
+    _admin(client, db_session)
+    seller = _seller(db_session)
+    _custom_users_manager(client, db_session, "cmanager4")
+    r = client.patch(f"/api/users/{seller.id}/role",
+                     json={"role_id": get_role_by_name(db_session, "admin").id})
+    assert r.status_code == 403
+
+
+def test_non_super_cannot_demote_or_touch_super_role(client, db_session):
+    admin = _admin(client, db_session)
+    _custom_users_manager(client, db_session, "cmanager5")
+    r = client.patch(f"/api/users/{admin.id}/role",
+                     json={"role_id": get_role_by_name(db_session, "seller").id})
+    assert r.status_code == 403
+
+
+def test_super_can_promote_user_to_super_role(client, db_session):
+    _admin(client, db_session)
+    seller = _seller(db_session)
+    admin_role_id = get_role_by_name(db_session, "admin").id
+    r = client.patch(f"/api/users/{seller.id}/role", json={"role_id": admin_role_id})
+    assert r.status_code == 200
+    assert r.json()["role_id"] == admin_role_id
+
+
+def test_non_super_can_reassign_regular_roles(client, db_session):
+    _admin(client, db_session)
+    seller = _seller(db_session)
+    _custom_users_manager(client, db_session, "cmanager6")
+    manager_role_id = get_role_by_name(db_session, "manager").id
+    r = client.patch(f"/api/users/{seller.id}/role", json={"role_id": manager_role_id})
+    assert r.status_code == 200
+    assert r.json()["role_id"] == manager_role_id
