@@ -34,7 +34,7 @@
         </div>
         <p id="error" class="text-red-600 hidden"></p>
         <button class="bg-blue-600 text-white px-4 py-2">Сохранить</button>
-        <a href="{% if customer %}/customers/{{ customer.id }}{% else %}/customers{% endif %}" class="ml-2 border px-4 py-2">Отмена</a>
+        <a href="/customers" class="ml-2 border px-4 py-2">Отмена</a>
     </form>
     <script>
         var customerId = {{ customer.id if customer else 'null' }};

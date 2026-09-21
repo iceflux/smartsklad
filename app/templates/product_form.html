@@ -49,7 +49,7 @@
         </div>
         <p id="error" class="text-red-600 hidden"></p>
         <button class="bg-blue-600 text-white px-4 py-2">Сохранить</button>
-        <a href="{% if product %}/products/{{ product.id }}{% else %}/products{% endif %}" class="ml-2 border px-4 py-2">Отмена</a>
+        <a href="/products" class="ml-2 border px-4 py-2">Отмена</a>
     </form>
     <script>
         var productId = {{ product.id if product else 'null' }};
