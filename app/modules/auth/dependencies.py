@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import Cookie, Depends, HTTPException
+from fastapi import Cookie, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -38,3 +38,23 @@ def require_permissions(*perms: Permission):
         return user
 
     return checker
+
+
+def get_page_user(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> User | None:
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+    return get_user_by_token(db, token)
+
+
+def page_context(user: User) -> dict[str, bool]:
+    return {
+        "can_view_products": user_has_permission(user, Permission.products_view),
+        "can_view_categories": user_has_permission(user, Permission.products_view),
+        "can_view_roles": user_has_permission(user, Permission.users_manage),
+        "can_view_users": user_has_permission(user, Permission.users_manage),
+        "can_view_audit": user_has_permission(user, Permission.audit_view),
+    }

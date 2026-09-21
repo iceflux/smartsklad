@@ -12,15 +12,17 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
+from app.modules.audit.router import router as audit_router
 from app.modules.auth.dependencies import (
-    SESSION_COOKIE, ensure_permissions, user_has_permission,
+    SESSION_COOKIE, ensure_permissions, get_page_user as _page_user,
+    page_context as _page_context, user_has_permission,
 )
 from app.modules.auth.models import Role, User
 from app.modules.auth.permissions import Permission
 from app.modules.auth.roles_router import PERMISSION_LABELS
 from app.modules.auth.roles_router import router as roles_router
 from app.modules.auth.router import router as auth_router
-from app.modules.auth.service import create_admin_if_empty, get_user_by_token, logout
+from app.modules.auth.service import create_admin_if_empty, logout
 from app.modules.auth.users_router import router as users_router
 import app.modules.inventory.models  # noqa: F401
 from app.modules.inventory.models import Category, PriceHistory
@@ -65,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(roles_router, prefix="/api")
     app.include_router(users_router, prefix="/api")
     app.include_router(inventory_router, prefix="/api")
+    app.include_router(audit_router)
 
     @app.get("/")
     def index(request: Request):
@@ -106,7 +109,7 @@ def create_app() -> FastAPI:
             }
             for r in rows
         ]
-        return templates.TemplateResponse(request, "roles.html", {"title": "Роли", "user": user, "roles": roles})
+        return templates.TemplateResponse(request, "roles.html", {"title": "Роли", "user": user, "roles": roles, **_page_context(user)})
 
     @app.get("/roles/new")
     def roles_new_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None):
@@ -115,7 +118,7 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.users_manage)
         return templates.TemplateResponse(
             request, "roles_edit.html",
-            {"title": "Создание роли", "user": user, "role": None, "is_new": True, "groups": _perms_groups([])},
+            {"title": "Создание роли", "user": user, "role": None, "is_new": True, "groups": _perms_groups([]), **_page_context(user)},
         )
 
     @app.get("/roles/{role_id}/edit")
@@ -128,7 +131,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Роль не найдена")
         return templates.TemplateResponse(
             request, "roles_edit.html",
-            {"title": f"Роль {role.name}", "user": user, "role": role, "is_new": False, "groups": _perms_groups(role.permissions or [])},
+            {"title": f"Роль {role.name}", "user": user, "role": role, "is_new": False, "groups": _perms_groups(role.permissions or []), **_page_context(user)},
         )
 
     @app.get("/users")
@@ -148,7 +151,7 @@ def create_app() -> FastAPI:
         ]
         return templates.TemplateResponse(
             request, "users.html",
-            {"title": "Пользователи", "user": user, "users": users_view, "roles": roles, "current_user": user},
+            {"title": "Пользователи", "user": user, "users": users_view, "roles": roles, "current_user": user, **_page_context(user)},
         )
 
     @app.get("/products")
@@ -187,6 +190,7 @@ def create_app() -> FastAPI:
             "can_stock": user_has_permission(user, Permission.stock_change),
             "can_price": user_has_permission(user, Permission.price_change),
             "can_export": user_has_permission(user, Permission.reports_export),
+            **_page_context(user),
         })
 
     @app.get("/products/new")
@@ -199,6 +203,7 @@ def create_app() -> FastAPI:
             "tree": get_category_tree(db), "characteristic_json": "",
             "can_edit": True, "can_price": True,
             "can_stock": user_has_permission(user, Permission.stock_change),
+            **_page_context(user),
         })
 
     @app.get("/products/export.csv")
@@ -243,6 +248,7 @@ def create_app() -> FastAPI:
             "can_edit": user_has_permission(user, Permission.products_edit),
             "can_stock": user_has_permission(user, Permission.stock_change),
             "can_price": user_has_permission(user, Permission.price_change),
+            **_page_context(user),
         })
 
     @app.get("/products/{product_id}/edit")
@@ -262,6 +268,7 @@ def create_app() -> FastAPI:
             "tree": get_category_tree(db),
             "characteristic_json": json.dumps(product.characteristic, ensure_ascii=False) if product.characteristic else "",
             "can_edit": can_edit, "can_price": can_price, "can_stock": can_stock,
+            **_page_context(user),
         })
 
     @app.post("/products/bulk-category")
@@ -336,6 +343,7 @@ def create_app() -> FastAPI:
             "title": "Категории", "user": user, "tree": get_category_tree(db),
             "msg": request.query_params.get("msg"),
             "can_manage": user_has_permission(user, Permission.categories_manage),
+            **_page_context(user),
         })
 
     @app.get("/categories/new")
@@ -346,6 +354,7 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "category_form.html", {
             "title": "Новая категория", "user": user, "category": None, "is_new": True,
             "tree": get_category_tree(db),
+            **_page_context(user),
         })
 
     @app.get("/categories/{category_id}/edit")
@@ -359,19 +368,10 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "category_form.html", {
             "title": f"Категория {category.name}", "user": user, "category": category, "is_new": False,
             "tree": get_category_tree(db),
+            **_page_context(user),
         })
 
     return app
-
-
-def _page_user(
-    request: Request,
-    db: Annotated[Session, Depends(get_db)] = None,
-) -> User | None:
-    token = request.cookies.get(SESSION_COOKIE)
-    if not token:
-        return None
-    return get_user_by_token(db, token)
 
 
 def _perms_groups(selected: list[str]) -> list[tuple[str, list[dict]]]:
