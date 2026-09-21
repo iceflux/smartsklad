@@ -1,5 +1,5 @@
 from app.modules.audit.models import AuditLog
-from app.modules.auth.models import User
+from app.modules.auth.models import Role, User
 from app.modules.auth.service import get_role_by_name, hash_password, login
 
 PASSWORD = "password123"
@@ -78,3 +78,45 @@ def test_users_page_renders_for_admin(client, db_session):
     assert r.status_code == 200
     assert "Пользователи" in r.text
     assert "seller1" in r.text
+
+
+def _custom_users_manager(client, db_session, username):
+    role = Role(name=username, is_system=False, is_super=False,
+                permissions=["users.manage"])
+    db_session.add(role)
+    db_session.commit()
+    u = User(username=username, password_hash=hash_password(PASSWORD), role_id=role.id)
+    db_session.add(u)
+    db_session.commit()
+    s = login(db_session, username, PASSWORD)
+    client.cookies.set("session", s.token)
+    return u
+
+
+def test_admin_reset_requires_super(client, db_session):
+    admin = _admin(client, db_session)
+    seller = _seller(db_session)
+    _custom_users_manager(client, db_session, "cmanager")
+    r = client.post(f"/api/auth/users/{seller.id}/admin-reset")
+    assert r.status_code == 403
+    r = client.post(f"/api/auth/users/{admin.id}/admin-reset")
+    assert r.status_code == 403
+
+
+def test_super_admin_reset_returns_temporary_password_and_resets_super(client, db_session):
+    _admin(client, db_session)
+    seller = _seller(db_session)
+    r = client.post(f"/api/auth/users/{seller.id}/admin-reset")
+    assert r.status_code == 200
+    assert "temporary_password" in r.json()
+    assert r.json()["temporary_password"]
+    other_admin = User(
+        username="boss2",
+        password_hash=hash_password(PASSWORD),
+        role_id=get_role_by_name(db_session, "admin").id,
+    )
+    db_session.add(other_admin)
+    db_session.commit()
+    r = client.post(f"/api/auth/users/{other_admin.id}/admin-reset")
+    assert r.status_code == 200
+    assert r.json()["temporary_password"]

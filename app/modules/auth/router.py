@@ -82,6 +82,8 @@ def api_admin_reset(
     admin: Annotated[User, Depends(require_permissions(Permission.users_manage))],
     db: Annotated[Session, Depends(get_db)] = None,
 ):
+    if not admin.role.is_super:
+        raise HTTPException(status_code=403, detail="Только администратор может сбросить пароль")
     target = db.get(User, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
