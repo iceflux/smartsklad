@@ -43,7 +43,7 @@ PRODUCT = {
 }
 
 
-def _make_category(client, admin, name="Продукты", parent_id=None):
+def _make_category(client, admin=None, name="Продукты", parent_id=None):
     r = client.post("/api/categories", json={"name": name, "parent_id": parent_id})
     assert r.status_code == 201
     return r.json()
@@ -161,6 +161,34 @@ def test_patch_name_and_price_requires_both_permissions(client, db_session):
     assert r.status_code == 200
     assert r.json()["name"] == "Переименован"
     assert r.json()["price"] == 90.0
+
+
+def test_category_name_reusable_after_delete(client, db_session):
+    _admin(client, db_session)
+    cat = _make_category(client, name="Кровля")
+    r = client.delete(f"/api/categories/{cat['id']}")
+    assert r.status_code == 204
+    r = client.post("/api/categories", json={"name": "Кровля"})
+    assert r.status_code == 201
+
+
+def test_update_category_name_conflicts_with_live_sibling(client, db_session):
+    _admin(client, db_session)
+    _make_category(client, name="Кровля")
+    b = _make_category(client, name="Изоляция")
+    r = client.patch(f"/api/categories/{b['id']}", json={"name": "Кровля"})
+    assert r.status_code == 409
+
+
+def test_update_category_to_deleted_sibling_name_ok(client, db_session):
+    _admin(client, db_session)
+    a = _make_category(client, name="Кровля")
+    b = _make_category(client, name="Изоляция")
+    r = client.delete(f"/api/categories/{a['id']}")
+    assert r.status_code == 204
+    r = client.patch(f"/api/categories/{b['id']}", json={"name": "Кровля"})
+    assert r.status_code == 200
+    assert r.json()["name"] == "Кровля"
 
 
 def test_lists_visible_with_products_view(client, db_session):

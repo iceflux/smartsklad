@@ -15,6 +15,7 @@ def create_category(db: Session, name: str, parent_id: int | None = None, user=N
         raise ValueError("name required")
     existing = db.query(Category).filter(
         Category.name == name,
+        Category.is_deleted.is_(False),
         Category.parent_id.is_(None) if parent_id is None else Category.parent_id == parent_id,
     ).first()
     if existing:
@@ -41,6 +42,7 @@ def update_category(db: Session, category_id: int, name: str, parent_id: int | N
     dup = db.query(Category).filter(
         Category.id != cat.id,
         Category.name == name,
+        Category.is_deleted.is_(False),
         Category.parent_id.is_(None) if parent_id is None else Category.parent_id == parent_id,
     ).first()
     if dup:
