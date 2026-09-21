@@ -81,3 +81,12 @@ def test_page_delete_and_restore(client, db_session):
     assert r.status_code == 303
     r = client.get("/customers")
     assert "ООО Строй" in r.text
+
+
+def test_customer_edit_empty_fields_no_none(client, db_session):
+    _admin(client, db_session)
+    c = _make_customer(client)
+    r = client.get(f"/customers/{c['id']}/edit")
+    assert r.status_code == 200
+    assert 'value="None"' not in r.text
+    assert '>None</textarea>' not in r.text

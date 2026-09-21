@@ -44,11 +44,11 @@ def test_create_customer_empty_name(db_session, name):
 
 @pytest.mark.parametrize("inn,ok", [
     ("7701234567", True),      # 10
-    ("770123456789", True),    # 12
+    ("770123456789", False),   # 12 — ИНН физлица, не храним
     ("770123456", False),      # 9
     ("7701234567890", False),  # 13
     ("770123456a", False),     # не цифры
-    (None, True),              # не задан — ок
+    (None, True),              # не задан — ок (физлицо без ИНН)
     ("", True),                # пустая строка = не задан — ок (мягкая валидация)
 ])
 def test_create_customer_inn_validation(db_session, inn, ok):
@@ -90,7 +90,7 @@ def test_delete_and_restore(db_session, user):
 
 def test_list_customers_search_pagination(db_session):
     create_customer(db_session, name="ООО Строй", phone="+79990001122", inn="7701234567")
-    create_customer(db_session, name="Иван", phone="+79991112233", inn="333333333333")
+    create_customer(db_session, name="Иван", phone="+79991112233", inn="3333333333")
     all_items, total = list_customers(db_session, search="строй")
     assert total == 1
     assert all_items[0].name == "ООО Строй"

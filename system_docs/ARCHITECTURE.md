@@ -43,7 +43,7 @@
 ## Клиенты (`app/modules/customers/`)
 
 - Модель `Customer`: id, name, inn `String(12)` — обычный индекс (не unique), phone, email, discount_card, personal_discount `Float` 0..99, comment `Text` nullable, is_deleted, created_at/updated_at.
-- `service.py` (HTTP-agnostic, конфликты → `ValueError`): CRUD + мягкое удаление/восстановление; мягкая валидация — имя обязательное, ИНН 10/12 цифр если задан, скидка 0..99. `list_customers` — поиск ILIKE по name/phone/inn регистронезависимо, пагинация, параметр include_deleted (по умолчанию удалённые скрыты).
+- `service.py` (HTTP-agnostic, конфликты → `ValueError`): CRUD + мягкое удаление/восстановление; мягкая валидация — имя обязательное, ИНН ровно 10 цифр если задан (12 — ИНН физлица, не храним; пустое/неуказанное допустимо), скидка 0..99. `list_customers` — поиск ILIKE по name/phone/inn регистронезависимо, пагинация, параметр include_deleted (по умолчанию удалённые скрыты).
 - API (`/api/customers`, всё под правом `customers_manage`): GET список (search/include_deleted/page/page_size), POST (201), GET by id, PATCH по-полям (422 при пустом имени/кривом ИНН/скидке вне 0..99), DELETE (204, мягкое), POST `.../restore`. 403 — прав нет, 404 — не найден, 422 — ошибка валидации.
 - Page: `/customers`, `/customers/new`, `/customers/{id}`, `/customers/{id}/edit`; delete/restore — POST-действия → 303-редиректы с `?msg=`; форма редактирования на JS отправляет в `/api/customers`.
 - Аудит: `customer.create/update/delete/restore`.
