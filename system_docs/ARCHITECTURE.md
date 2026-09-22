@@ -18,7 +18,7 @@
 
 - `tests/` на **pytest** + `httpx` (`TestClient`).
 - БД в тестах — **SQLite in-memory** (`StaticPool`), таблицы создаются из `Base.metadata` в `tests/conftest.py` — `pytest` запускается одной командой, Docker не нужен.
-- Сейчас: 144 теста (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI).
+- Сейчас: 145 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI).
 
 ## Аутентификация и роли (`app/modules/auth/`)
 
