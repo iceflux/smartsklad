@@ -19,6 +19,7 @@ import app.modules.inventory.models  # noqa: F401
 import app.modules.customers.models  # noqa: F401
 import app.modules.orders.models  # noqa: F401
 import app.modules.settings.models  # noqa: F401
+import app.modules.notifications.models  # noqa: F401
 from app.modules.auth.service import ensure_default_roles
 from app.modules.settings.service import ensure_default_settings
 
