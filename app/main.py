@@ -70,6 +70,7 @@ from app.modules.settings.service import (
     get_setting,
     set_setting,
 )
+from app.modules.printing.service import render_order_pdf
 
 APP_DIR = Path(__file__).parent
 PAGE_SIZE = 25
@@ -714,6 +715,38 @@ def create_app() -> FastAPI:
             "can_create": user_has_permission(user, Permission.orders_create),
             **_page_context(user),
         })
+
+    @app.get("/orders/{order_id}/print")
+    def orders_print_page(order_id: int,
+                          user: Annotated[User | None, Depends(_page_user)] = None,
+                          db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_view)
+        order = get_order(db, order_id)
+        if order is None:
+            raise HTTPException(status_code=404, detail="Заказ не найден")
+        from app.modules.printing import service as print_service
+        ctx = print_service.build_order_context(order, db)
+        ctx["order_id"] = order_id
+        return Response(print_service.JINJA.get_template("documents/order_print.html").render(**ctx),
+                        media_type="text/html")
+
+    @app.get("/orders/{order_id}/pdf")
+    def orders_pdf_download(order_id: int,
+                            user: Annotated[User | None, Depends(_page_user)] = None,
+                            db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_view)
+        order = get_order(db, order_id)
+        if order is None:
+            raise HTTPException(status_code=404, detail="Заказ не найден")
+        return Response(
+            render_order_pdf(order, db),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="order-{order.number}.pdf"'},
+        )
 
     @app.get("/orders/{order_id}/edit")
     def orders_edit_page(order_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
