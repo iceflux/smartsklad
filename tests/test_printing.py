@@ -1,4 +1,4 @@
-from datetime import date
+import zlib
 
 import pytest
 
@@ -8,6 +8,24 @@ from app.modules.orders.service import create_order
 from app.modules.printing.service import (
     build_order_context, render_order_html, render_order_pdf,
 )
+
+
+def _flate_streams(data: bytes) -> bytes:
+    """Decompressed PDF streams — reportlab embeds the ToUnicode CMap here."""
+    joined = b""
+    pos = 0
+    while True:
+        s = data.find(b"stream\n", pos)
+        if s == -1:
+            return joined
+        e = data.find(b"endstream", s)
+        if e == -1:
+            return joined
+        try:
+            joined += zlib.decompress(data[s + 7 : e].rstrip(b"\n\r"))
+        except Exception:
+            pass
+        pos = e + 10
 
 
 @pytest.fixture
@@ -56,3 +74,17 @@ def test_render_order_pdf_valid_pdf(db_session, env):
     data = render_order_pdf(o, db_session)
     assert data.startswith(b"%PDF")
     assert b"%%EOF" in data
+    cmap = _flate_streams(data)
+    assert b"begincmap" in cmap, "ToUnicode CMap missing — cyrillic glyphs lost"
+    for ch in "Заказ":
+        cp = f"{ord(ch):04X}".encode()
+        assert b"<" + cp + b">" in cmap, f"cyrillic U+{ord(ch):04X} missing from ToUnicode CMap"
+
+
+def test_render_order_html_escapes_customer_name(db_session, env):
+    _, c, o = env
+    c.name = "<script>alert(1)</script>"
+    db_session.commit()
+    html = render_order_html(o, db_session)
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html

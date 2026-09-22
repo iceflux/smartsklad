@@ -1,12 +1,14 @@
-from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
+import reportlab
 from jinja2 import Environment, FileSystemLoader
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
@@ -14,7 +16,34 @@ from reportlab.platypus import (
 from app.modules.customers.models import Customer
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
-JINJA = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)))
+JINJA = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
+
+
+def _register_cyrillic_font() -> dict | None:
+    candidates: list[Path] = []
+    for name in ("arial.ttf", "Arial.ttf"):
+        p = Path("C:/Windows/Fonts") / name
+        if p.exists():
+            candidates.append(p)
+            break
+    if not candidates:
+        fonts_dir = Path(reportlab.__file__).resolve().parent / "fonts"
+        for name in ("DejaVuSans.ttf", "Vera.ttf"):
+            p = fonts_dir / name
+            if p.exists():
+                candidates.append(p)
+                break
+    if not candidates:
+        return None
+    font_path = candidates[0]
+    family = font_path.stem
+    pdfmetrics.registerFont(TTFont(family, str(font_path)))
+    bold_variant = font_path.with_name(font_path.stem + "bd" + font_path.suffix)
+    family_bold = family
+    if bold_variant.exists():
+        family_bold = family + "-Bold"
+        pdfmetrics.registerFont(TTFont(family_bold, str(bold_variant)))
+    return {"family": family, "family_bold": family_bold}
 
 
 def _item_sum(item) -> float:
@@ -52,6 +81,11 @@ def render_order_pdf(order, db) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20 * mm, bottomMargin=20 * mm)
     styles = getSampleStyleSheet()
+    font = _register_cyrillic_font()
+    if font:
+        styles["Title"].fontName = font["family_bold"]
+        styles["Heading2"].fontName = font["family_bold"]
+        styles["Normal"].fontName = font["family"]
     story = []
     story.append(Paragraph("Заказ покупателя", styles["Title"]))
     story.append(Paragraph(f'№ {ctx["number"]}', styles["Heading2"]))
@@ -68,11 +102,15 @@ def render_order_pdf(order, db) -> bytes:
         ])
     rows.append(["", "", "", "", "Итого:", f'{ctx["total_amount"]:.2f}'])
     table = Table(rows, colWidths=[70 * mm, 14 * mm, 12 * mm, 20 * mm, 16 * mm, 20 * mm])
+    header_font = font["family_bold"] if font else "Helvetica-Bold"
+    body_font = font["family"] if font else "Helvetica"
     table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -2), 0.3, colors.grey),
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
         ("SPAN", (0, -1), (4, -1)),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (0, 0), header_font),
+        ("FONTNAME", (1, 0), (-1, 0), header_font),
+        ("FONTNAME", (0, 1), (-1, -1), body_font),
     ]))
     story.append(table)
     story.append(PageBreak())
