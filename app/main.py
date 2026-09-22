@@ -1,5 +1,6 @@
 import json
 from contextlib import asynccontextmanager
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import parse_qs, urlencode
@@ -28,6 +29,7 @@ import app.modules.inventory.models  # noqa: F401
 import app.modules.customers.models  # noqa: F401
 import app.modules.orders.models  # noqa: F401
 from app.modules.inventory.models import Category, PriceHistory
+from app.modules.customers.models import Customer
 from app.modules.customers.router import router as customers_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.orders.router import router as orders_router
@@ -47,9 +49,64 @@ from app.modules.customers.service import (
     list_customers,
     restore_customer,
 )
+from app.modules.orders.service import (
+    NEXT_POSSIBLE,
+    VALID_STATUSES,
+    change_status,
+    copy_order,
+    create_order,
+    delete_order,
+    get_order,
+    list_orders,
+    restore_order,
+    update_order,
+)
 
 APP_DIR = Path(__file__).parent
 PAGE_SIZE = 25
+
+STATUS_LABELS = {
+    "new": "Новый",
+    "processing": "В обработке",
+    "done": "Выполнен",
+    "cancelled": "Отменён",
+}
+
+
+def _parse_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _client_options(db: Session, include_deleted: bool = False) -> list[dict]:
+    items, _ = list_customers(db, include_deleted=include_deleted)
+    return [{"id": c.id, "name": c.name} for c in items]
+
+
+def _product_options(db: Session) -> list[dict]:
+    items, _ = list_products(db, include_deleted=False)
+    return [{"id": p.id, "name": p.name, "price": p.price, "rest": p.rest} for p in items]
+
+
+def _order_form_items(form: dict) -> list[dict]:
+    items = []
+    for pid, qty, disc in zip(
+        form.get("product_id", []),
+        form.get("quantity", []),
+        form.get("line_discount", []),
+    ):
+        if not pid or not pid.isdigit():
+            continue
+        items.append({
+            "product_id": int(pid),
+            "quantity": int(qty or 0),
+            "discount": float(disc or 0),
+        })
+    return items
 
 
 def _category_label(category: Category | None) -> str:
@@ -474,6 +531,223 @@ def create_app() -> FastAPI:
         except ValueError:
             raise HTTPException(status_code=404, detail="Клиент не найден")
         return RedirectResponse("/customers?include_deleted=1&msg=Клиент восстановлен", status_code=303)
+
+    @app.get("/orders")
+    def orders_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_view)
+        search = request.query_params.get("search") or None
+        status = request.query_params.get("status") or None
+        if status not in VALID_STATUSES:
+            status = None
+        raw_customer = request.query_params.get("customer_id")
+        customer_id = int(raw_customer) if raw_customer and raw_customer.isdigit() else None
+        d_from = _parse_date(request.query_params.get("date_from"))
+        d_to = _parse_date(request.query_params.get("date_to"))
+        raw_amount = request.query_params.get("min_amount")
+        try:
+            min_amount = float(raw_amount) if raw_amount else None
+        except ValueError:
+            min_amount = None
+        include_deleted = request.query_params.get("include_deleted") == "1"
+        raw_page = request.query_params.get("page") or "1"
+        page = max(1, int(raw_page)) if raw_page.isdigit() else 1
+        items, total = list_orders(
+            db, search=search, customer_id=customer_id, status=status,
+            date_from=datetime.combine(d_from, time.min) if d_from else None,
+            date_to=datetime.combine(d_to, time.max) if d_to else None,
+            min_amount=min_amount, include_deleted=include_deleted, page=page,
+        )
+        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+        orders = [{
+            "id": o.id, "number": o.number,
+            "customer_name": (db.get(Customer, o.customer_id).name
+                              if db.get(Customer, o.customer_id) else ""),
+            "status": o.status, "total_amount": o.total_amount, "is_deleted": o.deleted_at is not None,
+            "created_at": o.created_at.strftime("%Y-%m-%d") if o.created_at else "",
+        } for o in items]
+        base_qs = urlencode({k: v for k, v in {
+            "search": search, "customer_id": customer_id, "status": status,
+            "date_from": request.query_params.get("date_from"),
+            "date_to": request.query_params.get("date_to"),
+            "min_amount": request.query_params.get("min_amount"),
+            "include_deleted": "1" if include_deleted else None,
+        }.items() if v not in (None, "")})
+        return templates.TemplateResponse(request, "orders.html", {
+            "title": "Заказы", "user": user, "orders": orders, "total": total,
+            "page": page, "pages": pages, "base_qs": base_qs,
+            "search": search or "", "status": status, "customer_id": customer_id,
+            "date_from": request.query_params.get("date_from", ""),
+            "date_to": request.query_params.get("date_to", ""),
+            "min_amount": min_amount or "", "include_deleted": include_deleted,
+            "msg": request.query_params.get("msg"),
+            "clients": _client_options(db, include_deleted=include_deleted),
+            "statuses": list(VALID_STATUSES), "status_labels": STATUS_LABELS,
+            "can_create": user_has_permission(user, Permission.orders_create),
+            **_page_context(user),
+        })
+
+    @app.get("/orders/new")
+    def orders_new_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_create)
+        clients = _client_options(db)
+        products = _product_options(db)
+        return templates.TemplateResponse(request, "order_form.html", {
+            "title": "Новый заказ", "user": user, "order": None, "is_new": True,
+            "clients": clients, "products": products, "msg": request.query_params.get("msg"),
+            **_page_context(user),
+        })
+
+    @app.post("/orders/new")
+    async def orders_new_post(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_create)
+        form = parse_qs((await request.body()).decode())
+        raw_customer = (form.get("customer_id") or [""])[0]
+        if not raw_customer.isdigit():
+            return RedirectResponse("/orders/new?msg=Выберите клиента", status_code=303)
+        raw_discount = (form.get("discount") or ["0"])[0]
+        try:
+            discount = float(raw_discount or 0)
+        except ValueError:
+            discount = 0.0
+        items = _order_form_items(form)
+        if not items:
+            return RedirectResponse("/orders/new?msg=Добавьте хотя бы одну позицию", status_code=303)
+        try:
+            order = create_order(db, customer_id=int(raw_customer), discount=discount,
+                                 items=items, user=user)
+        except ValueError as e:
+            return RedirectResponse("/orders/new?" + urlencode({"msg": str(e)}), status_code=303)
+        return RedirectResponse(f"/orders/{order.id}?msg=Заказ создан", status_code=303)
+
+    @app.get("/orders/{order_id}")
+    def orders_detail_page(order_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_view)
+        order = get_order(db, order_id)
+        if order is None:
+            raise HTTPException(status_code=404, detail="Заказ не найден")
+        customer = db.get(Customer, order.customer_id)
+        items = [{
+            "product_name": it.product_name_snapshot,
+            "price": it.product_price_snapshot, "quantity": it.quantity,
+            "discount": it.discount_snapshot, "unit": it.unit_snapshot,
+            "total": round(it.quantity * it.product_price_snapshot * (1 - it.discount_snapshot / 100.0), 2),
+        } for it in order.items]
+        return templates.TemplateResponse(request, "order_detail.html", {
+            "title": f"Заказ {order.number}", "user": user, "order": order,
+            "customer_name": customer.name if customer else "",
+            "is_deleted": order.deleted_at is not None,
+            "items": items, "status_label": STATUS_LABELS.get(order.status, order.status),
+            "next_statuses": sorted(NEXT_POSSIBLE.get(order.status, set())),
+            "status_labels": STATUS_LABELS,
+            "msg": request.query_params.get("msg"),
+            "can_status": user_has_permission(user, Permission.orders_status),
+            "can_edit": user_has_permission(user, Permission.orders_edit),
+            "can_delete": user_has_permission(user, Permission.orders_delete),
+            "can_create": user_has_permission(user, Permission.orders_create),
+            **_page_context(user),
+        })
+
+    @app.get("/orders/{order_id}/edit")
+    def orders_edit_page(order_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_edit)
+        order = get_order(db, order_id)
+        if order is None:
+            raise HTTPException(status_code=404, detail="Заказ не найден")
+        if order.status == "done" or order.deleted_at is not None:
+            return RedirectResponse(
+                f"/orders/{order_id}?" + urlencode({"msg": "Нельзя редактировать выполненный заказ"}),
+                status_code=303)
+        clients = _client_options(db)
+        products = _product_options(db)
+        return templates.TemplateResponse(request, "order_form.html", {
+            "title": f"Заказ {order.number}", "user": user, "order": order, "is_new": False,
+            "clients": clients, "products": products, "msg": request.query_params.get("msg"),
+            **_page_context(user),
+        })
+
+    @app.post("/orders/{order_id}/edit")
+    async def orders_edit_post(order_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_edit)
+        form = parse_qs((await request.body()).decode())
+        raw_customer = (form.get("customer_id") or [""])[0]
+        if not raw_customer.isdigit():
+            return RedirectResponse(f"/orders/{order_id}?msg=Выберите клиента", status_code=303)
+        raw_discount = (form.get("discount") or ["0"])[0]
+        try:
+            discount = float(raw_discount or 0)
+        except ValueError:
+            discount = 0.0
+        items = _order_form_items(form)
+        if not items:
+            return RedirectResponse(f"/orders/{order_id}?msg=Добавьте хотя бы одну позицию", status_code=303)
+        try:
+            update_order(db, order_id, customer_id=int(raw_customer), discount=discount,
+                         items=items, user=user)
+        except ValueError as e:
+            if str(e) in ("order not found", "customer not found"):
+                raise HTTPException(status_code=404, detail=str(e))
+            return RedirectResponse(f"/orders/{order_id}?" + urlencode({"msg": str(e)}), status_code=303)
+        return RedirectResponse(f"/orders/{order_id}?msg=Заказ обновлён", status_code=303)
+
+    @app.post("/orders/{order_id}/status")
+    async def orders_status_page(order_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_status)
+        form = parse_qs((await request.body()).decode())
+        new_status = (form.get("status") or [""])[0]
+        try:
+            change_status(db, order_id, new_status, user=user)
+        except ValueError as e:
+            if str(e) == "order not found":
+                raise HTTPException(status_code=404, detail="Заказ не найден")
+            return RedirectResponse(f"/orders/{order_id}?" + urlencode({"msg": str(e)}), status_code=303)
+        return RedirectResponse(f"/orders/{order_id}?msg=Статус обновлён", status_code=303)
+
+    @app.post("/orders/{order_id}/copy")
+    def orders_copy_page(order_id: int, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_create)
+        try:
+            order = copy_order(db, order_id, user=user)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Заказ не найден")
+        return RedirectResponse(f"/orders/{order.id}?msg=Заказ скопирован", status_code=303)
+
+    @app.post("/orders/{order_id}/delete")
+    def orders_delete_page(order_id: int, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_delete)
+        try:
+            delete_order(db, order_id, user=user)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Заказ не найден")
+        return RedirectResponse("/orders?msg=Заказ удалён", status_code=303)
+
+    @app.post("/orders/{order_id}/restore")
+    def orders_restore_page(order_id: int, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.orders_delete)
+        try:
+            restore_order(db, order_id, user=user)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Заказ не найден")
+        return RedirectResponse(f"/orders/{order_id}?msg=Заказ восстановлен", status_code=303)
 
     return app
 
