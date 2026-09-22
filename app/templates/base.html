@@ -28,6 +28,9 @@
                 {% if can_view_audit|default(false) %}
                     <a href="/audit" class="mr-4">Журнал аудита</a>
                 {% endif %}
+                {% if can_change_settings|default(false) %}
+                    <a href="/settings" class="mr-4">Настройки</a>
+                {% endif %}
                 <span class="mr-4">{{ user.username }} ({{ user.role.name }})</span>
                 <form method="post" action="/logout" class="inline">
                     <button class="border px-3 py-1">Выйти</button>

@@ -64,7 +64,12 @@ from app.modules.orders.service import (
     update_order,
 )
 from app.modules.settings.router import router as settings_router
-from app.modules.settings.service import ensure_default_settings
+from app.modules.settings.service import (
+    STOCK_TRACK_DEFAULT_KEY,
+    ensure_default_settings,
+    get_setting,
+    set_setting,
+)
 
 APP_DIR = Path(__file__).parent
 PAGE_SIZE = 25
@@ -177,6 +182,29 @@ def create_app() -> FastAPI:
         response.delete_cookie(SESSION_COOKIE)
         return response
 
+    @app.get("/settings")
+    def settings_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.settings_change)
+        return templates.TemplateResponse(request, "settings.html", {
+            "title": "Настройки", "user": user,
+            "stock_track_default": get_setting(db, STOCK_TRACK_DEFAULT_KEY),
+            "msg": request.query_params.get("msg"),
+            **_page_context(user),
+        })
+
+    @app.post("/settings")
+    async def settings_page_post(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.settings_change)
+        form = parse_qs((await request.body()).decode())
+        value = (form.get("track_rest_default") or ["true"])[0]
+        value = "true" if value == "on" else "false"
+        set_setting(db, STOCK_TRACK_DEFAULT_KEY, value, user=user)
+        return RedirectResponse("/settings?msg=Сохранено", status_code=303)
+
     @app.get("/roles")
     def roles_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
         if user is None:
@@ -285,6 +313,7 @@ def create_app() -> FastAPI:
             "tree": get_category_tree(db), "characteristic_json": "",
             "can_edit": True, "can_price": True,
             "can_stock": user_has_permission(user, Permission.stock_change),
+            "stock_track_default": get_setting(db, STOCK_TRACK_DEFAULT_KEY),
             **_page_context(user),
         })
 

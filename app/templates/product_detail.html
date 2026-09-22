@@ -24,6 +24,7 @@
             <tr class="border-b"><th class="p-2 text-left">Единица измерения</th><td class="p-2">{{ product.unit }}</td></tr>
             <tr class="border-b"><th class="p-2 text-left">Цена</th><td class="p-2">{{ product.price }}</td></tr>
             <tr class="border-b"><th class="p-2 text-left">Остаток</th><td class="p-2">{{ product.rest }}</td></tr>
+            <tr class="border-b"><th class="p-2 text-left">Учёт остатков</th><td class="p-2">{% if product.track_rest %}да{% else %}нет{% endif %}</td></tr>
             <tr class="border-b"><th class="p-2 text-left">Статус</th><td class="p-2">{% if product.is_deleted %}удалён{% else %}активен{% endif %}</td></tr>
         </tbody>
     </table>

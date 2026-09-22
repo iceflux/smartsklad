@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="max-w-2xl mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4">Настройки</h1>
+    {% if msg %}<p class="text-green-600 mb-2">{{ msg }}</p>{% endif %}
+    <form method="post" action="/settings" class="space-y-4">
+        <div>
+            <label class="block mb-1">Учитывать остатки при создании товаров</label>
+            <input type="checkbox" name="track_rest_default" {% if stock_track_default != "false" %}checked{% endif %}>
+            <p class="text-sm text-gray-500">Определяет флаг «Учёт остатков» у новых товаров. Можно переопределить на уровне товара.</p>
+        </div>
+        <button class="bg-blue-600 text-white px-4 py-2">Сохранить</button>
+    </form>
+</main>
+{% endblock %}
