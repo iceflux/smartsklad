@@ -124,7 +124,7 @@ def api_restore_order(order_id: int, user=Depends(get_current_user), db=Depends(
     return _order_out(db.get(Order, order_id), db)
 
 
-@router.post("/orders/{order_id}/copy")
+@router.post("/orders/{order_id}/copy", status_code=201)
 def api_copy_order(order_id: int, user=Depends(get_current_user), db=Depends(get_db)):
     ensure_permissions(user, Permission.orders_create)
     try:

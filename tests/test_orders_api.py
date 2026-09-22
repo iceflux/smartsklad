@@ -59,6 +59,9 @@ def test_api_order_status_flow(client, db_session, env):
     r = client.post(f"/api/orders/{oid}/status", json={"status": "done"})
     assert r.json()["status"] == "done"
     assert client.get("/api/products/1").json()["rest"] == 48
+    r = client.post(f"/api/orders/{oid}/copy")
+    assert r.status_code == 201
+    assert r.json()["number"] == "00002"
 
 
 def test_api_order_denied_without_right(client, db_session, env):
