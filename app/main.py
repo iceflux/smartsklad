@@ -63,6 +63,7 @@ from app.modules.orders.service import (
     restore_order,
     update_order,
 )
+from app.modules.settings.router import router as settings_router
 from app.modules.settings.service import ensure_default_settings
 
 APP_DIR = Path(__file__).parent
@@ -143,6 +144,7 @@ def create_app() -> FastAPI:
     app.include_router(inventory_router, prefix="/api")
     app.include_router(customers_router, prefix="/api")
     app.include_router(orders_router, prefix="/api")
+    app.include_router(settings_router, prefix="/api")
     app.include_router(audit_router)
 
     @app.get("/")
