@@ -37,7 +37,7 @@ def send_document(db, order, channel: str, user=None) -> None:
             send_email(recipient, f"Заказ № {order.number}", text)
         else:
             recipient = str(get_setting(db, "telegram_chat_id") or "").strip()
-            send_telegram(text)
+            send_telegram(text, db)
         _log(db, channel=channel, recipient=recipient, status="sent", order=order, user=user,
              subject="Заказ" if channel == "email" else None, body=text)
     except ValueError as e:

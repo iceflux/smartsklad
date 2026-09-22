@@ -74,7 +74,7 @@ def test_send_document_telegram_writes_log(db_session, env, monkeypatch):
     u = _user(db_session)
     sent = []
 
-    def fake_telegram(text):
+    def fake_telegram(text, db=None):
         sent.append(text)
 
     monkeypatch.setattr("app.modules.notifications.telegram.send_telegram", fake_telegram)
