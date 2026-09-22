@@ -71,5 +71,31 @@
             {% endfor %}
         </tbody>
     </table>
+
+    <h2 class="text-xl font-bold mt-8 mb-3">История изменений</h2>
+    <table class="w-full border-collapse border">
+        <thead>
+            <tr class="border-b text-left">
+                <th class="border p-2">Действие</th>
+                <th class="border p-2">Пользователь</th>
+                <th class="border p-2">Время</th>
+                <th class="border p-2">Было</th>
+                <th class="border p-2">Стало</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for h in history %}
+            <tr class="border-b">
+                <td class="border p-2">{{ h.action }}</td>
+                <td class="border p-2">{{ h.username }}</td>
+                <td class="border p-2">{{ h.created_at }}</td>
+                <td class="border p-2">{{ h.old_value }}</td>
+                <td class="border p-2">{{ h.new_value }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="p-4 text-center text-gray-500">Изменений не найдено</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </main>
 {% endblock %}

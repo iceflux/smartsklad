@@ -127,6 +127,15 @@ def test_orders_new_form_bad_number_no_500(client, db_session):
     assert "Добавьте хотя бы одну позицию" in unquote_plus(r.headers["location"])
 
 
+def test_order_detail_shows_history(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    r = client.get(f"/orders/{order.id}")
+    assert r.status_code == 200
+    assert "История изменений" in r.text
+    assert "order.create" in r.text
+
+
 def test_orders_edit_done_order_redirects(client, db_session):
     _admin(client, db_session)
     p, c, order = _seed(db_session)

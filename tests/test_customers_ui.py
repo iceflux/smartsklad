@@ -1,5 +1,7 @@
 from app.modules.auth.models import Role, User
 from app.modules.auth.service import get_role_by_name, hash_password, login
+from app.modules.inventory.models import Product
+from app.modules.orders.service import create_order
 
 PASSWORD = "password123"
 
@@ -90,3 +92,17 @@ def test_customer_edit_empty_fields_no_none(client, db_session):
     assert r.status_code == 200
     assert 'value="None"' not in r.text
     assert '>None</textarea>' not in r.text
+
+
+def test_customer_detail_shows_orders_and_stats(client, db_session):
+    _admin(client, db_session)
+    c = _make_customer(client)
+    p = Product(name="Гвозди", sku="NAIL-1", unit="шт", price=100.0, rest=10)
+    db_session.add(p)
+    db_session.commit()
+    create_order(db_session, customer_id=c["id"], discount=10.0,
+                 items=[{"product_id": p.id, "quantity": 2, "discount": 0}])
+    r = client.get(f"/customers/{c['id']}")
+    assert r.status_code == 200
+    assert "Заказы клиента" in r.text
+    assert "180.0" in r.text

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
 from app.modules.audit.router import router as audit_router
+from app.modules.audit.models import AuditLog
 from app.modules.auth.dependencies import (
     SESSION_COOKIE, ensure_permissions, get_page_user as _page_user,
     page_context as _page_context, user_has_permission,
@@ -55,6 +56,7 @@ from app.modules.orders.service import (
     change_status,
     copy_order,
     create_order,
+    customer_order_stats,
     delete_order,
     get_order,
     list_orders,
@@ -493,8 +495,11 @@ def create_app() -> FastAPI:
         customer = get_customer(db, customer_id)
         if customer is None:
             raise HTTPException(status_code=404, detail="Клиент не найден")
+        orders, _ = list_orders(db, customer_id=customer_id)
+        stats = customer_order_stats(db, customer_id)
         return templates.TemplateResponse(request, "customer_detail.html", {
             "title": customer.name, "user": user, "customer": customer,
+            "orders": orders, "stats": stats, "status_labels": STATUS_LABELS,
             "msg": request.query_params.get("msg"),
             "can_edit": user_has_permission(user, Permission.customers_manage),
             **_page_context(user),
@@ -643,11 +648,30 @@ def create_app() -> FastAPI:
             "discount": it.discount_snapshot, "unit": it.unit_snapshot,
             "total": round(it.quantity * it.product_price_snapshot * (1 - it.discount_snapshot / 100.0), 2),
         } for it in order.items]
+        history_rows = (
+            db.query(AuditLog)
+            .filter(AuditLog.entity_type == "order", AuditLog.entity_id == order_id)
+            .order_by(AuditLog.created_at.desc())
+            .limit(20)
+            .all()
+        )
+        usernames = {u.id: u.username for u in db.query(User).order_by(User.id).all()}
+        history = [
+            {
+                "action": h.action,
+                "username": usernames.get(h.user_id) or "—",
+                "created_at": h.created_at.strftime("%Y-%m-%d %H:%M") if h.created_at else "",
+                "old_value": h.old_value or "",
+                "new_value": h.new_value or "",
+            }
+            for h in history_rows
+        ]
         return templates.TemplateResponse(request, "order_detail.html", {
             "title": f"Заказ {order.number}", "user": user, "order": order,
             "customer_name": customer.name if customer else "",
             "is_deleted": order.deleted_at is not None,
-            "items": items, "status_label": STATUS_LABELS.get(order.status, order.status),
+            "items": items, "history": history,
+            "status_label": STATUS_LABELS.get(order.status, order.status),
             "next_statuses": sorted(NEXT_POSSIBLE.get(order.status, set())),
             "status_labels": STATUS_LABELS,
             "msg": request.query_params.get("msg"),

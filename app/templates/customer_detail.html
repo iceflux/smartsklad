@@ -28,5 +28,32 @@
         <div><dt class="inline font-semibold">Персональная скидка:</dt> <dd class="inline">{{ customer.personal_discount }}%</dd></div>
         <div><dt class="inline font-semibold">Комментарий:</dt> <dd class="inline">{{ customer.comment or '—' }}</dd></div>
     </dl>
+
+    <h2 class="text-xl font-bold mt-8 mb-3">Заказы клиента</h2>
+    {% if orders %}
+    <table class="w-full border-collapse border mb-4">
+        <thead>
+            <tr class="border-b text-left">
+                <th class="border p-2">Номер</th>
+                <th class="border p-2">Статус</th>
+                <th class="border p-2">Сумма</th>
+                <th class="border p-2">Создан</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for o in orders %}
+            <tr class="border-b">
+                <td class="border p-2"><a class="text-blue-600" href="/orders/{{ o.id }}">{{ o.number }}</a></td>
+                <td class="border p-2">{{ status_labels.get(o.status, o.status) }}</td>
+                <td class="border p-2">{{ o.total_amount }}</td>
+                <td class="border p-2">{{ o.created_at.strftime('%Y-%m-%d %H:%M') if o.created_at else '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="mb-4 text-gray-500">Заказов пока нет</p>
+    {% endif %}
+    <p>Сумма заказов: {{ stats.total_sum }} | Средний чек: {{ stats.avg_check }}</p>
 </main>
 {% endblock %}
