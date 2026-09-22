@@ -29,6 +29,8 @@ PERMISSION_LABELS = {
     "backup.manage": "Бэкапы и восстановление",
     "audit.view": "Просмотр журнала аудита",
     "settings.change": "Изменение настроек",
+    "notifications.send": "Отправка уведомлений и документов",
+    "notifications.view": "Просмотр журнала уведомлений",
 }
 
 

@@ -17,6 +17,7 @@ DEFAULT_PERMISSIONS = {
         "products.view", "price.change",
         "orders.view", "orders.create", "orders.edit", "orders.delete", "orders.status",
         "customers.manage", "analytics.view", "reports.export",
+        "notifications.send", "notifications.view",
     ],
 }
 

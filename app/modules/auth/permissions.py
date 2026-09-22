@@ -19,3 +19,5 @@ class Permission(str, enum.Enum):
     backup_manage = "backup.manage"
     audit_view = "audit.view"
     settings_change = "settings.change"
+    notifications_send = "notifications.send"
+    notifications_view = "notifications.view"

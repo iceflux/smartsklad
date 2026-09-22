@@ -60,4 +60,6 @@ def page_context(user: User) -> dict[str, bool]:
         "can_view_customers": user_has_permission(user, Permission.customers_manage),
         "can_view_orders": user_has_permission(user, Permission.orders_view),
         "can_change_settings": user_has_permission(user, Permission.settings_change),
+        "can_send_notifications": user_has_permission(user, Permission.notifications_send),
+        "can_view_notifications": user_has_permission(user, Permission.notifications_view),
     }

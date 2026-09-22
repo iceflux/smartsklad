@@ -64,6 +64,7 @@ from app.modules.orders.service import (
     update_order,
 )
 from app.modules.settings.router import router as settings_router
+from app.modules.notifications.router import router as notifications_router
 from app.modules.settings.service import (
     STOCK_TRACK_DEFAULT_KEY,
     ensure_default_settings,
@@ -151,6 +152,7 @@ def create_app() -> FastAPI:
     app.include_router(customers_router, prefix="/api")
     app.include_router(orders_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
+    app.include_router(notifications_router, prefix="/api")
     app.include_router(audit_router)
 
     @app.get("/")
@@ -731,6 +733,25 @@ def create_app() -> FastAPI:
         ctx["order_id"] = order_id
         return Response(print_service.JINJA.get_template("documents/order_print.html").render(**ctx),
                         media_type="text/html")
+
+    @app.post("/orders/{order_id}/send")
+    async def orders_send_page(order_id: int, request: Request,
+                               user: Annotated[User | None, Depends(_page_user)] = None,
+                               db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.notifications_send)
+        order = get_order(db, order_id)
+        if order is None:
+            raise HTTPException(status_code=404, detail="Заказ не найден")
+        from app.modules.notifications.service import send_document
+        form = parse_qs((await request.body()).decode())
+        channel = (form.get("channel") or [""])[0]
+        try:
+            send_document(db, order, channel, user)
+        except ValueError as e:
+            return RedirectResponse(f"/orders/{order_id}/print?" + urlencode({"msg": str(e)}), status_code=303)
+        return RedirectResponse(f"/orders/{order_id}/print?msg=Отправлено ({channel})", status_code=303)
 
     @app.get("/orders/{order_id}/pdf")
     def orders_pdf_download(order_id: int,
