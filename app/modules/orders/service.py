@@ -105,7 +105,7 @@ def _validate_items(db: Session, items: list[dict]) -> None:
             raise ValueError("product not found")
         if int(spec["quantity"]) < 1:
             raise ValueError("quantity must be >= 1")
-        if product.rest < int(spec["quantity"]):
+        if product.track_rest and product.rest < int(spec["quantity"]):
             raise ValueError(
                 f"insufficient stock for product {product.name}: "
                 f"need {int(spec['quantity'])}, have {product.rest}"
@@ -115,18 +115,26 @@ def _validate_items(db: Session, items: list[dict]) -> None:
 def _check_and_writeoff(db: Session, order: Order) -> None:
     for it in order.items:
         product = db.get(Product, it.product_id)
+        if not product.track_rest:
+            continue
         if product.rest < it.quantity:
             raise ValueError(
                 f"insufficient stock for product {it.product_name_snapshot}: "
                 f"need {it.quantity}, have {product.rest}"
             )
     for it in order.items:
-        db.get(Product, it.product_id).rest -= it.quantity
+        product = db.get(Product, it.product_id)
+        if not product.track_rest:
+            continue
+        product.rest -= it.quantity
 
 
 def _return_stock(db: Session, order: Order) -> None:
     for it in order.items:
-        db.get(Product, it.product_id).rest += it.quantity
+        product = db.get(Product, it.product_id)
+        if not product.track_rest:
+            continue
+        product.rest += it.quantity
 
 
 def change_status(db: Session, order_id: int, new_status: str, *, user=None) -> Order:
