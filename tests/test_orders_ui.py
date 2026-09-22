@@ -110,3 +110,31 @@ def test_orders_new_form_submit_creates(client, db_session):
     r = client.get(r.headers["location"])
     assert r.status_code == 200
     assert "Гвозди" in r.text
+
+
+def test_orders_new_form_bad_number_no_500(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    r = client.post("/orders/new", data={
+        "customer_id": str(c.id),
+        "discount": "abc",
+        "product_id": [str(p.id)],
+        "quantity": ["qwerty"],
+        "line_discount": ["xyz"],
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote_plus
+    assert "Добавьте хотя бы одну позицию" in unquote_plus(r.headers["location"])
+
+
+def test_orders_edit_done_order_redirects(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    client.post(f"/orders/{order.id}/status", data={"status": "processing"},
+                follow_redirects=False)
+    client.post(f"/orders/{order.id}/status", data={"status": "done"},
+                follow_redirects=False)
+    r = client.get(f"/orders/{order.id}/edit", follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote_plus
+    assert "Нельзя редактировать" in unquote_plus(r.headers["location"])

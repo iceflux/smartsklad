@@ -101,11 +101,14 @@ def _order_form_items(form: dict) -> list[dict]:
     ):
         if not pid or not pid.isdigit():
             continue
-        items.append({
-            "product_id": int(pid),
-            "quantity": int(qty or 0),
-            "discount": float(disc or 0),
-        })
+        try:
+            items.append({
+                "product_id": int(pid),
+                "quantity": int(qty or 0),
+                "discount": float(disc or 0),
+            })
+        except ValueError:
+            continue
     return items
 
 
