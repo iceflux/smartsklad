@@ -7,3 +7,4 @@ jinja2
 pydantic-settings
 bcrypt
 reportlab
+httpx
