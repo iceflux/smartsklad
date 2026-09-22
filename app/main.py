@@ -63,6 +63,7 @@ from app.modules.orders.service import (
     restore_order,
     update_order,
 )
+from app.modules.settings.service import ensure_default_settings
 
 APP_DIR = Path(__file__).parent
 PAGE_SIZE = 25
@@ -127,6 +128,7 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         if not app.state.skip_seed_admin:
             create_admin_if_empty(SessionLocal())
+            ensure_default_settings(SessionLocal())  # seed глобалки дефолт; в тестах skip_seed_admin=True → не триггерим реальный PG
         yield
 
     app = FastAPI(title="СмартСклад", lifespan=lifespan)
