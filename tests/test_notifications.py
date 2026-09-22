@@ -1,7 +1,7 @@
 import pytest
 
 from app.modules.auth.models import User
-from app.modules.auth.service import get_role_by_name, hash_password, login
+from app.modules.auth.service import get_role_by_name, hash_password
 from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.notifications.models import NotificationLog
