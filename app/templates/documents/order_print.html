@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="max-w-4xl mx-auto p-4">
+    <div class="print:hidden mb-4 flex gap-2">
+        <button onclick="window.print()" class="border px-3 py-1">Печать</button>
+        <a href="/orders/{{ order_id }}/pdf" class="border px-3 py-1">Скачать PDF</a>
+    </div>
+    <h1 class="text-2xl font-bold">Заказ покупателя № {{ number }}</h1>
+    <p class="mt-2">Клиент: {{ customer_name }}</p>
+    <p>Дата: {{ created_at }}</p>
+    <table class="w-full border-collapse mt-4">
+        <thead>
+            <tr class="border-b text-left">
+                <th class="p-2">Наименование</th>
+                <th class="p-2">Кол-во</th>
+                <th class="p-2">Ед.</th>
+                <th class="p-2">Цена</th>
+                <th class="p-2">Скидка%</th>
+                <th class="p-2">Сумма</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for it in items %}
+            <tr class="border-b">
+                <td class="p-2">{{ it.name }}</td>
+                <td class="p-2">{{ it.quantity }}</td>
+                <td class="p-2">{{ it.unit }}</td>
+                <td class="p-2">{{ "%.2f"|format(it.price) }}</td>
+                <td class="p-2">{{ "%.0f"|format(it.discount) }}</td>
+                <td class="p-2">{{ "%.2f"|format(it.sum) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr class="border-t">
+                <td colspan="5" class="p-2 font-bold">Итого:</td>
+                <td class="p-2 font-bold">{{ "%.2f"|format(total_amount) }}</td>
+            </tr>
+        </tfoot>
+    </table>
+    <style>
+        @media print {
+            nav, .print\\:hidden { display: none !important; }
+        }
+    </style>
+</main>
+{% endblock %}
