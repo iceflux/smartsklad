@@ -18,7 +18,7 @@
 
 - `tests/` на **pytest** + `httpx` (`TestClient`).
 - БД в тестах — **SQLite in-memory** (`StaticPool`), таблицы создаются из `Base.metadata` в `tests/conftest.py` — `pytest` запускается одной командой, Docker не нужен.
-- Сейчас: 145 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI).
+- Сейчас: 170 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI).
 
 ## Аутентификация и роли (`app/modules/auth/`)
 
@@ -34,7 +34,8 @@
 
 ## Инвентарь (`app/modules/inventory/`)
 
-- Модели: `Category` (id, name, parent_id → дерево, is_deleted), `Product` (name, sku unique, category_id FK, unit, price, characteristic JSON, rest, is_deleted), `PriceHistory` (product_id, old_price, new_price, changed_by FK users).
+- Модели: `Category` (id, name, parent_id → дерево, is_deleted), `Product` (name, sku unique, category_id FK, unit, price, characteristic JSON, rest, `track_rest` bool NOT NULL default True, is_deleted), `PriceHistory` (product_id, old_price, new_price, changed_by FK users).
+- `track_rest` фиксируется при создании товара: `create_product(..., *, track_rest: bool | None = None)` — `None` берёт глобальную настройку `stock_track_default` (`!= "false"`); глобальная настройка влияет только на новые товары. `update_product` принимает `track_rest` (право products_edit).
 - `service.py` (HTTP-agnostic, конфликты → `ValueError`): CRUD категорий и товаров, `get_category_tree` (2 уровня), поиск по name/sku (ILIKE), пагинация, мягкое удаление/восстановление, массовая смена категории, экспорт CSV (BOM + `;`), запись `PriceHistory` при смене цены.
 - API (`/api`, права по-полям): категории GET (products_view), POST/PATCH/DELETE (categories_manage); товары — GET products_view, POST products_edit (+stock_change при `rest` в теле), PATCH по-полям (`rest`→stock_change, `price`→price_change, остальное→products_edit, несколько полей = AND), DELETE/restore/bulk — products_edit, export.csv — reports_export. 403 — прав нет, 404 — не найдено, 409 — конфликт (duplicate/self-parent/непустая категория).
 - Page: `/products`, `/products/new`, `/products/{id}`, `/products/{id}/edit`, `/categories`, `/categories/new`, `/categories/{id}/edit`; действия — 303-редиректы с `?msg=`.
@@ -56,12 +57,21 @@
 - Скидки только в процентах, 0..99 (`_validate_discount`, деньги/рубли не поддерживаются). Итог строки `qty*price*(1-disc/100)`, заказа `сумма*(1-order.discount/100)`, `round(2)` (`_recalc_total`). Дефолт скидки заказа при создании — `customer.personal_discount`.
 - Клиент обязателен и не мягко удалён (`_get_customer`).
 - Проверка остатка при создании и редактировании (`_validate_items`) и при переводе в `done`; редактировать выполненный заказ нельзя (service + UI-редирект).
+- Товары с `track_rest=False` полностью исключены из учёта остатков в заказах: в `_validate_items` пропускается проверка остатка (проверка `qty>=1` остаётся всегда), в `_check_and_writeoff` — проверка и списание, в `_return_stock` — возврат.
 - Номер заказа `00001`-стиль, по `max(id)+1` (`_next_number`), уникальность не гарантируется (no unique constraint) — известное ограничение MVP.
 - Мягкое удаление `deleted_at` + restore; copy — новый заказ `new` со пересозданными снимками.
 - `service.py` (HTTP-agnostic, конфликты → `ValueError`): create/update/delete/restore/copy/change_status/list/get, `customer_order_stats` (orders_count/total_sum/avg_check среди не-cancelled, не удалённых).
 - API (`/api/orders`, права): GET/POST — view/create, GET/PATCH/DELETE `/orders/{id}` — view/edit/delete, POST `.../restore` — delete, `.../copy` (201) — create, `.../status` — status. 403 — прав нет, 404 — не найдено, 422 — ошибка валидации.
 - Page: `/orders` (фильтры search/status/customer/date/min_amount/include_deleted, пагинация), `/orders/new`, `/orders/{id}` (позиции + история изменений — последние 20 `AuditLog` с `entity_type="order"`), `/orders/{id}/edit`; POST-действия → 303-редиректы с `?msg=`. На `/customers/{id}` — блок «Заказы клиента» со статистикой.
 - Аудит: `order.create/update/delete/restore/status_change` (`entity_type="order"`).
+
+## Настройки (`app/modules/settings/`)
+
+- Модель `Setting` (таблица `settings`: id, key unique, value, updated_at). Ключ `stock_track_default` со значением `"true"`/`"false"`, сидится `ensure_default_settings`.
+- `service.py`: `get_setting(db, key) -> str | None`, `set_setting(db, key, value, *, user=None)` — аудит `settings.update`.
+- API: `GET /api/settings` — список `[{key, value}, ...]` для любого аутентифицированного (без права); `PUT /api/settings/stock-track` — требует `settings.change`, значение строго `"true"`/`"false"` иначе 422.
+- Page `/settings` (GET/POST → 303 + `?msg=`), гейт `settings.change` (аноним → 303 `/login`, без права → 403); ссылка «Настройки» в `base.html` скрыта без `can_change_settings` из `page_context`.
+- `Product.track_rest` (см. Инвентарь): глобальная настройка задаёт дефолт только для новых товаров.
 
 ## Audit UI (`app/modules/audit/`)
 
