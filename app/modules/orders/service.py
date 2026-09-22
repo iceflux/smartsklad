@@ -219,8 +219,11 @@ def copy_order(db, order_id, *, user=None):
 
 
 def list_orders(db, *, date_from=None, date_to=None, customer_id=None, status=None,
-                min_amount=None, include_deleted=False, page=1, page_size=25):
+                min_amount=None, include_deleted=False, page=1, page_size=25,
+                search=None):
     q = db.query(Order)
+    if search:
+        q = q.filter(Order.number.ilike(f"%{search}%"))
     if date_from is not None:
         q = q.filter(Order.created_at >= date_from)
     if date_to is not None:

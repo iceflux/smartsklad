@@ -30,6 +30,7 @@ import app.modules.orders.models  # noqa: F401
 from app.modules.inventory.models import Category, PriceHistory
 from app.modules.customers.router import router as customers_router
 from app.modules.inventory.router import router as inventory_router
+from app.modules.orders.router import router as orders_router
 from app.modules.inventory.service import (
     change_bulk_category,
     delete_product,
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(users_router, prefix="/api")
     app.include_router(inventory_router, prefix="/api")
     app.include_router(customers_router, prefix="/api")
+    app.include_router(orders_router, prefix="/api")
     app.include_router(audit_router)
 
     @app.get("/")
