@@ -18,14 +18,14 @@
 
 - `tests/` на **pytest** + `httpx` (`TestClient`).
 - БД в тестах — **SQLite in-memory** (`StaticPool`), таблицы создаются из `Base.metadata` в `tests/conftest.py` — `pytest` запускается одной командой, Docker не нужен.
-- Сейчас: 120 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI).
+- Сейчас: 144 теста (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI).
 
 ## Аутентификация и роли (`app/modules/auth/`)
 
 - Роли — таблица `roles` (name unique, permissions JSON, is_super, is_system) вместо фиксированного enum; `User.role_id` — FK.
 - Права — enum `Permission` (17 кодов) в `auth/permissions.py`, хранятся как строки в `roles.permissions`.
 - Роль admin — суперроль (`is_super`): все права всегда, независимо от списка прав.
-- Системные роли: admin (is_super), seller, warehouseman, manager — права редактируются в UI; кастомные роли создаются через UI.
+- Системные роли: admin (is_super), seller, warehouseman, manager — права редактируются в UI; кастомные роли создаются через UI. Права по заказам (`orders.*`): seller — view/create/edit/status (без delete), warehouseman — view/status, manager — view/create/edit/delete/status, admin — всё.
 - Сессии — запись в БД (`sessions`), токен в cookie `session` (httpOnly, samesite=lax). JWT нет.
 - `service.py`: bcrypt-хэши, логин/логаут, создание сессии (запись в `audit_log`), восстановление пароля по токену, сброс пароля админом.
 - `dependencies.py`: `get_current_user` (401), `require_permissions(*perms)` (403), `ensure_permissions`, `user_has_permission`, `get_role_by_name`, `page_context(user)` (флаги прав для шаблонов), `is_super`.
@@ -47,7 +47,21 @@
 - API (`/api/customers`, всё под правом `customers_manage`): GET список (search/include_deleted/page/page_size), POST (201), GET by id, PATCH по-полям (422 при пустом имени/кривом ИНН/скидке вне 0..99), DELETE (204, мягкое), POST `.../restore`. 403 — прав нет, 404 — не найден, 422 — ошибка валидации.
 - Page: `/customers`, `/customers/new`, `/customers/{id}`, `/customers/{id}/edit`; delete/restore — POST-действия → 303-редиректы с `?msg=`; форма редактирования на JS отправляет в `/api/customers`.
 - Аудит: `customer.create/update/delete/restore`.
-- Статистика и история заказов клиента — Спринт 5 (модуль orders).
+- Статистика и история заказов клиента — модуль orders (раздел ниже).
+
+## Заказы (`app/modules/orders/`)
+
+- Модели: `Order` (id, number `String(16)`, customer_id FK, status `String(16)`, discount `Float`, total_amount, created_at/updated_at, deleted_at), `OrderItem` (product_id FK, quantity, снимки product_name_snapshot/product_price_snapshot/discount_snapshot/unit_snapshot).
+- Статусы: `new`, `processing`, `done`, `cancelled`. Переходы (`NEXT_POSSIBLE`): new→{processing,cancelled}, processing→{done,cancelled}, done→{processing,cancelled}; смена статуса «на тот же» или невалидный переход — `ValueError`. При переводе в `done` списываются остатки (`_check_and_writeoff` — две фазы: сначала проверка всех позиций, потом списание), при `done`→другой статус — возврат (`_return_stock`).
+- Скидки только в процентах, 0..99 (`_validate_discount`, деньги/рубли не поддерживаются). Итог строки `qty*price*(1-disc/100)`, заказа `сумма*(1-order.discount/100)`, `round(2)` (`_recalc_total`). Дефолт скидки заказа при создании — `customer.personal_discount`.
+- Клиент обязателен и не мягко удалён (`_get_customer`).
+- Проверка остатка при создании и редактировании (`_validate_items`) и при переводе в `done`; редактировать выполненный заказ нельзя (service + UI-редирект).
+- Номер заказа `00001`-стиль, по `max(id)+1` (`_next_number`), уникальность не гарантируется (no unique constraint) — известное ограничение MVP.
+- Мягкое удаление `deleted_at` + restore; copy — новый заказ `new` со пересозданными снимками.
+- `service.py` (HTTP-agnostic, конфликты → `ValueError`): create/update/delete/restore/copy/change_status/list/get, `customer_order_stats` (orders_count/total_sum/avg_check среди не-cancelled, не удалённых).
+- API (`/api/orders`, права): GET/POST — view/create, GET/PATCH/DELETE `/orders/{id}` — view/edit/delete, POST `.../restore` — delete, `.../copy` (201) — create, `.../status` — status. 403 — прав нет, 404 — не найдено, 422 — ошибка валидации.
+- Page: `/orders` (фильтры search/status/customer/date/min_amount/include_deleted, пагинация), `/orders/new`, `/orders/{id}` (позиции + история изменений — последние 20 `AuditLog` с `entity_type="order"`), `/orders/{id}/edit`; POST-действия → 303-редиректы с `?msg=`. На `/customers/{id}` — блок «Заказы клиента» со статистикой.
+- Аудит: `order.create/update/delete/restore/status_change` (`entity_type="order"`).
 
 ## Audit UI (`app/modules/audit/`)
 
