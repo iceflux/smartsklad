@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.audit.service import log_action
 from app.modules.inventory.models import Category, PriceHistory, Product
+from app.modules.settings.service import STOCK_TRACK_DEFAULT_KEY, get_setting
 
 
 def create_category(db: Session, name: str, parent_id: int | None = None, user=None) -> Category:
@@ -113,6 +114,8 @@ def create_product(
     price: float,
     characteristic: dict | None,
     rest: int,
+    *,
+    track_rest: bool | None = None,
     user=None,
 ) -> Product:
     name = name.strip()
@@ -130,6 +133,7 @@ def create_product(
         price=price,
         characteristic=characteristic,
         rest=rest,
+        track_rest=track_rest if track_rest is not None else (get_setting(db, STOCK_TRACK_DEFAULT_KEY) != "false"),
     )
     db.add(product)
     db.commit()
@@ -162,7 +166,7 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
             changed_by=user.id if user else None,
         ))
         product.price = data["price"]
-    for key in ("category_id", "unit", "characteristic", "rest"):
+    for key in ("category_id", "unit", "characteristic", "rest", "track_rest"):
         if key in data:
             setattr(product, key, data[key])
     old_value = json.dumps(old_dict, ensure_ascii=False)
@@ -293,4 +297,5 @@ def _product_dict(product: Product) -> dict:
         "price": product.price,
         "characteristic": product.characteristic,
         "rest": product.rest,
+        "track_rest": product.track_rest,
     }

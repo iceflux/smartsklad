@@ -44,6 +44,7 @@ class ProductIn(BaseModel):
     price: float = 0.0
     characteristic: Optional[dict] = None
     rest: int = 0
+    track_rest: Optional[bool] = None
 
 
 class ProductPatch(BaseModel):
@@ -54,6 +55,7 @@ class ProductPatch(BaseModel):
     price: Optional[float] = None
     characteristic: Optional[dict] = None
     rest: Optional[int] = None
+    track_rest: Optional[bool] = None
 
 
 class BulkCategoryIn(BaseModel):
@@ -171,7 +173,7 @@ def api_create_product(payload: ProductIn, user=Depends(get_current_user), db=De
     try:
         product = create_product(db, payload.name, payload.sku, payload.category_id,
                                  payload.unit, payload.price, payload.characteristic,
-                                 payload.rest, user)
+                                 payload.rest, track_rest=payload.track_rest, user=user)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return _product_out(product)
@@ -251,4 +253,5 @@ def _product_out(product: Product) -> dict:
         "characteristic": product.characteristic,
         "rest": product.rest,
         "is_deleted": product.is_deleted,
+        "track_rest": product.track_rest,
     }
