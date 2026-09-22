@@ -154,3 +154,10 @@ def test_update_done_forbidden(env):
     change_status(db, o.id, "done")
     with pytest.raises(ValueError):
         update_order(db, o.id, items=[{"product_id": p1.id, "quantity": 5, "discount": 0.0}])
+
+
+def test_create_order_rejects_over_stock(db_session, product, customer):
+    with pytest.raises(ValueError):
+        create_order(db_session, customer_id=customer.id,
+                     items=[{"product_id": product.id, "quantity": 51, "discount": 0.0}])
+    assert product.rest == 50  # не тронули
