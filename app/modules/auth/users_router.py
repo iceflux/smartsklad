@@ -6,6 +6,12 @@ from app.modules.audit.service import log_action
 from app.modules.auth.dependencies import require_permissions
 from app.modules.auth.models import Role, User
 from app.modules.auth.permissions import Permission
+from app.modules.auth.service import (
+    UserConflictError,
+    UserPermissionError,
+    create_user,
+    update_user,
+)
 
 router = APIRouter()
 
@@ -21,6 +27,21 @@ class UserOut(BaseModel):
 
 class UserRoleIn(BaseModel):
     role_id: int
+
+
+class UserCreateIn(BaseModel):
+    username: str
+    email: str | None = None
+    password: str
+    role_id: int
+
+
+class UserUpdateIn(BaseModel):
+    username: str | None = None
+    email: str | None = None
+    password: str | None = None
+    role_id: int | None = None
+    is_active: bool | None = None
 
 
 @router.get("/users", response_model=list[UserOut])
@@ -50,3 +71,38 @@ def api_user_role(user_id: int, payload: UserRoleIn, request: Request, db=Depend
                entity_id=target.id, old_value=old, new_value=role.name,
                user_id=user.id, ip=ip)
     return {"id": target.id, "role_id": target.role_id}
+
+
+@router.post("/users", status_code=201, response_model=UserOut)
+def api_create_user(payload: UserCreateIn, db=Depends(get_db),
+                    user=Depends(require_permissions(Permission.users_manage))):
+    try:
+        u = create_user(db, username=payload.username, email=payload.email,
+                        password=payload.password, role_id=payload.role_id, actor=user)
+    except UserPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except UserConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return UserOut(id=u.id, username=u.username, email=u.email, is_active=u.is_active,
+                   role_id=u.role_id, role_name=u.role_name)
+
+
+@router.patch("/users/{user_id}", response_model=UserOut)
+def api_update_user(user_id: int, payload: UserUpdateIn, request: Request, db=Depends(get_db),
+                    user=Depends(require_permissions(Permission.users_manage))):
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    try:
+        u = update_user(db, target, actor=user, username=payload.username, email=payload.email,
+                        password=payload.password, role_id=payload.role_id, is_active=payload.is_active)
+    except UserPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except UserConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return UserOut(id=u.id, username=u.username, email=u.email, is_active=u.is_active,
+                   role_id=u.role_id, role_name=u.role_name)
