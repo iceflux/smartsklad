@@ -27,9 +27,10 @@
 - Роль admin — суперроль (`is_super`): все права всегда, независимо от списка прав.
 - Системные роли: admin (is_super), seller, warehouseman, manager — права редактируются в UI; кастомные роли создаются через UI. Права по заказам (`orders.*`): seller — view/create/edit/status (без delete), warehouseman — view/status, manager — view/create/edit/delete/status, admin — всё.
 - Сессии — запись в БД (`sessions`), токен в cookie `session` (httpOnly, samesite=lax). JWT нет.
-- `service.py`: bcrypt-хэши, логин/логаут, создание сессии (запись в `audit_log`), восстановление пароля по токену, сброс пароля админом.
+- `service.py`: bcrypt-хэши, логин/логаут, создание сессии (запись в `audit_log`), восстановление пароля по токену, сброс пароля админом, CRUD пользователей (`create_user`, `update_user`) и `generate_password`.
+- CRUD пользователей HTTP-agnostic: конфликты и права — через подклассы `ValueError` (`UserConflictError` → 409, `UserPermissionError` → 403), остальная валидация — `ValueError` → 422. `update_user` сначала валидирует все поля, потом применяет изменения (`pending`-dict), поэтому при ошибке частичной мутации нет. Удаления нет — только деактивация (`is_active`).
 - `dependencies.py`: `get_current_user` (401), `require_permissions(*perms)` (403), `ensure_permissions`, `user_has_permission`, `get_role_by_name`, `page_context(user)` (флаги прав для шаблонов), `is_super`.
-- API: `/api/roles` (CRUD, справка по правам), `/api/users` (смена роли). Page: `/login`, `/roles`, `/roles/{id}/edit`, `/users` (303→`/login` анониму, 403 без права).
+- API: `/api/roles` (CRUD, справка по правам), `/api/users` (GET/PATCH/создание). Page: `/login`, `/roles`, `/roles/{id}/edit`, `/users` (303→`/login` анониму, 403 без права), `/users/new`, `/users/{id}/edit` — формы правятся через JSON API из JS.
 - Seed админа: `create_admin_if_empty()` в lifespan при старте, если БД пуста и заданы `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
 
 ## Инвентарь (`app/modules/inventory/`)
