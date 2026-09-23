@@ -4,7 +4,8 @@ from email.message import EmailMessage
 from app.config import settings
 
 
-def send_email(to: str, subject: str, body: str) -> None:
+def send_email(to: str, subject: str, body: str, *, attachment: bytes | None = None,
+               filename: str = "document.pdf") -> None:
     if not settings.smtp_host:
         return
     msg = EmailMessage()
@@ -12,6 +13,8 @@ def send_email(to: str, subject: str, body: str) -> None:
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
+    if attachment is not None:
+        msg.add_attachment(attachment, maintype="application", subtype="pdf", filename=filename)
 
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as smtp:
         smtp.starttls()
