@@ -218,7 +218,7 @@ def update_user(db: Session, user: User, *, actor: User, username: str | None = 
         raise UserPermissionError("Нельзя менять собственную роль")
     if actor.id == user.id and is_active is False:
         raise UserPermissionError("Нельзя деактивировать собственную учётную запись")
-    if not actor.role.is_super and user.role and user.role.is_super and (role_id is not None or username is not None or email is not None or is_active is not None):
+    if not actor.role.is_super and user.role and user.role.is_super and (role_id is not None or username is not None or email is not None or password is not None or is_active is not None):
         raise UserPermissionError("Только администратор может изменять супер-пользователя")
     if is_active is False and user.role and user.role.is_super and user.is_active:
         active_supers = (
@@ -229,6 +229,7 @@ def update_user(db: Session, user: User, *, actor: User, username: str | None = 
             raise UserPermissionError("Нельзя деактивировать последнего администратора")
 
     changed = []
+    pending = {}
     if username is not None and username.strip() != user.username:
         new_username = username.strip()
         if not new_username:
@@ -238,21 +239,21 @@ def update_user(db: Session, user: User, *, actor: User, username: str | None = 
         if db.query(User).filter(User.username == new_username, User.id != user.id).first():
             raise UserConflictError("Логин уже занят")
         changed.append(("Логин", user.username, new_username))
-        user.username = new_username
+        pending["username"] = new_username
     if email is not None:
         new_email = email.strip() or None
         if new_email != user.email:
             if new_email is not None and db.query(User).filter(User.email == new_email, User.id != user.id).first():
                 raise UserConflictError("Email уже занят")
             changed.append(("Email", user.email, new_email))
-            user.email = new_email
+            pending["email"] = new_email
     if password is not None:
         if len(password) < 8:
             raise ValueError("Пароль должен быть не короче 8 символов")
         changed.append(("Пароль", "***", "***"))
-        user.password_hash = hash_password(password)
-        user.reset_token = None
-        user.reset_token_expires_at = None
+        pending["password_hash"] = hash_password(password)
+        pending["reset_token"] = None
+        pending["reset_token_expires_at"] = None
     if role_id is not None and role_id != user.role_id:
         new_role = db.get(Role, role_id)
         if new_role is None:
@@ -260,10 +261,13 @@ def update_user(db: Session, user: User, *, actor: User, username: str | None = 
         if not actor.role.is_super and new_role.is_super:
             raise UserPermissionError("Только администратор может назначать супер-роль")
         changed.append(("Роль", user.role_name, new_role.name))
-        user.role_id = new_role.id
+        pending["role_id"] = new_role.id
     if is_active is not None and is_active != user.is_active:
         changed.append(("Активен", "да" if user.is_active else "нет", "да" if is_active else "нет"))
-        user.is_active = is_active
+        pending["is_active"] = is_active
+
+    for field, value in pending.items():
+        setattr(user, field, value)
 
     db.commit()
     db.refresh(user)

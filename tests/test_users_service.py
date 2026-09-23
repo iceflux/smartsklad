@@ -9,7 +9,6 @@ from app.modules.auth.service import (
     generate_password,
     get_role_by_name,
     hash_password,
-    login,
     update_user,
 )
 
@@ -191,6 +190,8 @@ def test_non_super_cannot_touch_super_user(db_session):
     admin = _admin(db_session)
     with pytest.raises(UserPermissionError):
         update_user(db_session, admin, actor=actor, username="hacked")
+    with pytest.raises(UserPermissionError):
+        update_user(db_session, admin, actor=actor, password="newpass123")
 
 
 def test_non_super_cannot_grant_super_role(db_session):
