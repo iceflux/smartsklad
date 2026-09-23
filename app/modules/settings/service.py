@@ -21,6 +21,12 @@ def ensure_default_settings(db: Session) -> None:
     db.commit()
 
 
+def mask_telegram_token(value: str | None) -> str | None:
+    if not value:
+        return value
+    return (value[:3] + "****" + value[-3:]) if len(value) > 6 else "****"
+
+
 def get_setting(db: Session, key: str) -> str | None:
     row = db.query(Setting).filter(Setting.key == key).first()
     return row.value if row else None
@@ -35,5 +41,8 @@ def set_setting(db: Session, key: str, value: str, *, user=None) -> None:
     else:
         row.value = value
     db.commit()
+    if key == "telegram_bot_token":
+        old = mask_telegram_token(old)
+        value = mask_telegram_token(value)
     log_action(db, action="settings.update", entity_type="settings", entity_id=row.id,
                old_value=old, new_value=value, user_id=user.id if user else None)

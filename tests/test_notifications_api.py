@@ -36,11 +36,21 @@ def _mk_order(db_session, email="a@b.ru"):
 def test_send_email_via_api(client, db_session, monkeypatch):
     _admin(client, db_session)
     o = _mk_order(db_session)
+    monkeypatch.setattr("app.config.settings.smtp_host", "localhost")
     monkeypatch.setattr("app.modules.notifications.email.send_email", lambda *a, **k: None)
     r = client.post(f"/api/orders/{o.id}/send", json={"channel": "email"})
     assert r.status_code == 200
     assert r.json()["status"] == "sent"
     assert db_session.query(NotificationLog).count() == 1
+
+
+def test_send_email_422_when_smtp_not_configured(client, db_session):
+    _admin(client, db_session)
+    o = _mk_order(db_session)
+    r = client.post(f"/api/orders/{o.id}/send", json={"channel": "email"})
+    assert r.status_code == 422
+    assert "SMTP" in r.json()["detail"]
+    assert db_session.query(NotificationLog).count() == 0
 
 
 def test_send_forbidden_for_seller(client, db_session):
@@ -66,6 +76,7 @@ def test_history_requires_right(client, db_session):
 def test_history_filters(client, db_session, monkeypatch):
     _admin(client, db_session)
     o = _mk_order(db_session)
+    monkeypatch.setattr("app.config.settings.smtp_host", "localhost")
     monkeypatch.setattr("app.modules.notifications.email.send_email", lambda *a, **k: None)
     client.post(f"/api/orders/{o.id}/send", json={"channel": "email"})
     r = client.get("/api/notifications")

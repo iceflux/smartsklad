@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.db import get_db
-from app.modules.auth.dependencies import get_current_user, require_permissions
+from app.modules.auth.dependencies import require_permissions
 from app.modules.auth.permissions import Permission
 from app.modules.notifications.models import NotificationLog
 from app.modules.notifications.service import send_document

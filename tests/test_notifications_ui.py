@@ -53,6 +53,7 @@ def test_print_page_hides_send_buttons_for_seller(client, db_session):
 def test_send_page_email_redirect(client, db_session, monkeypatch):
     _admin(client, db_session)
     o = _mk_order(db_session)
+    monkeypatch.setattr("app.config.settings.smtp_host", "localhost")
     monkeypatch.setattr("app.modules.notifications.email.send_email", lambda *a, **k: None)
     r = client.post(f"/orders/{o.id}/send", data={"channel": "email"}, follow_redirects=False)
     assert r.status_code == 303
@@ -64,6 +65,7 @@ def test_send_page_email_redirect(client, db_session, monkeypatch):
 def test_history_page_shows_rows(client, db_session, monkeypatch):
     _admin(client, db_session)
     o = _mk_order(db_session)
+    monkeypatch.setattr("app.config.settings.smtp_host", "localhost")
     monkeypatch.setattr("app.modules.notifications.email.send_email", lambda *a, **k: None)
     client.post(f"/orders/{o.id}/send", data={"channel": "email"})
     r = client.get("/notifications")

@@ -1,3 +1,6 @@
+import re
+
+from app.config import settings
 from app.modules.audit.service import log_action
 from app.modules.notifications.models import NotificationLog
 from app.modules.settings.service import get_setting
@@ -34,6 +37,8 @@ def send_document(db, order, channel: str, user=None) -> None:
             recipient = (customer.email or "").strip()
             if not recipient:
                 raise ValueError("у клиента не указан email")
+            if not settings.smtp_host:
+                raise ValueError("SMTP не настроен")
             send_email(recipient, f"Заказ № {order.number}", text)
         else:
             recipient = str(get_setting(db, "telegram_chat_id") or "").strip()
@@ -46,6 +51,6 @@ def send_document(db, order, channel: str, user=None) -> None:
     except Exception as e:  # сетевые/HTTP ошибки
         db.rollback()
         _log(db, channel=channel, recipient="", status="failed", order=order, user=user,
-             body=text, error=str(e))
+             body=text, error=re.sub(r"/bot[^/]+/", "/bot***/", str(e)))
     log_action(db, action="notification.send", entity_type="order", entity_id=order.id,
                new_value=channel, user_id=user.id if user else None)

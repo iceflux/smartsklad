@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from app.modules.auth.models import User
@@ -42,6 +43,7 @@ def test_message_text_mentions_order_and_customer(db_session, env):
 def test_send_document_email_writes_log(db_session, env, monkeypatch):
     c, o = env
     u = _user(db_session)
+    monkeypatch.setattr("app.config.settings.smtp_host", "localhost")
     calls = []
 
     def fake_send(to, subject, body):
@@ -56,6 +58,14 @@ def test_send_document_email_writes_log(db_session, env, monkeypatch):
     assert row.document_id == o.id
     assert row.user_id == u.id
     assert len(calls) == 1 and calls[0][0] == "a@b.ru"
+
+
+def test_send_document_email_smtp_not_configured(db_session, env):
+    c, o = env
+    u = _user(db_session)
+    with pytest.raises(ValueError, match="SMTP"):
+        send_document(db_session, o, "email", u)
+    assert db_session.query(NotificationLog).count() == 0
 
 
 def test_send_document_email_no_customer_email(db_session, env):
@@ -91,3 +101,24 @@ def test_send_document_telegram_not_configured(db_session, env):
     u = _user(db_session)
     with pytest.raises(ValueError, match="telegram"):
         send_document(db_session, o, "telegram", u)
+
+
+def test_send_document_telegram_error_scrubs_token(db_session, env, monkeypatch):
+    c, o = env
+    set_setting(db_session, TELEGRAM_TOKEN_KEY, "123456:ABCDEF", user=None)
+    set_setting(db_session, TELEGRAM_CHAT_KEY, "777", user=None)
+    u = _user(db_session)
+
+    def fake_fail(text, db=None, **kw):
+        raise httpx.HTTPStatusError(
+            'post "https://api.telegram.org/bot123456:ABCDEF/sendMessage"',
+            request=httpx.Request("POST", "https://api.telegram.org/bot123456:ABCDEF/sendMessage"),
+            response=httpx.Response(500),
+        )
+
+    monkeypatch.setattr("app.modules.notifications.telegram.send_telegram", fake_fail)
+    send_document(db_session, o, "telegram", u)
+    row = db_session.query(NotificationLog).one()
+    assert row.status == "failed"
+    assert "/bot***/" in row.error
+    assert "123456:ABCDEF" not in row.error
