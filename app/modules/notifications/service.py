@@ -3,6 +3,7 @@ import re
 from app.config import settings
 from app.modules.audit.service import log_action
 from app.modules.notifications.models import NotificationLog
+from app.modules.printing.service import render_order_pdf
 from app.modules.settings.service import get_setting
 
 
@@ -27,7 +28,7 @@ def _log(db, *, channel, recipient, status, order, user, subject="", body="", er
 def send_document(db, order, channel: str, user=None) -> None:
     from app.modules.customers.models import Customer
     from app.modules.notifications.email import send_email
-    from app.modules.notifications.telegram import send_telegram
+    from app.modules.notifications.telegram import send_telegram_document
     text = message_text(order, db)
     customer = db.get(Customer, order.customer_id)
     if channel not in ("email", "telegram"):
@@ -39,10 +40,13 @@ def send_document(db, order, channel: str, user=None) -> None:
                 raise ValueError("у клиента не указан email")
             if not settings.smtp_host:
                 raise ValueError("SMTP не настроен")
-            send_email(recipient, f"Заказ № {order.number}", text)
+            pdf = render_order_pdf(order, db)
+            send_email(recipient, f"Заказ № {order.number}", text,
+                       attachment=pdf, filename=f"order-{order.number}.pdf")
         else:
             recipient = str(get_setting(db, "telegram_chat_id") or "").strip()
-            send_telegram(text, db)
+            pdf = render_order_pdf(order, db)
+            send_telegram_document(text, pdf, db, filename=f"order-{order.number}.pdf")
         _log(db, channel=channel, recipient=recipient, status="sent", order=order, user=user,
              subject="Заказ" if channel == "email" else None, body=text)
     except ValueError as e:

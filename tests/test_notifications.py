@@ -46,7 +46,7 @@ def test_send_document_email_writes_log(db_session, env, monkeypatch):
     monkeypatch.setattr("app.config.settings.smtp_host", "localhost")
     calls = []
 
-    def fake_send(to, subject, body):
+    def fake_send(to, subject, body, **kw):
         calls.append((to, subject, body))
 
     monkeypatch.setattr("app.modules.notifications.email.send_email", fake_send)
@@ -84,10 +84,10 @@ def test_send_document_telegram_writes_log(db_session, env, monkeypatch):
     u = _user(db_session)
     sent = []
 
-    def fake_telegram(text, db=None):
+    def fake_telegram(text, pdf, db=None, **kw):
         sent.append(text)
 
-    monkeypatch.setattr("app.modules.notifications.telegram.send_telegram", fake_telegram)
+    monkeypatch.setattr("app.modules.notifications.telegram.send_telegram_document", fake_telegram)
     send_document(db_session, o, "telegram", u)
     row = db_session.query(NotificationLog).one()
     assert row.channel == "telegram"
@@ -109,14 +109,14 @@ def test_send_document_telegram_error_scrubs_token(db_session, env, monkeypatch)
     set_setting(db_session, TELEGRAM_CHAT_KEY, "777", user=None)
     u = _user(db_session)
 
-    def fake_fail(text, db=None, **kw):
+    def fake_fail(text, pdf, db=None, **kw):
         raise httpx.HTTPStatusError(
             'post "https://api.telegram.org/bot123456:ABCDEF/sendMessage"',
             request=httpx.Request("POST", "https://api.telegram.org/bot123456:ABCDEF/sendMessage"),
             response=httpx.Response(500),
         )
 
-    monkeypatch.setattr("app.modules.notifications.telegram.send_telegram", fake_fail)
+    monkeypatch.setattr("app.modules.notifications.telegram.send_telegram_document", fake_fail)
     send_document(db_session, o, "telegram", u)
     row = db_session.query(NotificationLog).one()
     assert row.status == "failed"
