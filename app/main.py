@@ -215,27 +215,26 @@ def create_app() -> FastAPI:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.settings_change)
         form = parse_qs((await request.body()).decode())
-        value = (form.get("track_rest_default") or ["true"])[0]
-        value = "true" if value == "on" else "false"
-        set_setting(db, STOCK_TRACK_DEFAULT_KEY, value, user=user)
+        track_rest_default = (form.get("track_rest_default") or ["true"])[0]
+        track_rest_default = "true" if track_rest_default == "on" else "false"
         telegram_token = (form.get("telegram_bot_token") or [""])[0].strip()
-        if telegram_token:
-            set_setting(db, "telegram_bot_token", telegram_token, user=user)
         telegram_chat = (form.get("telegram_chat_id") or [""])[0].strip()
-        if telegram_chat:
-            set_setting(db, "telegram_chat_id", telegram_chat, user=user)
         charset = (form.get("user_password_charset") or [""])[0].strip()
         length_raw = (form.get("user_password_length") or [""])[0].strip()
-        if charset and length_raw:
-            try:
-                length = int(length_raw)
-            except ValueError:
-                length = 0
-            if 8 <= length <= 64:
-                set_setting(db, USER_PASSWORD_CHARSET_KEY, charset, user=user)
-                set_setting(db, USER_PASSWORD_LENGTH_KEY, str(length), user=user)
-                return RedirectResponse("/settings?msg=Сохранено", status_code=303)
-        return RedirectResponse("/settings?msg=Ошибка: символы непустые, длина 8-64", status_code=303)
+        try:
+            length = int(length_raw)
+        except ValueError:
+            length = 0
+        if not charset or not 8 <= length <= 64:
+            return RedirectResponse("/settings?msg=Ошибка: символы непустые, длина 8-64", status_code=303)
+        set_setting(db, STOCK_TRACK_DEFAULT_KEY, track_rest_default, user=user)
+        if telegram_token:
+            set_setting(db, "telegram_bot_token", telegram_token, user=user)
+        if telegram_chat:
+            set_setting(db, "telegram_chat_id", telegram_chat, user=user)
+        set_setting(db, USER_PASSWORD_CHARSET_KEY, charset, user=user)
+        set_setting(db, USER_PASSWORD_LENGTH_KEY, str(length), user=user)
+        return RedirectResponse("/settings?msg=Сохранено", status_code=303)
 
     @app.get("/notifications")
     def notifications_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None,
@@ -332,7 +331,9 @@ def create_app() -> FastAPI:
         ]
         return templates.TemplateResponse(
             request, "users.html",
-            {"title": "Пользователи", "user": user, "users": users_view, "roles": roles, "current_user": user, **_page_context(user)},
+            {"title": "Пользователи", "user": user, "users": users_view, "roles": roles,
+             "current_user": user, "is_super": user.role.is_super,
+             "msg": request.query_params.get("msg"), **_page_context(user)},
         )
 
     @app.get("/users/new")

@@ -84,6 +84,28 @@ def test_users_page_shows_create_and_edit_links(client, db_session):
     assert f'/users/{seller.id}/edit' in r.text
 
 
+def test_users_page_reset_password_button_only_for_super(client, db_session):
+    _admin(client, db_session)
+    seller = _seller(db_session)
+    r = client.get("/users")
+    assert r.status_code == 200
+    assert f'onclick="adminReset({seller.id})"' in r.text
+    assert "Сбросить пароль" in r.text
+
+    _users_manager(client, db_session, "cmanager-row")
+    r = client.get("/users")
+    assert r.status_code == 200
+    assert 'onclick="adminReset(' not in r.text
+    assert "Сбросить пароль" not in r.text
+
+
+def test_users_page_shows_success_message(client, db_session):
+    _admin(client, db_session)
+    r = client.get("/users?msg=Пользователь сохранён")
+    assert r.status_code == 200
+    assert "Пользователь сохранён" in r.text
+
+
 def test_users_new_page_403_without_permission(client, db_session):
     _seller(db_session)
     s = login(db_session, "seller1", PASSWORD)

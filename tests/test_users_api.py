@@ -1,6 +1,6 @@
 from app.modules.audit.models import AuditLog
-from app.modules.auth.models import Role, User
-from app.modules.auth.service import get_role_by_name, hash_password, login
+from app.modules.auth.models import AuthSession, Role, User
+from app.modules.auth.service import get_role_by_name, hash_password, login, update_user
 
 PASSWORD = "password123"
 
@@ -37,6 +37,23 @@ def test_admin_lists_users(client, db_session):
     usernames = {u["username"]: u for u in r.json()}
     assert "boss" in usernames
     assert usernames["seller1"]["role_name"] == "seller"
+
+
+def test_deactivated_user_session_is_rejected_for_api_and_page(client, db_session):
+    target = _seller(db_session)
+    old_session = login(db_session, "seller1", PASSWORD)
+    admin = _admin(client, db_session)
+    update_user(db_session, target, actor=admin, is_active=False)
+    client.cookies.set("session", old_session.token)
+
+    api_response = client.get("/api/users", follow_redirects=False)
+    assert api_response.status_code == 401
+
+    page_response = client.get("/users", follow_redirects=False)
+    assert page_response.status_code == 303
+    assert page_response.headers.get("location") == "/login"
+
+    assert db_session.query(AuthSession).filter_by(token=old_session.token).count() == 1
 
 
 def test_admin_changes_user_role(client, db_session):
@@ -172,6 +189,28 @@ def test_admin_creates_user(client, db_session):
     assert len(entries) == 1
 
 
+def test_create_user_accepts_inactive_status(client, db_session):
+    _admin(client, db_session)
+    role_id = get_role_by_name(db_session, "seller").id
+    r = client.post("/api/users", json={
+        "username": "inactive", "email": None, "password": "secret123",
+        "role_id": role_id, "is_active": False,
+    })
+    assert r.status_code == 201
+    assert r.json()["is_active"] is False
+    db_session.expire_all()
+    assert db_session.query(User).filter_by(username="inactive").one().is_active is False
+
+
+def test_create_user_with_missing_role_returns_404(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/api/users", json={
+        "username": "missing-role", "email": None, "password": "secret123",
+        "role_id": 99999,
+    })
+    assert r.status_code == 404
+
+
 def test_create_user_requires_permission(client, db_session):
     _seller(db_session)
     s = login(db_session, "seller1", PASSWORD)
@@ -253,6 +292,13 @@ def test_patch_deactivate_last_super_forbidden(client, db_session):
 def test_patch_user_not_found(client, db_session):
     _admin(client, db_session)
     r = client.patch("/api/users/999999", json={"username": "x"})
+    assert r.status_code == 404
+
+
+def test_patch_user_with_missing_role_returns_404(client, db_session):
+    _admin(client, db_session)
+    seller = _seller(db_session)
+    r = client.patch(f"/api/users/{seller.id}", json={"role_id": 99999})
     assert r.status_code == 404
 
 

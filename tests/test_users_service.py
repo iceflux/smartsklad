@@ -76,6 +76,16 @@ def test_create_user_success_and_audit(db_session):
     assert entries[0].user_id == actor.id
 
 
+def test_create_user_preserves_inactive_status(db_session):
+    actor = _admin(db_session)
+    role = get_role_by_name(db_session, "seller")
+    user = create_user(
+        db_session, username="inactive", email=None, password="secret123",
+        role_id=role.id, actor=actor, is_active=False,
+    )
+    assert user.is_active is False
+
+
 def test_create_user_duplicate_username(db_session):
     actor = _admin(db_session)
     role = get_role_by_name(db_session, "seller")

@@ -30,6 +30,10 @@ class UserPermissionError(ValueError):
     pass
 
 
+class RoleNotFoundError(ValueError):
+    pass
+
+
 USERNAME_MAX_LEN = 64
 
 
@@ -100,7 +104,10 @@ def get_user_by_token(db: Session, token: str) -> User | None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at < datetime.now(timezone.utc):
         return None
-    return db.get(User, session.user_id)
+    user = db.get(User, session.user_id)
+    if user is None or not user.is_active:
+        return None
+    return user
 
 
 def login(db: Session, username: str, password: str, ip: str | None = None) -> AuthSession | None:
@@ -179,7 +186,7 @@ def generate_password(charset: str, length: int) -> str:
 
 
 def create_user(db: Session, *, username: str, email: str | None, password: str,
-                role_id: int, actor: User) -> User:
+                role_id: int, actor: User, is_active: bool = True) -> User:
     username = username.strip()
     if not username:
         raise ValueError("Логин не может быть пустым")
@@ -194,7 +201,7 @@ def create_user(db: Session, *, username: str, email: str | None, password: str,
         raise ValueError("Пароль должен быть не короче 8 символов")
     role = db.get(Role, role_id)
     if role is None:
-        raise ValueError("Роль не найдена")
+        raise RoleNotFoundError("Роль не найдена")
     if not actor.role.is_super and role.is_super:
         raise UserPermissionError("Только администратор может назначать супер-роль")
     user = User(
@@ -202,6 +209,7 @@ def create_user(db: Session, *, username: str, email: str | None, password: str,
         email=email,
         password_hash=hash_password(password),
         role_id=role.id,
+        is_active=is_active,
     )
     db.add(user)
     db.commit()
@@ -257,7 +265,7 @@ def update_user(db: Session, user: User, *, actor: User, username: str | None = 
     if role_id is not None and role_id != user.role_id:
         new_role = db.get(Role, role_id)
         if new_role is None:
-            raise ValueError("Роль не найдена")
+            raise RoleNotFoundError("Роль не найдена")
         if not actor.role.is_super and new_role.is_super:
             raise UserPermissionError("Только администратор может назначать супер-роль")
         changed.append(("Роль", user.role_name, new_role.name))

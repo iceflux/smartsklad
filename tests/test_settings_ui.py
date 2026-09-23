@@ -2,7 +2,7 @@ from urllib.parse import unquote
 
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
-from app.modules.settings.service import set_setting
+from app.modules.settings.service import STOCK_TRACK_DEFAULT_KEY, get_setting, set_setting
 
 PASSWORD = "password123"
 
@@ -98,6 +98,19 @@ def test_settings_page_rejects_bad_length(client, db_session):
     r2 = client.get("/settings")
     assert 'value="3"' not in r2.text
     assert 'value="12"' in r2.text
+
+
+def test_settings_page_rejects_invalid_values_without_saving_stock_tracking(client, db_session):
+    _admin(client, db_session)
+    before = get_setting(db_session, STOCK_TRACK_DEFAULT_KEY)
+    r = client.post("/settings", data={
+        "track_rest_default": "off", "user_password_charset": "ABC123",
+        "user_password_length": "3",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert "Ошибка" in unquote(r.headers["location"])
+    db_session.expire_all()
+    assert get_setting(db_session, STOCK_TRACK_DEFAULT_KEY) == before
 
 
 def test_settings_page_rejects_nonnumeric_length(client, db_session):

@@ -5,6 +5,7 @@
         <h1 class="text-2xl font-bold">Пользователи</h1>
         <a href="/users/new" class="bg-blue-600 text-white px-3 py-1">Создать пользователя</a>
     </div>
+    {% if msg %}<p class="text-green-600 mb-2">{{ msg }}</p>{% endif %}
     <table class="w-full border-collapse">
         <thead>
             <tr class="border-b text-left">
@@ -32,6 +33,9 @@
                         {% endif %}
                     </form>
                     <a href="/users/{{ u.id }}/edit" class="text-blue-600">Редактировать</a>
+                    {% if is_super %}
+                        <button type="button" class="border px-2 py-1 ml-2" onclick="adminReset({{ u.id }})">Сбросить пароль</button>
+                    {% endif %}
                 </td>
             </tr>
             {% endfor %}
@@ -50,6 +54,15 @@
                 else { res.json().then(function (d) { alert(d.detail || 'Ошибка'); }); }
             });
         });
+
+        function adminReset(userId) {
+            fetch('/api/auth/users/' + userId + '/admin-reset', {method: 'POST'}).then(function (res) {
+                return res.json().then(function (d) {
+                    if (res.ok) { alert('Временный пароль: ' + d.temporary_password); }
+                    else { alert(d.detail || 'Ошибка'); }
+                });
+            });
+        }
     </script>
 </main>
 {% endblock %}

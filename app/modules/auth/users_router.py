@@ -7,6 +7,7 @@ from app.modules.auth.dependencies import require_permissions
 from app.modules.auth.models import Role, User
 from app.modules.auth.permissions import Permission
 from app.modules.auth.service import (
+    RoleNotFoundError,
     UserConflictError,
     UserPermissionError,
     create_user,
@@ -34,6 +35,7 @@ class UserCreateIn(BaseModel):
     email: str | None = None
     password: str
     role_id: int
+    is_active: bool = True
 
 
 class UserUpdateIn(BaseModel):
@@ -78,11 +80,14 @@ def api_create_user(payload: UserCreateIn, db=Depends(get_db),
                     user=Depends(require_permissions(Permission.users_manage))):
     try:
         u = create_user(db, username=payload.username, email=payload.email,
-                        password=payload.password, role_id=payload.role_id, actor=user)
+                        password=payload.password, role_id=payload.role_id, actor=user,
+                        is_active=payload.is_active)
     except UserPermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except UserConflictError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except RoleNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return UserOut(id=u.id, username=u.username, email=u.email, is_active=u.is_active,
@@ -102,6 +107,8 @@ def api_update_user(user_id: int, payload: UserUpdateIn, db=Depends(get_db),
         raise HTTPException(status_code=403, detail=str(e))
     except UserConflictError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except RoleNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return UserOut(id=u.id, username=u.username, email=u.email, is_active=u.is_active,

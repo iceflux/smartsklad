@@ -62,7 +62,7 @@
             var url = userId ? '/api/users/' + userId : '/api/users';
             var method = userId ? 'PATCH' : 'POST';
             var res = await fetch(url, {method: method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(serializeForm(f))});
-            if (res.ok) { window.location.href = '/users'; }
+            if (res.ok) { window.location.href = '/users?msg=Пользователь сохранён'; }
             else {
                 var d = await res.json().catch(function () { return {}; });
                 showError(d.detail || 'Ошибка');
