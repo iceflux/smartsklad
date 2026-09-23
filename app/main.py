@@ -341,7 +341,11 @@ def create_app() -> FastAPI:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.users_manage)
         charset = get_setting(db, USER_PASSWORD_CHARSET_KEY) or DEFAULT_PASSWORD_CHARSET
-        length = int(get_setting(db, USER_PASSWORD_LENGTH_KEY) or DEFAULT_PASSWORD_LENGTH)
+        length_raw = get_setting(db, USER_PASSWORD_LENGTH_KEY) or DEFAULT_PASSWORD_LENGTH
+        try:
+            length = int(length_raw)
+        except ValueError:
+            length = DEFAULT_PASSWORD_LENGTH
         roles = [{"id": r.id, "name": r.name} for r in db.query(Role).order_by(Role.id).all()]
         return templates.TemplateResponse(request, "user_form.html", {
             "title": "Создание пользователя", "user": user, "user_": None, "is_new": True,
