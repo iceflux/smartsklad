@@ -18,7 +18,7 @@
 
 - `tests/` на **pytest** + `httpx` (`TestClient`).
 - БД в тестах — **SQLite in-memory** (`StaticPool`), таблицы создаются из `Base.metadata` в `tests/conftest.py` — `pytest` запускается одной командой, Docker не нужен.
-- Сейчас: 170 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI).
+- Сейчас: 195 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI, printing service/API, notifications service/API/UI).
 
 ## Аутентификация и роли (`app/modules/auth/`)
 
@@ -83,10 +83,23 @@
 
 - `base.html`: ссылки Товары/Категории/Роли/Пользователи/Журнал аудита, видимость по флагам прав из `page_context(user)` (в `auth/dependencies.py`), передаются через контекст каждого page-роута.
 
+## Печать документов (`app/modules/printing/`)
+
+- `service.py` (HTTP-agnostic): `build_order_context(order, db)` — данные заказа из снимков `OrderItem` + имя клиента (пусто, если клиент мягко удалён); `render_order_html(order, db)` → HTML-строка; `render_order_pdf(order, db)` → bytes PDF.
+- HTML — Jinja2 `Environment` (свой `JINJA`, `FileSystemLoader` на `app/templates`, `autoescape=True`) + фиксированный шаблон `documents/order_print.html` (номер, клиент, дата, скидка, итог, таблица позиций).
+- PDF — ReportLab `SimpleDocTemplate` (A4, `platypus` Table); кириллица через регистрацию TTF (`_register_cyrillic_font`): Arial из `C:/Windows/Fonts`, fallback — DejaVuSans/Vera из пакета reportlab, без найденного шрифта — Helvetica.
+- Page-роуты в `app/main.py`: `GET /orders/{id}/print` — HTML-предпросмотр (orders_view; кнопки «Печать»/«Скачать PDF»/«На email»/«В Telegram», `@media print`, `can_send_notifications`); `GET /orders/{id}/pdf` — скачивание PDF (`Content-Disposition: attachment; filename="order-{number}.pdf"`, orders_view).
+
 ## Уведомления (`app/modules/notifications/`)
 
-- `email.py`: `send_email(to, subject, body)` на stdlib `smtplib` — без SMTP-зависимости, отправляет через `SMTP_HOST`; при пустом хосте молча пропускает (дизайн «письма не обязательны»).
-- Используется модулем auth для отправки ссылки восстановления пароля.
+- `email.py`: `send_email(to, subject, body)` на stdlib `smtplib` — без SMTP-зависимости, отправляет через `SMTP_HOST`; при пустом хосте молча пропускает (дизайн «письма не обязательны»). Используется модулем auth (восстановление пароля) и orders (отправка заказа).
+- `service.py`: `message_text(order, db)` — краткое описание заказа; `send_document(db, order, channel, user)` — канал `email`/`telegram`, пишет запись в `notification_log` (status `sent`/`failed` + `error`), сетевые/HTTP-ошибки ловит и логирует, служебные `ValueError` (email не задан, telegram не настроен) пробрасывает; аудит `notification.send`. recipient: email — `customer.email`, telegram — настройка `telegram_chat_id`.
+- `telegram.py`: `send_telegram(text, db)` — httpx POST на `https://api.telegram.org/bot{token}/sendMessage` (timeout 10); token/chat_id из настроек `telegram_bot_token`/`telegram_chat_id`, при отсутствии — `ValueError("telegram not configured")`.
+- `models.py`: `NotificationLog` — таблица `notification_log` (channel, recipient, subject, text_body, document_type/document_id FK→orders, status, error, user_id FK→users, created_at).
+- Права: `notifications.send`, `notifications.view` (enum `Permission`) — у admin+manager; seller/warehouseman их не имеют. `page_context`: `can_send_notifications`, `can_view_notifications`.
+- API: `POST /api/orders/{id}/send` (body `{channel}`; notifications.send; 404 — заказ, 422 — канал вне email/telegram или не сконфигурирован получатель), `GET /api/notifications` (notifications.view; фильтры channel/status/date_from/date_to, пагинация page/page_size).
+- Page: `POST /orders/{id}/send` (кнопки на печатной форме → 303 redirect к `?msg=`), `GET /notifications` — журнал уведомлений (notifications.view); нав-ссылка «Уведомления» по `can_view_notifications`.
+- Настройки (модуль settings): ключи `telegram_bot_token`/`telegram_chat_id`, сидятся `ensure_default_settings`; на `/settings` токен маскируется (`первые3+****+последние3`), пустое поле при сохранении токен не перезаписывает.
 
 ## Зависимости и окружение
 
