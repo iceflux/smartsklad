@@ -18,7 +18,7 @@
 
 - `tests/` на **pytest** + `httpx` (`TestClient`).
 - БД в тестах — **SQLite in-memory** (`StaticPool`), таблицы создаются из `Base.metadata` в `tests/conftest.py` — `pytest` запускается одной командой, Docker не нужен.
-- Сейчас: 195 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI, printing service/API, notifications service/API/UI).
+- Сейчас: 207 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI, printing service/API, notifications service/API/UI + PDF-вложение).
 
 ## Аутентификация и роли (`app/modules/auth/`)
 
@@ -92,9 +92,9 @@
 
 ## Уведомления (`app/modules/notifications/`)
 
-- `email.py`: `send_email(to, subject, body)` на stdlib `smtplib` — без SMTP-зависимости, отправляет через `SMTP_HOST`; при пустом хосте молча пропускает (дизайн «письма не обязательны»). Используется модулем auth (восстановление пароля) и orders (отправка заказа).
-- `service.py`: `message_text(order, db)` — краткое описание заказа; `send_document(db, order, channel, user)` — канал `email`/`telegram`, пишет запись в `notification_log` (status `sent`/`failed` + `error`), сетевые/HTTP-ошибки ловит и логирует, служебные `ValueError` (email не задан, telegram не настроен) пробрасывает; аудит `notification.send`. recipient: email — `customer.email`, telegram — настройка `telegram_chat_id`.
-- `telegram.py`: `send_telegram(text, db)` — httpx POST на `https://api.telegram.org/bot{token}/sendMessage` (timeout 10); token/chat_id из настроек `telegram_bot_token`/`telegram_chat_id`, при отсутствии — `ValueError("telegram not configured")`.
+- `email.py`: `send_email(to, subject, body, *, attachment: bytes | None = None, filename: str = "document.pdf")` на stdlib `smtplib` — без SMTP-зависимости, отправляет через `SMTP_HOST`; при пустом хосте молча пропускает (дизайн «письма не обязательны»); `attachment` — PDF-файл в MIME-вложении (application/pdf). Используется модулем auth (восстановление пароля) и orders (отправка заказа).
+- `service.py`: `message_text(order, db)` — краткое описание заказа; `send_document(db, order, channel, user)` — канал `email`/`telegram`, генерирует PDF `render_order_pdf(order, db)` и шлёт его вложением обоим каналам (имя `order-{number}.pdf`, включается всегда); пишет запись в `notification_log` (status `sent`/`failed` + `error`), сетевые/HTTP-ошибки ловит и логирует, служебные `ValueError` (email не задан, telegram не настроен) пробрасывает; аудит `notification.send`. recipient: email — `customer.email`, telegram — настройка `telegram_chat_id`.
+- `telegram.py`: `send_telegram(text, db)` — httpx POST на `https://api.telegram.org/bot{token}/sendMessage` (timeout 10); token/chat_id из настроек `telegram_bot_token`/`telegram_chat_id`, при отсутствии — `ValueError("telegram not configured")`. `send_telegram_document(text, pdf, db, *, token=None, chat_id=None, filename="document.pdf")` — POST на `sendDocument`, текст заказа идёт caption документа.
 - `models.py`: `NotificationLog` — таблица `notification_log` (channel, recipient, subject, text_body, document_type/document_id FK→orders, status, error, user_id FK→users, created_at).
 - Права: `notifications.send`, `notifications.view` (enum `Permission`) — у admin+manager; seller/warehouseman их не имеют. `page_context`: `can_send_notifications`, `can_view_notifications`.
 - API: `POST /api/orders/{id}/send` (body `{channel}`; notifications.send; 404 — заказ, 422 — канал вне email/telegram или не сконфигурирован получатель), `GET /api/notifications` (notifications.view; фильтры channel/status/date_from/date_to, пагинация page/page_size).

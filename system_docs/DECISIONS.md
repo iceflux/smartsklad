@@ -33,3 +33,4 @@
 - 2026-09-23: настройки Telegram (`telegram_bot_token`/`telegram_chat_id`) в таблице settings с маскировкой токена в UI — секрет не показывается целиком.
 - 2026-09-23: права `notifications.send`/`notifications.view` у admin+manager (seller/warehouseman нет) — уведомления и журнал — зона менеджеров.
 - 2026-09-23: email уведомлений отправляется на `customer.email` — единственный известный адрес клиента.
+- 2026-09-25: PDF-вложение при отправке заказа включается всегда, оба канала (email и telegram), настройка не предусмотрена; текст в telegram идёт как caption документа.
