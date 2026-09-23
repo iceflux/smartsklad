@@ -24,7 +24,7 @@ from app.modules.auth.permissions import Permission
 from app.modules.auth.roles_router import PERMISSION_LABELS
 from app.modules.auth.roles_router import router as roles_router
 from app.modules.auth.router import router as auth_router
-from app.modules.auth.service import create_admin_if_empty, logout
+from app.modules.auth.service import create_admin_if_empty, generate_password, logout
 from app.modules.auth.users_router import router as users_router
 import app.modules.inventory.models  # noqa: F401
 import app.modules.customers.models  # noqa: F401
@@ -334,6 +334,38 @@ def create_app() -> FastAPI:
             request, "users.html",
             {"title": "Пользователи", "user": user, "users": users_view, "roles": roles, "current_user": user, **_page_context(user)},
         )
+
+    @app.get("/users/new")
+    def users_new_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.users_manage)
+        charset = get_setting(db, USER_PASSWORD_CHARSET_KEY) or DEFAULT_PASSWORD_CHARSET
+        length = int(get_setting(db, USER_PASSWORD_LENGTH_KEY) or DEFAULT_PASSWORD_LENGTH)
+        roles = [{"id": r.id, "name": r.name} for r in db.query(Role).order_by(Role.id).all()]
+        return templates.TemplateResponse(request, "user_form.html", {
+            "title": "Создание пользователя", "user": user, "user_": None, "is_new": True,
+            "roles": roles, "generated_password": generate_password(charset, length),
+            "msg": request.query_params.get("msg"), "current_user": user, **_page_context(user),
+        })
+
+    @app.get("/users/{user_id}/edit")
+    def users_edit_page(user_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.users_manage)
+        target = db.get(User, user_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+        roles = [{"id": r.id, "name": r.name} for r in db.query(Role).order_by(Role.id).all()]
+        return templates.TemplateResponse(request, "user_form.html", {
+            "title": "Редактирование пользователя", "user": user, "user_": target, "is_new": False,
+            "roles": roles, "generated_password": None, "msg": request.query_params.get("msg"),
+            "current_user": user,
+            "can_manage_role": user.role.is_super or not (target.role and target.role.is_super),
+            "can_toggle_active": user.role.is_super or not (target.role and target.role.is_super),
+            **_page_context(user),
+        })
 
     @app.get("/products")
     def products_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):

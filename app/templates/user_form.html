@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="max-w-2xl mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4">{% if is_new %}Создание пользователя{% else %}Редактирование пользователя {{ user_.username }}{% endif %}</h1>
+    {% if msg %}<p class="text-green-600 mb-2">{{ msg }}</p>{% endif %}
+    <form id="user-form" class="space-y-4">
+        <div>
+            <label for="username" class="block mb-1">Логин</label>
+            <input id="username" name="username" required maxlength="64" value="{{ user_.username if user_ else '' }}" class="w-full border p-2">
+        </div>
+        <div>
+            <label for="email" class="block mb-1">Email</label>
+            <input id="email" name="email" type="email" value="{{ user_.email if user_ and user_.email else '' }}" class="w-full border p-2">
+        </div>
+        <div>
+            <label for="role_id" class="block mb-1">Роль</label>
+            <select id="role_id" name="role_id" {% if not is_new and not can_manage_role %}disabled{% endif %} class="w-full border p-2">
+                {% for r in roles %}<option value="{{ r.id }}" {% if user_ and r.id == user_.role_id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+            </select>
+            {% if not is_new and not can_manage_role %}<p class="text-sm text-gray-500">Изменение роли супер-пользователя доступно только администратору</p>{% endif %}
+        </div>
+        <div>
+            <label for="password" class="block mb-1">Пароль</label>
+            <input id="password" name="password" type="password" {% if not is_new %}placeholder="Оставьте пустым, чтобы не менять"{% endif %} value="{{ generated_password if is_new else '' }}" class="w-full border p-2">
+            <p class="text-sm text-gray-500">Не короче 8 символов. {% if is_new %}Сгенерирован автоматически — можно заменить.{% endif %}</p>
+        </div>
+        <div>
+            <label for="is_active" class="block mb-1">Активен</label>
+            <input id="is_active" name="is_active" type="checkbox" {% if is_new or not user_ or user_.is_active %}checked{% endif %} {% if not is_new and not can_toggle_active %}disabled{% endif %}>
+            <span class="text-sm text-gray-500 ml-1">{% if not user_ %}Пользователь сможет войти сразу после создания{% endif %}</span>
+        </div>
+        <p id="error" class="text-red-600 hidden"></p>
+        <button class="bg-blue-600 text-white px-4 py-2">Сохранить</button>
+        <a href="/users" class="ml-2 border px-4 py-2">Отмена</a>
+        {% if not is_new and current_user.role.is_super %}
+            <button type="button" class="ml-2 border px-4 py-2" onclick="adminReset()">Сбросить пароль</button>
+        {% endif %}
+    </form>
+    <script>
+        var userId = {% if user_ %}{{ user_.id }}{% else %}null{% endif %};
+
+        function showError(text) {
+            var err = document.getElementById('error');
+            err.textContent = text;
+            err.classList.remove('hidden');
+        }
+
+        function serializeForm(f) {
+            var body = {
+                username: f.username.value,
+                email: f.email.value || null,
+            };
+            if (!f.role_id.disabled) { body.role_id = parseInt(f.role_id.value); }
+            if (!f.is_active.disabled) { body.is_active = f.is_active.checked; }
+            if (f.password.value) { body.password = f.password.value; }
+            return body;
+        }
+
+        document.getElementById('user-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            var f = e.target;
+            var url = userId ? '/api/users/' + userId : '/api/users';
+            var method = userId ? 'PATCH' : 'POST';
+            var res = await fetch(url, {method: method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(serializeForm(f))});
+            if (res.ok) { window.location.href = '/users'; }
+            else {
+                var d = await res.json().catch(function () { return {}; });
+                showError(d.detail || 'Ошибка');
+            }
+        });
+
+        function adminReset() {
+            fetch('/api/auth/users/' + userId + '/admin-reset', {method: 'POST'}).then(function (res) {
+                return res.json().then(function (d) {
+                    if (res.ok) { alert('Временный пароль: ' + d.temporary_password); }
+                    else { showError(d.detail || 'Ошибка'); }
+                });
+            });
+        }
+    </script>
+</main>
+{% endblock %}
