@@ -90,7 +90,7 @@ def api_create_user(payload: UserCreateIn, db=Depends(get_db),
 
 
 @router.patch("/users/{user_id}", response_model=UserOut)
-def api_update_user(user_id: int, payload: UserUpdateIn, request: Request, db=Depends(get_db),
+def api_update_user(user_id: int, payload: UserUpdateIn, db=Depends(get_db),
                     user=Depends(require_permissions(Permission.users_manage))):
     target = db.get(User, user_id)
     if target is None:
