@@ -14,8 +14,9 @@
                 <button class="bg-blue-600 text-white px-3 py-1 ml-1">Сменить статус</button>
             </form>
             {% endif %}
+            <a href="/orders/{{ order.id }}/print" class="border px-3 py-1 ml-1">Печать</a>
             {% if can_create %}
-            <form method="post" action="/orders/{{ order.id }}/copy" class="inline">
+                <form method="post" action="/orders/{{ order.id }}/copy" class="inline">
                 <button class="border px-3 py-1 ml-1">Копировать</button>
             </form>
             {% endif %}
