@@ -22,6 +22,17 @@ DEFAULT_PERMISSIONS = {
 }
 
 
+class UserConflictError(ValueError):
+    pass
+
+
+class UserPermissionError(ValueError):
+    pass
+
+
+USERNAME_MAX_LEN = 64
+
+
 def ensure_default_roles(db: Session) -> dict[str, Role]:
     roles = {}
     for name, perms in DEFAULT_PERMISSIONS.items():
@@ -161,3 +172,103 @@ def admin_reset_password(db: Session, admin: User, target: User) -> str:
     db.commit()
     log_action(db, action="admin_password_reset", entity_type="user", entity_id=target.id, user_id=admin.id)
     return temp
+
+
+def generate_password(charset: str, length: int) -> str:
+    return "".join(secrets.choice(charset) for _ in range(length))
+
+
+def create_user(db: Session, *, username: str, email: str | None, password: str,
+                role_id: int, actor: User) -> User:
+    username = username.strip()
+    if not username:
+        raise ValueError("Логин не может быть пустым")
+    if len(username) > USERNAME_MAX_LEN:
+        raise ValueError("Логин не длиннее 64 символов")
+    if db.query(User).filter(User.username == username).first():
+        raise UserConflictError("Логин уже занят")
+    email = (email or "").strip() or None
+    if email is not None and db.query(User).filter(User.email == email).first():
+        raise UserConflictError("Email уже занят")
+    if len(password) < 8:
+        raise ValueError("Пароль должен быть не короче 8 символов")
+    role = db.get(Role, role_id)
+    if role is None:
+        raise ValueError("Роль не найдена")
+    if not actor.role.is_super and role.is_super:
+        raise UserPermissionError("Только администратор может назначать супер-роль")
+    user = User(
+        username=username,
+        email=email,
+        password_hash=hash_password(password),
+        role_id=role.id,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    log_action(db, action="user.create", entity_type="user", entity_id=user.id,
+               new_value=user.username, user_id=actor.id)
+    return user
+
+
+def update_user(db: Session, user: User, *, actor: User, username: str | None = None,
+                email: str | None = None, password: str | None = None,
+                role_id: int | None = None, is_active: bool | None = None) -> User:
+    if actor.id == user.id and role_id is not None and role_id != user.role_id and not actor.role.is_super:
+        raise UserPermissionError("Нельзя менять собственную роль")
+    if actor.id == user.id and is_active is False:
+        raise UserPermissionError("Нельзя деактивировать собственную учётную запись")
+    if not actor.role.is_super and user.role and user.role.is_super and (role_id is not None or username is not None or email is not None or is_active is not None):
+        raise UserPermissionError("Только администратор может изменять супер-пользователя")
+    if is_active is False and user.role and user.role.is_super and user.is_active:
+        active_supers = (
+            db.query(User).join(Role, User.role_id == Role.id)
+            .filter(User.is_active.is_(True), Role.is_super.is_(True)).count()
+        )
+        if active_supers <= 1:
+            raise UserPermissionError("Нельзя деактивировать последнего администратора")
+
+    changed = []
+    if username is not None and username.strip() != user.username:
+        new_username = username.strip()
+        if not new_username:
+            raise ValueError("Логин не может быть пустым")
+        if len(new_username) > USERNAME_MAX_LEN:
+            raise ValueError("Логин не длиннее 64 символов")
+        if db.query(User).filter(User.username == new_username, User.id != user.id).first():
+            raise UserConflictError("Логин уже занят")
+        changed.append(("Логин", user.username, new_username))
+        user.username = new_username
+    if email is not None:
+        new_email = email.strip() or None
+        if new_email != user.email:
+            if new_email is not None and db.query(User).filter(User.email == new_email, User.id != user.id).first():
+                raise UserConflictError("Email уже занят")
+            changed.append(("Email", user.email, new_email))
+            user.email = new_email
+    if password is not None:
+        if len(password) < 8:
+            raise ValueError("Пароль должен быть не короче 8 символов")
+        changed.append(("Пароль", "***", "***"))
+        user.password_hash = hash_password(password)
+        user.reset_token = None
+        user.reset_token_expires_at = None
+    if role_id is not None and role_id != user.role_id:
+        new_role = db.get(Role, role_id)
+        if new_role is None:
+            raise ValueError("Роль не найдена")
+        if not actor.role.is_super and new_role.is_super:
+            raise UserPermissionError("Только администратор может назначать супер-роль")
+        changed.append(("Роль", user.role_name, new_role.name))
+        user.role_id = new_role.id
+    if is_active is not None and is_active != user.is_active:
+        changed.append(("Активен", "да" if user.is_active else "нет", "да" if is_active else "нет"))
+        user.is_active = is_active
+
+    db.commit()
+    db.refresh(user)
+    for label, old, new in changed:
+        action = "user.role.change" if label == "Роль" else ("user.status_change" if label == "Активен" else "user.update")
+        log_action(db, action=action, entity_type="user", entity_id=user.id,
+                   old_value=old, new_value=new, user_id=actor.id)
+    return user
