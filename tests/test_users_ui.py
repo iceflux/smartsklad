@@ -170,3 +170,23 @@ def test_reset_password_button_only_for_super(client, db_session):
     _users_manager(client, db_session, "cmanager2")
     r = client.get(f"/users/{seller.id}/edit")
     assert 'onclick="adminReset()"' not in r.text
+
+
+def test_users_new_page_shows_password_as_plain_text(client, db_session):
+    import re
+    _admin(client, db_session)
+    r = client.get("/users/new")
+    tag = re.search(r'<input[^>]*name="password"[^>]*>', r.text)
+    assert tag
+    assert 'type="password"' not in tag.group(0)
+    assert re.search(r'value="[^"]+"', tag.group(0))
+
+
+def test_users_edit_page_keeps_password_masked(client, db_session):
+    import re
+    _admin(client, db_session)
+    seller = _seller(db_session)
+    r = client.get(f"/users/{seller.id}/edit")
+    tag = re.search(r'<input[^>]*name="password"[^>]*>', r.text)
+    assert tag
+    assert 'type="password"' in tag.group(0)

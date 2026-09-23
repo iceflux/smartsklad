@@ -219,6 +219,15 @@ def create_user(db: Session, *, username: str, email: str | None, password: str,
     return user
 
 
+def _active_super_ids_query(db: Session):
+    return (
+        db.query(User.id)
+        .join(Role, User.role_id == Role.id)
+        .filter(User.is_active.is_(True), Role.is_super.is_(True))
+        .with_for_update()
+    )
+
+
 def update_user(db: Session, user: User, *, actor: User, username: str | None = None,
                 email: str | None = None, password: str | None = None,
                 role_id: int | None = None, is_active: bool | None = None) -> User:
@@ -229,11 +238,7 @@ def update_user(db: Session, user: User, *, actor: User, username: str | None = 
     if not actor.role.is_super and user.role and user.role.is_super and (role_id is not None or username is not None or email is not None or password is not None or is_active is not None):
         raise UserPermissionError("Только администратор может изменять супер-пользователя")
     if is_active is False and user.role and user.role.is_super and user.is_active:
-        active_supers = (
-            db.query(User).join(Role, User.role_id == Role.id)
-            .filter(User.is_active.is_(True), Role.is_super.is_(True)).count()
-        )
-        if active_supers <= 1:
+        if len(_active_super_ids_query(db).all()) <= 1:
             raise UserPermissionError("Нельзя деактивировать последнего администратора")
 
     changed = []

@@ -21,7 +21,7 @@
         </div>
         <div>
             <label for="password" class="block mb-1">Пароль</label>
-            <input id="password" name="password" type="password" {% if not is_new %}placeholder="Оставьте пустым, чтобы не менять"{% endif %} value="{{ generated_password if is_new else '' }}" class="w-full border p-2">
+            <input id="password" name="password" {% if not is_new %}type="password"{% endif %} {% if not is_new %}placeholder="Оставьте пустым, чтобы не менять"{% endif %} value="{{ generated_password if is_new else '' }}" class="w-full border p-2">
             <p class="text-sm text-gray-500">Не короче 8 символов. {% if is_new %}Сгенерирован автоматически — можно заменить.{% endif %}</p>
         </div>
         <div>

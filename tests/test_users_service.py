@@ -1,10 +1,12 @@
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.modules.audit.models import AuditLog
 from app.modules.auth.models import Role, User
 from app.modules.auth.service import (
     UserConflictError,
     UserPermissionError,
+    _active_super_ids_query,
     create_user,
     generate_password,
     get_role_by_name,
@@ -220,3 +222,10 @@ def test_super_can_deactivate_other_super_when_second_exists(db_session):
     db_session.commit()
     updated = update_user(db_session, other, actor=actor, is_active=False)
     assert updated.is_active is False
+
+
+def test_active_super_query_locks_rows_for_update(db_session):
+    sql = str(_active_super_ids_query(db_session).statement.compile(
+        dialect=postgresql.dialect()))
+    assert "FOR UPDATE" in sql
+    assert "count(" not in sql.lower()
