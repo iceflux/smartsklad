@@ -65,6 +65,7 @@ from app.modules.orders.service import (
 )
 from app.modules.settings.router import router as settings_router
 from app.modules.notifications.router import router as notifications_router
+from app.modules.notifications.models import NotificationLog
 from app.modules.settings.service import (
     STOCK_TRACK_DEFAULT_KEY,
     ensure_default_settings,
@@ -190,9 +191,14 @@ def create_app() -> FastAPI:
         if user is None:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.settings_change)
+        token = get_setting(db, "telegram_bot_token") or ""
+        chat_id = get_setting(db, "telegram_chat_id") or ""
         return templates.TemplateResponse(request, "settings.html", {
             "title": "Настройки", "user": user,
             "stock_track_default": get_setting(db, STOCK_TRACK_DEFAULT_KEY),
+            "telegram_token_mask": (token[:3] + "****" + token[-3:]) if len(token) > 6 else ("****" if token else ""),
+            "telegram_configured": bool(token and chat_id),
+            "telegram_chat_id": chat_id,
             "msg": request.query_params.get("msg"),
             **_page_context(user),
         })
@@ -206,7 +212,52 @@ def create_app() -> FastAPI:
         value = (form.get("track_rest_default") or ["true"])[0]
         value = "true" if value == "on" else "false"
         set_setting(db, STOCK_TRACK_DEFAULT_KEY, value, user=user)
+        telegram_token = (form.get("telegram_bot_token") or [""])[0].strip()
+        if telegram_token:
+            set_setting(db, "telegram_bot_token", telegram_token, user=user)
+        telegram_chat = (form.get("telegram_chat_id") or [""])[0].strip()
+        if telegram_chat:
+            set_setting(db, "telegram_chat_id", telegram_chat, user=user)
         return RedirectResponse("/settings?msg=Сохранено", status_code=303)
+
+    @app.get("/notifications")
+    def notifications_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None,
+                           db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.notifications_view)
+        channel = request.query_params.get("channel") or None
+        status = request.query_params.get("status") or None
+        raw_page = request.query_params.get("page") or "1"
+        page = max(1, int(raw_page)) if raw_page.isdigit() else 1
+        q = db.query(NotificationLog)
+        if channel:
+            q = q.filter(NotificationLog.channel == channel)
+        if status:
+            q = q.filter(NotificationLog.status == status)
+        total = q.count()
+        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+        rows = q.order_by(NotificationLog.id.desc()).offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all()
+        usernames = {u.id: u.username for u in db.query(User).order_by(User.id).all()}
+        logs = [
+            {
+                "channel": r.channel, "recipient": r.recipient, "status": r.status,
+                "error": r.error or "", "document_id": r.document_id,
+                "username": usernames.get(r.user_id) or "—",
+                "created_at": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "",
+            }
+            for r in rows
+        ]
+        base_qs = urlencode({k: v for k, v in {
+            "channel": channel, "status": status,
+        }.items() if v not in (None, "")})
+        return templates.TemplateResponse(request, "notifications.html", {
+            "title": "Уведомления", "user": user, "logs": logs, "total": total,
+            "page": page, "pages": pages, "base_qs": base_qs,
+            "channel": channel or "", "status": status or "",
+            "msg": request.query_params.get("msg"),
+            **_page_context(user),
+        })
 
     @app.get("/roles")
     def roles_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
@@ -731,8 +782,9 @@ def create_app() -> FastAPI:
         from app.modules.printing import service as print_service
         ctx = print_service.build_order_context(order, db)
         ctx["order_id"] = order_id
-        return Response(print_service.JINJA.get_template("documents/order_print.html").render(**ctx),
-                        media_type="text/html")
+        ctx["can_send_notifications"] = user_has_permission(user, Permission.notifications_send)
+        html = print_service.JINJA.get_template("documents/order_print.html").render(**ctx)
+        return Response(html, media_type="text/html")
 
     @app.post("/orders/{order_id}/send")
     async def orders_send_page(order_id: int, request: Request,

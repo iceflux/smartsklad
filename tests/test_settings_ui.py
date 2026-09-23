@@ -1,5 +1,6 @@
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
+from app.modules.settings.service import set_setting
 
 PASSWORD = "password123"
 
@@ -55,3 +56,12 @@ def test_detail_shows_track_rest(client, db_session):
     r2 = client.get(f"/products/{pid}")
     assert r2.status_code == 200
     assert "нет" in r2.text  # «Учёт остатков: нет»
+
+
+def test_settings_shows_masked_telegram_token(client, db_session):
+    _admin(client, db_session)
+    set_setting(db_session, "telegram_bot_token", "1234567890:ABC", user=None)
+    r = client.get("/settings")
+    assert r.status_code == 200
+    assert "1234567890" not in r.text  # полный токен не светится
+    assert "****" in r.text  # маска

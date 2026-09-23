@@ -7,7 +7,11 @@ STOCK_TRACK_DEFAULT_KEY = "stock_track_default"
 
 
 def _defaults() -> dict[str, str]:
-    return {STOCK_TRACK_DEFAULT_KEY: "true"}
+    return {
+        STOCK_TRACK_DEFAULT_KEY: "true",
+        "telegram_bot_token": "",
+        "telegram_chat_id": "",
+    }
 
 
 def ensure_default_settings(db: Session) -> None:

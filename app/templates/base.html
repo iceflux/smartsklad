@@ -28,6 +28,9 @@
                 {% if can_view_audit|default(false) %}
                     <a href="/audit" class="mr-4">Журнал аудита</a>
                 {% endif %}
+                {% if can_view_notifications|default(false) %}
+                    <a href="/notifications" class="mr-4">Уведомления</a>
+                {% endif %}
                 {% if can_change_settings|default(false) %}
                     <a href="/settings" class="mr-4">Настройки</a>
                 {% endif %}

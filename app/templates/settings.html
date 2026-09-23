@@ -9,6 +9,16 @@
             <input type="checkbox" name="track_rest_default" {% if stock_track_default != "false" %}checked{% endif %}>
             <p class="text-sm text-gray-500">Определяет флаг «Учёт остатков» у новых товаров. Можно переопределить на уровне товара.</p>
         </div>
+        <div class="border-t pt-4">
+            <label class="block mb-1">Telegram-бот (токен)</label>
+            <input type="password" name="telegram_bot_token" placeholder="{% if telegram_configured %}{{ telegram_token_mask }}{% else %}не настроен{% endif %}" class="border p-2 w-full">
+            <p class="text-sm text-gray-500">Для замены введите новый токен. {% if telegram_token_mask %}Сейчас: {{ telegram_token_mask }}{% endif %}</p>
+        </div>
+        <div>
+            <label class="block mb-1">Telegram chat_id получателя</label>
+            <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}" class="border p-2 w-full">
+            <p class="text-sm text-gray-500">Куда бот отправляет уведомления о заказах (один получатель).</p>
+        </div>
         <button class="bg-blue-600 text-white px-4 py-2">Сохранить</button>
     </form>
 </main>
