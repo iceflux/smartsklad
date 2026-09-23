@@ -65,3 +65,31 @@ def test_settings_shows_masked_telegram_token(client, db_session):
     assert r.status_code == 200
     assert "1234567890" not in r.text  # полный токен не светится
     assert "****" in r.text  # маска
+
+
+def test_settings_page_shows_password_generation_fields(client, db_session):
+    _admin(client, db_session)
+    r = client.get("/settings")
+    assert r.status_code == 200
+    assert "user_password_charset" in r.text
+    assert "user_password_length" in r.text
+
+
+def test_settings_page_sets_password_charset_and_length(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "user_password_charset": "ABC!123", "user_password_length": "10",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    r2 = client.get("/settings")
+    assert "ABC!123" in r2.text
+    assert "10" in r2.text or 'value="10"' in r2.text
+
+
+def test_settings_page_rejects_bad_length(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "user_password_charset": "ABC123", "user_password_length": "3",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert "Ошибка" in r.headers["location"] or "msg" in r.headers["location"]

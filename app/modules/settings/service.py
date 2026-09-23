@@ -4,6 +4,10 @@ from app.modules.audit.service import log_action
 from app.modules.settings.models import Setting
 
 STOCK_TRACK_DEFAULT_KEY = "stock_track_default"
+USER_PASSWORD_CHARSET_KEY = "user_password_charset"
+USER_PASSWORD_LENGTH_KEY = "user_password_length"
+DEFAULT_PASSWORD_CHARSET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789-_!@#$%^&*"
+DEFAULT_PASSWORD_LENGTH = 12
 
 
 def _defaults() -> dict[str, str]:
@@ -11,6 +15,8 @@ def _defaults() -> dict[str, str]:
         STOCK_TRACK_DEFAULT_KEY: "true",
         "telegram_bot_token": "",
         "telegram_chat_id": "",
+        USER_PASSWORD_CHARSET_KEY: DEFAULT_PASSWORD_CHARSET,
+        USER_PASSWORD_LENGTH_KEY: str(DEFAULT_PASSWORD_LENGTH),
     }
 
 

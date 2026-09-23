@@ -67,7 +67,11 @@ from app.modules.settings.router import router as settings_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.notifications.models import NotificationLog
 from app.modules.settings.service import (
+    DEFAULT_PASSWORD_CHARSET,
+    DEFAULT_PASSWORD_LENGTH,
     STOCK_TRACK_DEFAULT_KEY,
+    USER_PASSWORD_CHARSET_KEY,
+    USER_PASSWORD_LENGTH_KEY,
     ensure_default_settings,
     get_setting,
     set_setting,
@@ -200,6 +204,8 @@ def create_app() -> FastAPI:
             "telegram_configured": bool(token and chat_id),
             "telegram_chat_id": chat_id,
             "msg": request.query_params.get("msg"),
+            "user_password_charset": get_setting(db, USER_PASSWORD_CHARSET_KEY) or DEFAULT_PASSWORD_CHARSET,
+            "user_password_length": get_setting(db, USER_PASSWORD_LENGTH_KEY) or DEFAULT_PASSWORD_LENGTH,
             **_page_context(user),
         })
 
@@ -218,7 +224,15 @@ def create_app() -> FastAPI:
         telegram_chat = (form.get("telegram_chat_id") or [""])[0].strip()
         if telegram_chat:
             set_setting(db, "telegram_chat_id", telegram_chat, user=user)
-        return RedirectResponse("/settings?msg=Сохранено", status_code=303)
+        charset = (form.get("user_password_charset") or [""])[0].strip()
+        length_raw = (form.get("user_password_length") or [""])[0].strip()
+        if charset and length_raw.isdigit():
+            length = int(length_raw)
+            if 8 <= length <= 64:
+                set_setting(db, USER_PASSWORD_CHARSET_KEY, charset, user=user)
+                set_setting(db, USER_PASSWORD_LENGTH_KEY, str(length), user=user)
+                return RedirectResponse("/settings?msg=Сохранено", status_code=303)
+        return RedirectResponse("/settings?msg=Ошибка: символы непустые, длина 8-64", status_code=303)
 
     @app.get("/notifications")
     def notifications_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None,

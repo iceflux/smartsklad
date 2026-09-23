@@ -19,6 +19,15 @@
             <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}" class="border p-2 w-full">
             <p class="text-sm text-gray-500">Куда бот отправляет уведомления о заказах (один получатель).</p>
         </div>
+        <div class="border-t pt-4">
+            <label class="block mb-1">Символы для генерации пароля</label>
+            <input type="text" name="user_password_charset" value="{{ user_password_charset }}" class="border p-2 w-full">
+            <p class="text-sm text-gray-500">Из этих символов генерируется пароль нового пользователя в форме «Создать пользователя».</p>
+        </div>
+        <div>
+            <label class="block mb-1">Длина пароля</label>
+            <input type="number" name="user_password_length" min="8" max="64" value="{{ user_password_length }}" class="border p-2 w-full">
+        </div>
         <button class="bg-blue-600 text-white px-4 py-2">Сохранить</button>
     </form>
 </main>
