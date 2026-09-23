@@ -226,8 +226,11 @@ def create_app() -> FastAPI:
             set_setting(db, "telegram_chat_id", telegram_chat, user=user)
         charset = (form.get("user_password_charset") or [""])[0].strip()
         length_raw = (form.get("user_password_length") or [""])[0].strip()
-        if charset and length_raw.isdigit():
-            length = int(length_raw)
+        if charset and length_raw:
+            try:
+                length = int(length_raw)
+            except ValueError:
+                length = 0
             if 8 <= length <= 64:
                 set_setting(db, USER_PASSWORD_CHARSET_KEY, charset, user=user)
                 set_setting(db, USER_PASSWORD_LENGTH_KEY, str(length), user=user)

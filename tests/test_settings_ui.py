@@ -1,3 +1,5 @@
+from urllib.parse import unquote
+
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.settings.service import set_setting
@@ -82,8 +84,8 @@ def test_settings_page_sets_password_charset_and_length(client, db_session):
     }, follow_redirects=False)
     assert r.status_code == 303
     r2 = client.get("/settings")
-    assert "ABC!123" in r2.text
-    assert "10" in r2.text or 'value="10"' in r2.text
+    assert 'value="ABC!123"' in r2.text
+    assert 'value="10"' in r2.text
 
 
 def test_settings_page_rejects_bad_length(client, db_session):
@@ -92,4 +94,36 @@ def test_settings_page_rejects_bad_length(client, db_session):
         "user_password_charset": "ABC123", "user_password_length": "3",
     }, follow_redirects=False)
     assert r.status_code == 303
-    assert "Ошибка" in r.headers["location"] or "msg" in r.headers["location"]
+    assert "Ошибка" in unquote(r.headers["location"])
+    r2 = client.get("/settings")
+    assert 'value="3"' not in r2.text
+    assert 'value="12"' in r2.text
+
+
+def test_settings_page_rejects_nonnumeric_length(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "user_password_charset": "ABC123", "user_password_length": "²",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert "Ошибка" in unquote(r.headers["location"])
+
+
+def test_settings_page_rejects_empty_charset(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "user_password_charset": "   ", "user_password_length": "12",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert "Ошибка" in unquote(r.headers["location"])
+
+
+def test_settings_page_accepts_length_boundaries(client, db_session):
+    _admin(client, db_session)
+    for length in ("8", "64"):
+        r = client.post("/settings", data={
+            "user_password_charset": "ABC123", "user_password_length": length,
+        }, follow_redirects=False)
+        assert r.status_code == 303
+        assert "Сохранено" in unquote(r.headers["location"])
+        assert f'value="{length}"' in client.get("/settings").text
