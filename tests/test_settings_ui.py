@@ -36,9 +36,12 @@ def test_settings_page_admin(client, db_session):
 
 def test_settings_page_post_changes(client, db_session):
     _admin(client, db_session)
-    r = client.post("/settings", data={"track_rest_default": "false"}, follow_redirects=False)
+    r = client.post("/settings", data={
+        "track_rest_default": "false", "user_password_charset": "ABC123",
+        "user_password_length": "12", "min_stock_days": "14",
+    }, follow_redirects=False)
     assert r.status_code == 303
-    assert "?msg" in r.headers["location"]
+    assert "Сохранено" in unquote(r.headers["location"])
 
 
 def test_new_product_form_shows_checkbox(client, db_session):
@@ -81,6 +84,7 @@ def test_settings_page_sets_password_charset_and_length(client, db_session):
     _admin(client, db_session)
     r = client.post("/settings", data={
         "user_password_charset": "ABC!123", "user_password_length": "10",
+        "min_stock_days": "14",
     }, follow_redirects=False)
     assert r.status_code == 303
     r2 = client.get("/settings")
@@ -92,6 +96,7 @@ def test_settings_page_rejects_bad_length(client, db_session):
     _admin(client, db_session)
     r = client.post("/settings", data={
         "user_password_charset": "ABC123", "user_password_length": "3",
+        "min_stock_days": "14",
     }, follow_redirects=False)
     assert r.status_code == 303
     assert "Ошибка" in unquote(r.headers["location"])
@@ -105,7 +110,7 @@ def test_settings_page_rejects_invalid_values_without_saving_stock_tracking(clie
     before = get_setting(db_session, STOCK_TRACK_DEFAULT_KEY)
     r = client.post("/settings", data={
         "track_rest_default": "off", "user_password_charset": "ABC123",
-        "user_password_length": "3",
+        "user_password_length": "3", "min_stock_days": "14",
     }, follow_redirects=False)
     assert r.status_code == 303
     assert "Ошибка" in unquote(r.headers["location"])
@@ -117,6 +122,7 @@ def test_settings_page_rejects_nonnumeric_length(client, db_session):
     _admin(client, db_session)
     r = client.post("/settings", data={
         "user_password_charset": "ABC123", "user_password_length": "²",
+        "min_stock_days": "14",
     }, follow_redirects=False)
     assert r.status_code == 303
     assert "Ошибка" in unquote(r.headers["location"])
@@ -126,6 +132,7 @@ def test_settings_page_rejects_empty_charset(client, db_session):
     _admin(client, db_session)
     r = client.post("/settings", data={
         "user_password_charset": "   ", "user_password_length": "12",
+        "min_stock_days": "14",
     }, follow_redirects=False)
     assert r.status_code == 303
     assert "Ошибка" in unquote(r.headers["location"])
@@ -136,7 +143,61 @@ def test_settings_page_accepts_length_boundaries(client, db_session):
     for length in ("8", "64"):
         r = client.post("/settings", data={
             "user_password_charset": "ABC123", "user_password_length": length,
+            "min_stock_days": "14",
         }, follow_redirects=False)
         assert r.status_code == 303
         assert "Сохранено" in unquote(r.headers["location"])
         assert f'value="{length}"' in client.get("/settings").text
+
+
+def test_settings_page_shows_min_stock_days(client, db_session):
+    _admin(client, db_session)
+    r = client.get("/settings")
+    assert r.status_code == 200
+    assert 'name="min_stock_days"' in r.text
+    assert 'value="14"' in r.text
+
+
+def test_settings_page_saves_min_stock_days(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "user_password_charset": "ABC123", "user_password_length": "12",
+        "min_stock_days": "21",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    r2 = client.get("/settings")
+    assert 'value="21"' in r2.text
+
+
+def test_settings_page_rejects_bad_min_stock_days(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "user_password_charset": "ABC123", "user_password_length": "12",
+        "min_stock_days": "400",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert "Ошибка" in unquote(r.headers["location"])
+    assert 'value="14"' in client.get("/settings").text
+
+
+def test_settings_page_rejects_nonnumeric_min_stock_days(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "user_password_charset": "ABC123", "user_password_length": "12",
+        "min_stock_days": "два",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert "Ошибка" in unquote(r.headers["location"])
+    assert 'value="14"' in client.get("/settings").text
+
+
+def test_settings_page_bad_min_stock_days_does_not_save_other_fields(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "track_rest_default": "off", "user_password_charset": "ABC123",
+        "user_password_length": "12", "min_stock_days": "400",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    r2 = client.get("/settings")
+    assert '<input type="checkbox" name="track_rest_default" checked' in r2.text
+

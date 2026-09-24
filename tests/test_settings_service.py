@@ -1,5 +1,11 @@
 from app.modules.audit.models import AuditLog
-from app.modules.settings.service import get_setting, set_setting
+from app.modules.settings.service import (
+    DEFAULT_MIN_STOCK_DAYS,
+    MIN_STOCK_DAYS_KEY,
+    get_int_setting,
+    get_setting,
+    set_setting,
+)
 
 
 def test_defaults_seeded(db_session):
@@ -34,3 +40,14 @@ def test_set_setting_token_masked_in_audit(db_session):
     assert "****" in row.new_value
     # сырец остаётся в таблице настроек, маска — только в аудите
     assert get_setting(db_session, "telegram_bot_token") == "1234567890:ABCDEF"
+
+
+def test_default_min_stock_days_seeded(db_session):
+    assert get_setting(db_session, MIN_STOCK_DAYS_KEY) == "14"
+
+
+def test_get_int_setting_parses_and_falls_back(db_session):
+    set_setting(db_session, MIN_STOCK_DAYS_KEY, "21", user=None)
+    assert get_int_setting(db_session, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS) == 21
+    set_setting(db_session, MIN_STOCK_DAYS_KEY, "не число", user=None)
+    assert get_int_setting(db_session, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS) == DEFAULT_MIN_STOCK_DAYS

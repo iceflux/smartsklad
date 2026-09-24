@@ -8,6 +8,8 @@ USER_PASSWORD_CHARSET_KEY = "user_password_charset"
 USER_PASSWORD_LENGTH_KEY = "user_password_length"
 DEFAULT_PASSWORD_CHARSET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789-_!@#$%^&*"
 DEFAULT_PASSWORD_LENGTH = 12
+MIN_STOCK_DAYS_KEY = "min_stock_days"
+DEFAULT_MIN_STOCK_DAYS = 14
 
 
 def _defaults() -> dict[str, str]:
@@ -17,6 +19,7 @@ def _defaults() -> dict[str, str]:
         "telegram_chat_id": "",
         USER_PASSWORD_CHARSET_KEY: DEFAULT_PASSWORD_CHARSET,
         USER_PASSWORD_LENGTH_KEY: str(DEFAULT_PASSWORD_LENGTH),
+        MIN_STOCK_DAYS_KEY: str(DEFAULT_MIN_STOCK_DAYS),
     }
 
 
@@ -52,3 +55,11 @@ def set_setting(db: Session, key: str, value: str, *, user=None) -> None:
         value = mask_telegram_token(value)
     log_action(db, action="settings.update", entity_type="settings", entity_id=row.id,
                old_value=old, new_value=value, user_id=user.id if user else None)
+
+
+def get_int_setting(db: Session, key: str, default: int) -> int:
+    raw = get_setting(db, key)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default

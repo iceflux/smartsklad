@@ -28,6 +28,11 @@
             <label class="block mb-1">Длина пароля</label>
             <input type="number" name="user_password_length" min="8" max="64" value="{{ user_password_length }}" class="border p-2 w-full">
         </div>
+        <div>
+            <label class="block mb-1">Запас в днях</label>
+            <input type="number" name="min_stock_days" min="0" max="365" value="{{ min_stock_days }}" class="border p-2 w-full">
+            <p class="text-sm text-gray-500">Страховой запас по умолчанию для товаров без собственного минимального запаса. В днях продаж.</p>
+        </div>
         <button class="bg-blue-600 text-white px-4 py-2">Сохранить</button>
     </form>
 </main>
