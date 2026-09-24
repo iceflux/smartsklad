@@ -201,3 +201,29 @@ def test_settings_page_bad_min_stock_days_does_not_save_other_fields(client, db_
     r2 = client.get("/settings")
     assert '<input type="checkbox" name="track_rest_default" checked' in r2.text
 
+
+def test_settings_page_requires_min_stock_days(client, db_session):
+    _admin(client, db_session)
+    client.post("/settings", data={
+        "user_password_charset": "ABC123", "user_password_length": "12",
+        "min_stock_days": "21",
+    }, follow_redirects=False)
+    r = client.post("/settings", data={
+        "user_password_charset": "ABC123", "user_password_length": "12",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert "Ошибка" in unquote(r.headers["location"])
+    assert 'value="21"' in client.get("/settings").text
+
+
+def test_settings_page_accepts_min_stock_days_boundaries(client, db_session):
+    _admin(client, db_session)
+    for value in ("0", "365"):
+        r = client.post("/settings", data={
+            "user_password_charset": "ABC123", "user_password_length": "12",
+            "min_stock_days": value,
+        }, follow_redirects=False)
+        assert r.status_code == 303
+        assert "Сохранено" in unquote(r.headers["location"])
+        assert f'value="{value}"' in client.get("/settings").text
+

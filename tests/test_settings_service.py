@@ -51,3 +51,7 @@ def test_get_int_setting_parses_and_falls_back(db_session):
     assert get_int_setting(db_session, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS) == 21
     set_setting(db_session, MIN_STOCK_DAYS_KEY, "не число", user=None)
     assert get_int_setting(db_session, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS) == DEFAULT_MIN_STOCK_DAYS
+
+
+def test_get_int_setting_falls_back_when_key_absent(db_session):
+    assert get_int_setting(db_session, "no_such_setting_key", DEFAULT_MIN_STOCK_DAYS) == DEFAULT_MIN_STOCK_DAYS
