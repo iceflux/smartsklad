@@ -3,7 +3,14 @@ from datetime import date, datetime, time, timedelta
 import pytest
 
 from app.modules.customers.models import Customer
-from app.modules.dashboard.service import chart_bars, dashboard_metrics, dashboard_sales_csv, resolve_period
+from app.modules.dashboard.service import (
+    DEFAULT_PRESET,
+    PRESET_DAYS,
+    chart_bars,
+    dashboard_metrics,
+    dashboard_sales_csv,
+    resolve_period,
+)
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
 
@@ -128,13 +135,13 @@ def _product(db_session, name="Гвозди", sku="SKU-D1"):
     return p
 
 
-def _order(db_session, customer, product, *, number, day, amount, quantity=1, status="done", deleted=False, hour=12):
+def _order(db_session, customer, product, *, number, day, amount, quantity=1, status="done", deleted=False, hour=12, minute=0, second=0):
     o = Order(
         number=number, customer_id=customer.id, status=status, discount=0.0,
-        total_amount=amount, created_at=datetime.combine(day, time(hour, 0)),
+        total_amount=amount, created_at=datetime.combine(day, time(hour, minute, second)),
     )
     if deleted:
-        o.deleted_at = datetime.combine(day, time(hour, 1))
+        o.deleted_at = datetime.combine(day, time(hour, minute, second))
     db_session.add(o)
     db_session.commit()
     o.items.append(OrderItem(
@@ -188,6 +195,17 @@ def test_dashboard_metrics_inclusive_bounds(db_session):
     m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 5))
     assert m["orders_count"] == 2
     assert m["total_sum"] == 300.0
+
+
+def test_dashboard_metrics_includes_last_second_of_period(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session)
+    _order(db_session, customer, product, number="00001", day=date(2026, 3, 5), amount=100.0,
+           hour=23, minute=59, second=59)
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 5))
+    assert m["orders_count"] == 1
+    assert m["total_sum"] == 100.0
+    assert m["daily"][-1]["amount"] == 100.0
 
 
 def test_dashboard_metrics_excludes_not_done(db_session):
@@ -258,6 +276,25 @@ def test_dashboard_metrics_tops_tie_break_by_name(db_session):
     _order(db_session, alpha, product, number="00002", day=date(2026, 3, 1), amount=100.0)
     m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 1))
     assert [row["name"] for row in m["top_customers"]] == ["Альфа", "Бета"]
+
+
+def test_dashboard_metrics_tops_duplicate_names_break_tie_by_id(db_session):
+    customer = _customer(db_session)
+    first = _product(db_session, name="Гвозди", sku="SKU-DUP1")
+    second = _product(db_session, name="Гвозди", sku="SKU-DUP2")
+    day = date(2026, 3, 1)
+    _order(db_session, customer, first, number="00001", day=day, amount=100.0, quantity=4)
+    _order(db_session, customer, second, number="00002", day=day, amount=100.0, quantity=4)
+    m = dashboard_metrics(db_session, day, day)
+    assert [row["product_id"] for row in m["top_products"]] == [first.id, second.id]
+    assert [row["name"] for row in m["top_products"]] == ["Гвозди", "Гвозди"]
+
+
+def test_dashboard_metrics_empty_preset_uses_default_window(db_session):
+    start, end = resolve_period("", None, None)
+    expected_start, expected_end = resolve_period(None, None, None)
+    assert (start, end) == (expected_start, expected_end)
+    assert (end - start).days == PRESET_DAYS[DEFAULT_PRESET] - 1
 
 
 def test_dashboard_sales_csv_shape():

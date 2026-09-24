@@ -12,6 +12,7 @@ DEFAULT_PRESET = "month"
 CHART_LEFT = 50
 CHART_TOP = 20
 CHART_BOTTOM = 20
+CHART_LABEL_OFFSET = 6
 LABEL_EVERY = 7
 
 
@@ -38,10 +39,8 @@ def resolve_period(preset=None, date_from=None, date_to=None) -> tuple[date, dat
         resolved_start = end - timedelta(days=PRESET_DAYS[DEFAULT_PRESET] - 1)
         resolved_end = end
     else:
-        if preset is None:
-            days = PRESET_DAYS[DEFAULT_PRESET]
-        else:
-            days = PRESET_DAYS.get(preset, PRESET_DAYS["day"])
+        key = preset or DEFAULT_PRESET
+        days = PRESET_DAYS.get(key, PRESET_DAYS["day"])
         resolved_start = today - timedelta(days=days - 1)
         resolved_end = today
     if resolved_start > resolved_end:
@@ -50,9 +49,14 @@ def resolve_period(preset=None, date_from=None, date_to=None) -> tuple[date, dat
 
 
 def chart_bars(daily: list[dict], *, width: int = 600, height: int = 180) -> dict:
+    layout = {
+        "left": CHART_LEFT,
+        "axis_y": height - CHART_BOTTOM,
+        "label_y": height - CHART_LABEL_OFFSET,
+    }
     n = len(daily)
     if n == 0:
-        return {"width": width, "height": height, "bars": []}
+        return {"width": width, "height": height, "bars": [], **layout}
     plot_w = width - CHART_LEFT
     bar_w = max(1, plot_w // n - 1)
     step = bar_w + 1
@@ -74,7 +78,7 @@ def chart_bars(daily: list[dict], *, width: int = 600, height: int = 180) -> dic
             "date": item.get("date"),
             "label": item.get("date").strftime("%d.%m") if i % every == 0 else "",
         })
-    return {"width": total_w, "height": height, "bars": bars}
+    return {"width": total_w, "height": height, "bars": bars, **layout}
 
 
 def _sales_orders(db, date_from: date, date_to: date) -> list[Order]:
@@ -129,7 +133,7 @@ def dashboard_metrics(db, date_from: date, date_to: date, *, top_limit: int = 10
             {"product_id": pid, "name": product_names.get(pid, ""), "quantity": qty}
             for pid, qty in quantities.items()
         ),
-        key=lambda r: (-r["quantity"], r["name"]),
+        key=lambda r: (-r["quantity"], r["name"], r["product_id"]),
     )[:top_limit]
     per_customer = {}
     for order in orders:
@@ -152,7 +156,7 @@ def dashboard_metrics(db, date_from: date, date_to: date, *, top_limit: int = 10
             }
             for cid, data in per_customer.items()
         ),
-        key=lambda r: (-r["total_sum"], r["name"]),
+        key=lambda r: (-r["total_sum"], r["name"], r["customer_id"]),
     )[:top_limit]
     return {
         "date_from": date_from,

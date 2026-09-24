@@ -49,13 +49,13 @@
         <div class="bg-white border p-4 mb-6">
             <p class="text-sm text-gray-600 mb-2">Продажи по дням</p>
             <svg viewBox="0 0 {{ chart.width }} {{ chart.height }}" class="w-full" role="img" aria-label="Продажи по дням">
-                <line x1="50" y1="{{ chart.height - 20 }}" x2="{{ chart.width }}" y2="{{ chart.height - 20 }}" stroke="#d1d5db" />
+                <line x1="{{ chart.left }}" y1="{{ chart.axis_y }}" x2="{{ chart.width }}" y2="{{ chart.axis_y }}" stroke="#d1d5db" />
                 {% for bar in chart.bars %}
                 <rect x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.w }}" height="{{ bar.h }}" fill="#2563eb">
                     <title>{{ bar.date.isoformat() }}: {{ '%.2f'|format(bar.amount) }}</title>
                 </rect>
                 {% if bar.label %}
-                <text x="{{ bar.x }}" y="{{ chart.height - 6 }}" font-size="9" fill="#6b7280">{{ bar.label }}</text>
+                <text x="{{ bar.x }}" y="{{ chart.label_y }}" font-size="9" fill="#6b7280">{{ bar.label }}</text>
                 {% endif %}
                 {% endfor %}
             </svg>

@@ -18,7 +18,13 @@ from app.modules.audit.models import AuditLog
 from app.modules.ai.router import router as ai_router
 from app.modules.ai.service import forecast_rows
 from app.modules.dashboard.router import router as dashboard_router
-from app.modules.dashboard.service import chart_bars, dashboard_metrics, dashboard_sales_csv, resolve_period
+from app.modules.dashboard.service import (
+    DEFAULT_PRESET,
+    chart_bars,
+    dashboard_metrics,
+    dashboard_sales_csv,
+    resolve_period,
+)
 from app.modules.auth.dependencies import (
     SESSION_COOKIE, ensure_permissions, get_page_user as _page_user,
     page_context as _page_context, user_has_permission,
@@ -497,7 +503,7 @@ def create_app() -> FastAPI:
         if user is None:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.analytics_view)
-        preset = request.query_params.get("preset") or "month"
+        preset = request.query_params.get("preset") or DEFAULT_PRESET
         try:
             start, end = resolve_period(
                 preset,

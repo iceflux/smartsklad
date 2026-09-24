@@ -145,3 +145,27 @@ def test_dashboard_csv_for_manager(client, db_session):
     assert r.headers["content-disposition"] == 'attachment; filename="dashboard.csv"'
     text = r.text.replace("\ufeff", "", 1)
     assert text.splitlines()[0] == "date;orders;amount"
+
+
+def test_dashboard_csv_exports_resolved_period_and_rows(client, db_session):
+    _admin(client, db_session)
+    _seed(db_session, day=date(2026, 3, 3), amount=150.0, number="00001")
+    r = client.get("/dashboard/export.csv?date_from=2026-03-01&date_to=2026-03-05")
+    assert r.status_code == 200
+    lines = r.text.replace("\ufeff", "", 1).splitlines()
+    assert lines[0] == "date;orders;amount"
+    assert "2026-03-01;0;0.0" in lines
+    assert "2026-03-03;1;150.0" in lines
+    assert "2026-03-05;0;0.0" in lines
+    assert len(lines) == 6
+
+
+def test_dashboard_empty_preset_matches_default_across_layers(client, db_session):
+    _admin(client, db_session)
+    default = client.get("/api/dashboard/sales").json()
+    empty = client.get("/api/dashboard/sales?preset=").json()
+    assert empty["date_from"] == default["date_from"]
+    assert empty["date_to"] == default["date_to"]
+    page = client.get("/dashboard?preset=")
+    assert page.status_code == 200
+    assert date.fromisoformat(default["date_to"]).strftime("%d.%m.%Y") in page.text
