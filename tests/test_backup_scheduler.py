@@ -7,6 +7,12 @@ from app.modules.backup.scheduler import (
     run_due_jobs,
 )
 from app.modules.backup.service import get_backup_settings
+from app.modules.settings.service import (
+    REPORT_ENABLED_KEY,
+    REPORT_RECIPIENTS_KEY,
+    REPORT_TIME_KEY,
+    set_setting,
+)
 
 
 class Row:
@@ -86,3 +92,26 @@ def test_run_due_jobs_survives_failure(db_session, monkeypatch):
     result = run_due_jobs(db_session, now=datetime(2026, 9, 25, 3, 30))
     assert result["backup"] is None
     assert result["report"] is None
+
+
+def test_backup_failure_does_not_skip_report(db_session, tmp_path, monkeypatch):
+    import app.modules.backup.scheduler as scheduler
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    row.enabled = True
+    row.schedule_time = time(3, 0)
+    db_session.commit()
+    set_setting(db_session, REPORT_ENABLED_KEY, "true")
+    set_setting(db_session, REPORT_TIME_KEY, "02:00")
+    set_setting(db_session, REPORT_RECIPIENTS_KEY, "[]")
+
+    def broken_backup(*args, **kwargs):
+        raise RuntimeError("dump упал")
+
+    monkeypatch.setattr(scheduler, "create_backup", broken_backup)
+    report_module = type("M", (), {"send_report": staticmethod(lambda db, now=None: {"sent": 0, "skipped": 0, "failed": 0})})
+    monkeypatch.setitem(__import__("sys").modules, "app.modules.backup.report", report_module)
+    result = run_due_jobs(db_session, now=datetime(2026, 9, 25, 3, 30))
+    assert result["backup"] is None
+    assert result["report"] == {"sent": 0, "skipped": 0, "failed": 0}
+    assert "backup:" in get_backup_settings(db_session).last_error

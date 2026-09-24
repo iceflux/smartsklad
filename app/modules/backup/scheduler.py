@@ -64,6 +64,24 @@ def _release_lock(db) -> None:
         db.rollback()
 
 
+def _record_error(db, label: str, error: Exception) -> None:
+    db.rollback()
+    try:
+        bs = get_backup_settings(db)
+        bs.last_error = f"{label}: {str(error)[:480]}"
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _run_job(label: str, db, job):
+    try:
+        return job()
+    except Exception as error:
+        _record_error(db, label, error)
+        return None
+
+
 def run_due_jobs(db, now: datetime | None = None) -> dict:
     now = now or datetime.now()
     result = {"backup": None, "report": None}
@@ -72,7 +90,7 @@ def run_due_jobs(db, now: datetime | None = None) -> dict:
     try:
         bs = get_backup_settings(db)
         if due_for_backup(bs, now, bs.last_backup_at):
-            result["backup"] = create_backup(db, kind="scheduled", now=now)
+            result["backup"] = _run_job("backup", db, lambda: create_backup(db, kind="scheduled", now=now))
         if due_for_report(
             get_setting(db, REPORT_ENABLED_KEY) == "true",
             _parse_time(get_setting(db, REPORT_TIME_KEY), time(9, 0)),
@@ -80,17 +98,13 @@ def run_due_jobs(db, now: datetime | None = None) -> dict:
             bs.last_report_at,
         ):
             from app.modules.backup.report import send_report
-            result["report"] = send_report(db, now=now)
+
+            result["report"] = _run_job("report", db, lambda: send_report(db, now=now))
+        bs = get_backup_settings(db)
         bs.last_check_at = now
         db.commit()
     except Exception as error:
-        db.rollback()
-        try:
-            bs = get_backup_settings(db)
-            bs.last_error = str(error)[:512]
-            db.commit()
-        except Exception:
-            db.rollback()
+        _record_error(db, "scheduler", error)
     finally:
         _release_lock(db)
     return result
