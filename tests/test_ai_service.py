@@ -1,5 +1,7 @@
 from datetime import date, datetime, time, timedelta
 
+import pytest
+
 from app.modules.ai.service import (
     FORECAST_HORIZONS,
     LOOKBACK_DAYS,
@@ -268,3 +270,44 @@ def test_forecast_rows_product_id_filter(db_session):
     rows, total = forecast_rows(db, lookback_days=20, product_id=first.id)
     assert total == 1
     assert rows[0]["product_id"] == first.id
+
+
+def _sales_on_days(db_session, product, customer, day_offsets, quantity=2, start_number=1):
+    today = date.today()
+    for i, offset in enumerate(day_offsets):
+        _sale(db_session, product, customer, day=today - timedelta(days=offset),
+              quantity=quantity, number=f"{start_number + i:05d}")
+
+
+def test_forecast_rows_dense_series_zero_fills_gaps(db_session):
+    offsets = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14}
+    customer = _customer(db_session)
+    product = _product(db_session)
+    _sales_on_days(db_session, product, customer, sorted(offsets))
+    rows, _ = forecast_rows(db_session, lookback_days=20, min_stock_days=14)
+    row = rows[0]
+    assert row["days_with_sales"] == 14
+    assert row["avg_daily_sold"] == pytest.approx(1.4)
+    assert row["min_stock"] == 20
+    dense = [2 if (19 - i) in offsets else 0 for i in range(20)]
+    assert row["forecast_7"] == _linear_forecast(dense, 7)
+
+
+def test_forecast_rows_no_data_still_computes_min_stock(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session)
+    _daily_sales(db_session, product, customer, 5, start_number=1)
+    rows, _ = forecast_rows(db_session, lookback_days=20, min_stock_days=14)
+    row = rows[0]
+    assert row["has_data"] is False
+    assert row["min_stock"] == 7
+
+
+def test_forecast_rows_reports_rest_and_default_min_stock_days(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session, rest=1, min_stock=None)
+    _daily_sales(db_session, product, customer, 20, start_number=1)
+    rows, _ = forecast_rows(db_session, lookback_days=20, min_stock_days=None)
+    row = rows[0]
+    assert row["rest"] == 1
+    assert row["min_stock"] == 28
