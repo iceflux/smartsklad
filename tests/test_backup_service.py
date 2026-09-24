@@ -307,15 +307,22 @@ def test_parse_archive_name_rejects_foreign_files():
 
 
 def test_unique_path_avoids_overwrite(tmp_path):
-    first = unique_path(tmp_path, "smartsklad-x", ".dump")
+    stamp = datetime(2026, 9, 25, 3, 4, 5)
+    stem = "smartsklad-20260925-030405"
+    first = unique_path(tmp_path, stem, ".dump")
     first.write_text("a", encoding="utf-8")
-    second = unique_path(tmp_path, "smartsklad-x", ".dump")
+    second = unique_path(tmp_path, stem, ".dump")
     assert second != first
-    assert second.name == "smartsklad-x-1.dump"
+    assert second.name == "smartsklad-20260925-030405-1.dump"
+    assert first.read_text(encoding="utf-8") == "a"
+    assert parse_archive_name(second.name) == stamp
 
 
 def test_list_archives_ignores_foreign_files(tmp_path):
-    (tmp_path / "smartsklad-20260925-030405.dump").write_text("a", encoding="utf-8")
+    older = tmp_path / archive_name(datetime(2026, 9, 25, 3, 4, 4))
+    newer = tmp_path / archive_name(datetime(2026, 9, 25, 3, 4, 5))
+    older.write_bytes(b"old")
+    newer.write_bytes(b"new archive")
     (tmp_path / "notes.txt").write_text("b", encoding="utf-8")
     (tmp_path / "smartsklad-20260925-030405.dump.part").write_text("c", encoding="utf-8")
 
@@ -324,7 +331,17 @@ def test_list_archives_ignores_foreign_files(tmp_path):
         pg_dump_path = None
 
     archives = list_archives(Row())
-    assert [a["name"] for a in archives] == ["smartsklad-20260925-030405.dump"]
+    assert [a["name"] for a in archives] == [newer.name, older.name]
+    assert archives[0] == {
+        "name": newer.name,
+        "size_bytes": len(b"new archive"),
+        "path": str(newer),
+    }
+    assert archives[1] == {
+        "name": older.name,
+        "size_bytes": len(b"old"),
+        "path": str(older),
+    }
 
 
 def test_delete_expired_removes_only_old(tmp_path):
@@ -364,6 +381,8 @@ def test_create_backup_writes_archive_and_log(db_session, tmp_path, monkeypatch)
     assert result["filename"] == "smartsklad-20260925-030000.dump"
     assert (tmp_path / result["filename"]).exists()
     assert not list(tmp_path.glob("*.part"))
+    assert row.last_backup_at == datetime(2026, 9, 25, 3, 0)
+    assert row.last_status == "success"
     entry = db_session.query(BackupLog).one()
     assert entry.kind == "manual"
     assert entry.status == "success"
@@ -387,6 +406,8 @@ def test_create_backup_records_failure_and_removes_partial(db_session, tmp_path,
     assert result["status"] == "failed"
     assert "ошибка подключения" in result["error"]
     assert list(tmp_path.iterdir()) == []
+    assert row.last_backup_at is None
+    assert row.last_status != "success"
     entry = db_session.query(BackupLog).one()
     assert entry.status == "failed"
 
@@ -400,3 +421,33 @@ def test_create_backup_without_binary_is_logged_not_raised(db_session, tmp_path,
     result = create_backup(db_session, now=datetime(2026, 9, 25, 3, 0))
     assert result["status"] == "failed"
     assert "pg_dump" in result["error"]
+
+
+def test_create_backup_blocked_directory_is_logged(db_session, tmp_path):
+    row = get_backup_settings(db_session)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("file, not a folder", encoding="utf-8")
+    row.local_path = str(blocker / "backups")
+    db_session.commit()
+    result = create_backup(db_session, now=datetime(2026, 9, 25, 3, 0))
+    assert result["status"] == "failed"
+    assert db_session.query(BackupLog).count() == 1
+    assert db_session.query(BackupLog).one().status == "failed"
+
+
+def test_create_backup_timeout_is_logged_and_cleans_partial(db_session, tmp_path, monkeypatch):
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    monkeypatch.setattr("app.modules.backup.service.find_binary", lambda name, configured=None: name)
+
+    def timeout(command, **kwargs):
+        target = Path(command[command.index("--file") + 1])
+        target.write_text("half written", encoding="utf-8")
+        raise subprocess.TimeoutExpired(command, 600)
+
+    monkeypatch.setattr("app.modules.backup.service.subprocess.run", timeout)
+    result = create_backup(db_session, now=datetime(2026, 9, 25, 3, 0))
+    assert result["status"] == "failed"
+    assert list(tmp_path.iterdir()) == []
+    assert db_session.query(BackupLog).one().status == "failed"

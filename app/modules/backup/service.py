@@ -188,26 +188,35 @@ def create_backup(db, *, user_id: int | None = None, kind: str = "manual",
     now = now or datetime.now()
     bs = get_backup_settings(db)
     directory = Path(bs.local_path)
-    directory.mkdir(parents=True, exist_ok=True)
-    binary = find_binary("pg_dump", bs.pg_dump_path)
-    if binary is None:
-        return _record(db, kind=kind, status="failed", error="pg_dump не найден", user_id=user_id)
-    target = unique_path(directory, f"smartsklad-{now.strftime('%Y%m%d-%H%M%S')}", ".dump")
-    partial = directory / (target.name + ".part")
-    command = pg_dump_command(binary, partial)
-    result = subprocess.run(command, env={**os.environ, **pg_env()},
-                            capture_output=True, text=True, timeout=600)
-    if result.returncode != 0:
-        partial.unlink(missing_ok=True)
-        return _record(db, kind=kind, status="failed",
-                       error=(result.stderr or "pg_dump завершился с ошибкой").strip()[:512],
-                       user_id=user_id)
-    partial.replace(target)
-    size = target.stat().st_size
-    delete_expired(bs, now)
-    bs.last_backup_at = now
-    bs.last_status = "success"
-    bs.last_error = None
-    db.commit()
-    return _record(db, kind=kind, status="success", filename=target.name,
-                   size_bytes=size, user_id=user_id)
+    partial = None
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        binary = find_binary("pg_dump", bs.pg_dump_path)
+        if binary is None:
+            return _record(db, kind=kind, status="failed",
+                           error="pg_dump не найден", user_id=user_id)
+        target = unique_path(directory, f"smartsklad-{now.strftime('%Y%m%d-%H%M%S')}", ".dump")
+        partial = directory / (target.name + ".part")
+        result = subprocess.run(pg_dump_command(binary, partial),
+                                env={**os.environ, **pg_env()},
+                                capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            partial.unlink(missing_ok=True)
+            return _record(db, kind=kind, status="failed",
+                           error=(result.stderr or "pg_dump завершился с ошибкой").strip()[:512],
+                           user_id=user_id)
+        partial.replace(target)
+        partial = None
+        size = target.stat().st_size
+        delete_expired(bs, now)
+        bs.last_backup_at = now
+        bs.last_status = "success"
+        bs.last_error = None
+        db.commit()
+        return _record(db, kind=kind, status="success", filename=target.name,
+                       size_bytes=size, user_id=user_id)
+    except Exception as error:
+        db.rollback()
+        if partial is not None:
+            partial.unlink(missing_ok=True)
+        return _record(db, kind=kind, status="failed", error=str(error)[:512], user_id=user_id)
