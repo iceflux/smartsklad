@@ -1,8 +1,11 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 import pytest
 
-from app.modules.dashboard.service import chart_bars, resolve_period
+from app.modules.customers.models import Customer
+from app.modules.dashboard.service import chart_bars, dashboard_metrics, dashboard_sales_csv, resolve_period
+from app.modules.inventory.models import Product
+from app.modules.orders.models import Order, OrderItem
 
 
 def test_preset_windows_are_rolling_and_end_today():
@@ -109,3 +112,163 @@ def test_chart_bars_long_series_thins_labels():
         "21.03",
         "26.03",
     ]
+
+
+def _customer(db_session, name="ООО Строй"):
+    c = Customer(name=name, personal_discount=0.0)
+    db_session.add(c)
+    db_session.commit()
+    return c
+
+
+def _product(db_session, name="Гвозди", sku="SKU-D1"):
+    p = Product(name=name, sku=sku, unit="шт", price=10.0, rest=10)
+    db_session.add(p)
+    db_session.commit()
+    return p
+
+
+def _order(db_session, customer, product, *, number, day, amount, quantity=1, status="done", deleted=False, hour=12):
+    o = Order(
+        number=number, customer_id=customer.id, status=status, discount=0.0,
+        total_amount=amount, created_at=datetime.combine(day, time(hour, 0)),
+    )
+    if deleted:
+        o.deleted_at = datetime.combine(day, time(hour, 1))
+    db_session.add(o)
+    db_session.commit()
+    o.items.append(OrderItem(
+        product_id=product.id, product_name_snapshot=product.name,
+        product_price_snapshot=10.0, discount_snapshot=0.0,
+        quantity=quantity, unit_snapshot="шт",
+    ))
+    db_session.commit()
+    return o
+
+
+def test_dashboard_metrics_totals_and_avg_check(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session)
+    day = date(2026, 3, 10)
+    _order(db_session, customer, product, number="00001", day=day, amount=100.0)
+    _order(db_session, customer, product, number="00002", day=day, amount=200.0)
+    _order(db_session, customer, product, number="00003", day=day, amount=50.0)
+    m = dashboard_metrics(db_session, day, day)
+    assert m["orders_count"] == 3
+    assert m["total_sum"] == 350.0
+    assert m["avg_check"] == 116.67
+    assert m["date_from"] == day
+    assert m["date_to"] == day
+
+
+def test_dashboard_metrics_empty_period(db_session):
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 5))
+    assert m["orders_count"] == 0
+    assert m["total_sum"] == 0.0
+    assert m["avg_check"] == 0.0
+    assert len(m["daily"]) == 5
+    assert all(row["orders"] == 0 for row in m["daily"])
+
+
+def test_dashboard_metrics_daily_is_dense(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session)
+    _order(db_session, customer, product, number="00001", day=date(2026, 3, 1), amount=100.0)
+    _order(db_session, customer, product, number="00002", day=date(2026, 3, 3), amount=300.0)
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 5))
+    assert [row["orders"] for row in m["daily"]] == [1, 0, 1, 0, 0]
+    assert [row["amount"] for row in m["daily"]] == [100.0, 0.0, 300.0, 0.0, 0.0]
+
+
+def test_dashboard_metrics_inclusive_bounds(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session)
+    _order(db_session, customer, product, number="00001", day=date(2026, 3, 1), amount=100.0, hour=0)
+    _order(db_session, customer, product, number="00002", day=date(2026, 3, 5), amount=200.0, hour=23)
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 5))
+    assert m["orders_count"] == 2
+    assert m["total_sum"] == 300.0
+
+
+def test_dashboard_metrics_excludes_not_done(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session)
+    _order(db_session, customer, product, number="00001", day=date(2026, 3, 1), amount=100.0, status="new")
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 1))
+    assert m["orders_count"] == 0
+    assert m["daily"][0]["amount"] == 0.0
+
+
+def test_dashboard_metrics_excludes_soft_deleted(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session)
+    _order(db_session, customer, product, number="00001", day=date(2026, 3, 1), amount=100.0, deleted=True)
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 1))
+    assert m["orders_count"] == 0
+
+
+def test_dashboard_metrics_top_products_by_quantity(db_session):
+    customer = _customer(db_session)
+    nails = _product(db_session, name="Гвозди", sku="SKU-T1")
+    screws = _product(db_session, name="Шурупы", sku="SKU-T2")
+    _order(db_session, customer, nails, number="00001", day=date(2026, 3, 1), amount=100.0, quantity=2)
+    _order(db_session, customer, screws, number="00002", day=date(2026, 3, 1), amount=100.0, quantity=5)
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 1))
+    assert [row["name"] for row in m["top_products"]] == ["Шурупы", "Гвозди"]
+    assert [row["quantity"] for row in m["top_products"]] == [5, 2]
+
+
+def test_dashboard_metrics_top_products_limit(db_session):
+    customer = _customer(db_session)
+    for i in range(12):
+        product = _product(db_session, name=f"Товар {i}", sku=f"SKU-L{i}")
+        _order(db_session, customer, product, number=f"{i + 1:05d}", day=date(2026, 3, 1), amount=10.0, quantity=i + 1)
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 1))
+    assert len(m["top_products"]) == 10
+    assert m["top_products"][0]["quantity"] == 12
+
+
+def test_dashboard_metrics_top_customers_by_sum(db_session):
+    product = _product(db_session)
+    small = _customer(db_session, "Малый клиент")
+    big = _customer(db_session, "Крупный клиент")
+    _order(db_session, small, product, number="00001", day=date(2026, 3, 1), amount=100.0)
+    _order(db_session, big, product, number="00002", day=date(2026, 3, 1), amount=900.0)
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 1))
+    assert [row["name"] for row in m["top_customers"]] == ["Крупный клиент", "Малый клиент"]
+    assert m["top_customers"][0]["total_sum"] == 900.0
+    assert m["top_customers"][0]["orders_count"] == 1
+
+
+def test_dashboard_metrics_top_customers_keeps_soft_deleted(db_session):
+    product = _product(db_session)
+    gone = _customer(db_session, "Удалённый клиент")
+    _order(db_session, gone, product, number="00001", day=date(2026, 3, 1), amount=100.0)
+    gone.is_deleted = True
+    db_session.commit()
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 1))
+    assert [row["name"] for row in m["top_customers"]] == ["Удалённый клиент"]
+
+
+def test_dashboard_metrics_tops_tie_break_by_name(db_session):
+    product = _product(db_session)
+    beta = _customer(db_session, "Бета")
+    alpha = _customer(db_session, "Альфа")
+    _order(db_session, beta, product, number="00001", day=date(2026, 3, 1), amount=100.0)
+    _order(db_session, alpha, product, number="00002", day=date(2026, 3, 1), amount=100.0)
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 1))
+    assert [row["name"] for row in m["top_customers"]] == ["Альфа", "Бета"]
+
+
+def test_dashboard_sales_csv_shape():
+    daily = [
+        {"date": date(2026, 3, 1), "orders": 2, "amount": 150.0},
+        {"date": date(2026, 3, 2), "orders": 0, "amount": 0.0},
+    ]
+    raw = dashboard_sales_csv(daily)
+    assert raw.startswith(b"\xef\xbb\xbf")
+    text = raw.decode("utf-8").replace("\ufeff", "", 1)
+    lines = text.splitlines()
+    assert lines[0] == "date;orders;amount"
+    assert lines[1] == "2026-03-01;2;150.0"
+    assert lines[2] == "2026-03-02;0;0.0"

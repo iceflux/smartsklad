@@ -1,5 +1,13 @@
+import csv
+import io
 import math
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+
+from sqlalchemy.orm import Session
+
+from app.modules.customers.models import Customer
+from app.modules.inventory.models import Product
+from app.modules.orders.models import Order, OrderItem
 
 PRESET_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
 DEFAULT_PRESET = "month"
@@ -69,3 +77,102 @@ def chart_bars(daily: list[dict], *, width: int = 600, height: int = 180) -> dic
             "label": item.get("date").strftime("%d.%m") if i % every == 0 else "",
         })
     return {"width": total_w, "height": height, "bars": bars}
+
+
+def _sales_orders(db, date_from: date, date_to: date) -> list[Order]:
+    return (
+        db.query(Order)
+        .filter(
+            Order.status == "done",
+            Order.deleted_at.is_(None),
+            Order.created_at >= datetime.combine(date_from, time.min),
+            Order.created_at <= datetime.combine(date_to, time.max),
+        )
+        .order_by(Order.id)
+        .all()
+    )
+
+
+def dashboard_metrics(db, date_from: date, date_to: date, *, top_limit: int = 10) -> dict:
+    orders = _sales_orders(db, date_from, date_to)
+    total_sum = round(sum(o.total_amount for o in orders), 2)
+    orders_count = len(orders)
+    per_day = {}
+    for order in orders:
+        entry = per_day.setdefault(order.created_at.date(), {"orders": 0, "amount": 0.0})
+        entry["orders"] += 1
+        entry["amount"] += order.total_amount
+    daily = []
+    for offset in range((date_to - date_from).days + 1):
+        day = date_from + timedelta(days=offset)
+        entry = per_day.get(day, {"orders": 0, "amount": 0.0})
+        daily.append({
+            "date": day,
+            "orders": entry["orders"],
+            "amount": round(entry["amount"], 2),
+        })
+    customer_ids = {o.customer_id for o in orders}
+    quantities = {}
+    order_ids = [o.id for o in orders]
+    if order_ids:
+        rows = (
+            db.query(OrderItem.product_id, OrderItem.quantity)
+            .filter(OrderItem.order_id.in_(order_ids))
+            .all()
+        )
+        for product_id, quantity in rows:
+            quantities[product_id] = quantities.get(product_id, 0) + quantity
+    product_names = {
+        p.id: p.name
+        for p in db.query(Product).filter(Product.id.in_(quantities)).all()
+    }
+    top_products = sorted(
+        (
+            {"product_id": pid, "name": product_names.get(pid, ""), "quantity": qty}
+            for pid, qty in quantities.items()
+        ),
+        key=lambda r: (-r["quantity"], r["name"]),
+    )[:top_limit]
+    per_customer = {}
+    for order in orders:
+        entry = per_customer.setdefault(
+            order.customer_id, {"orders_count": 0, "total_sum": 0.0}
+        )
+        entry["orders_count"] += 1
+        entry["total_sum"] += order.total_amount
+    customer_names = {
+        c.id: c.name
+        for c in db.query(Customer).filter(Customer.id.in_(customer_ids)).all()
+    }
+    top_customers = sorted(
+        (
+            {
+                "customer_id": cid,
+                "name": customer_names.get(cid, ""),
+                "orders_count": data["orders_count"],
+                "total_sum": round(data["total_sum"], 2),
+            }
+            for cid, data in per_customer.items()
+        ),
+        key=lambda r: (-r["total_sum"], r["name"]),
+    )[:top_limit]
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "orders_count": orders_count,
+        "total_sum": total_sum,
+        "avg_check": round(total_sum / orders_count, 2) if orders_count else 0.0,
+        "daily": daily,
+        "top_products": top_products,
+        "top_customers": top_customers,
+    }
+
+
+def dashboard_sales_csv(daily: list[dict]) -> bytes:
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";", lineterminator="\n")
+    writer.writerow(["date", "orders", "amount"])
+    for row in daily:
+        writer.writerow([row["date"].isoformat(), row["orders"], row["amount"]])
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
+
