@@ -18,7 +18,7 @@
 
 - `tests/` на **pytest** + `httpx` (`TestClient`).
 - БД в тестах — **SQLite in-memory** (`StaticPool`), таблицы создаются из `Base.metadata` в `tests/conftest.py` — `pytest` запускается одной командой, Docker не нужен.
-- Сейчас: 207 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI, printing service/API, notifications service/API/UI + PDF-вложение).
+- Сейчас: 332 теста (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI, printing service/API, notifications service/API/UI + PDF-вложение).
 
 ## Аутентификация и роли (`app/modules/auth/`)
 
@@ -35,7 +35,7 @@
 
 ## Инвентарь (`app/modules/inventory/`)
 
-- Модели: `Category` (id, name, parent_id → дерево, is_deleted), `Product` (name, sku unique, category_id FK, unit, price, characteristic JSON, rest, `track_rest` bool NOT NULL default True, is_deleted), `PriceHistory` (product_id, old_price, new_price, changed_by FK users).
+- Модели: `Category` (id, name, parent_id → дерево, is_deleted), `Product` (name, sku unique, category_id FK, unit, price, characteristic JSON, rest, `min_stock` Integer NULL, `track_rest` bool NOT NULL default True, is_deleted), `PriceHistory` (product_id, old_price, new_price, changed_by FK users).
 - `track_rest` фиксируется при создании товара: `create_product(..., *, track_rest: bool | None = None)` — `None` берёт глобальную настройку `stock_track_default` (`!= "false"`); глобальная настройка влияет только на новые товары. `update_product` принимает `track_rest` (право products_edit).
 - `service.py` (HTTP-agnostic, конфликты → `ValueError`): CRUD категорий и товаров, `get_category_tree` (2 уровня), поиск по name/sku (ILIKE), пагинация, мягкое удаление/восстановление, массовая смена категории, экспорт CSV (BOM + `;`), запись `PriceHistory` при смене цены.
 - API (`/api`, права по-полям): категории GET (products_view), POST/PATCH/DELETE (categories_manage); товары — GET products_view, POST products_edit (+stock_change при `rest` в теле), PATCH по-полям (`rest`→stock_change, `price`→price_change, остальное→products_edit, несколько полей = AND), DELETE/restore/bulk — products_edit, export.csv — reports_export. 403 — прав нет, 404 — не найдено, 409 — конфликт (duplicate/self-parent/непустая категория).
@@ -74,6 +74,15 @@
 - Page `/settings` (GET/POST → 303 + `?msg=`), гейт `settings.change` (аноним → 303 `/login`, без права → 403); ссылка «Настройки» в `base.html` скрыта без `can_change_settings` из `page_context`.
 - `Product.track_rest` (см. Инвентарь): глобальная настройка задаёт дефолт только для новых товаров.
 
+## Прогноз спроса (`app/modules/ai/`)
+
+- Модуль без моделей и миграций: прогноз — производная величина, считается на лету при запросе (кэша и сохранённых моделей нет).
+- Источник данных: позиции заказов со `status='done'` и `deleted_at IS NULL`, окно 90 дней; плотный ряд дневных продаж (дни без продаж = 0). Товары в выборке — `is_deleted=False` и `track_rest=True`.
+- Метод: линейная регрессия по методу наименьших квадратов на stdlib; новых зависимостей нет. Порог данных — 14 дней с ненулевыми продажами, иначе прогнозы и рекомендация `None`.
+- Горизонты 7/14/30 дней. Правило закупки: `need = прогноз_30 + min_stock − rest`, рекомендация при `need > 0`.
+- Порог запаска: `Product.min_stock` (штуки) как переопределение, иначе `round(средние_дневные_продажи × min_stock_days)` из настройки `min_stock_days` (дефолт 14, диапазон 0-365).
+- API: `GET /api/forecast` (`only_purchase`, `product_id`, `page`, `page_size`). Page: `/forecast`. Право: `analytics.view` (manager + admin). Аудита нет — только чтение.
+
 ## Audit UI (`app/modules/audit/`)
 
 - `log_action(db, *, action, entity_type, entity_id, old_value, new_value, user_id, ip)` — keyword-only, коммитит сама.
@@ -82,7 +91,7 @@
 
 ## Навигация
 
-- `base.html`: ссылки Товары/Категории/Роли/Пользователи/Журнал аудита, видимость по флагам прав из `page_context(user)` (в `auth/dependencies.py`), передаются через контекст каждого page-роута.
+- `base.html`: ссылки Товары/Категории/Клиенты/Заказы/Прогноз/Роли/Пользователи/Журнал аудита, видимость по флагам прав из `page_context(user)` (в `auth/dependencies.py`), передаются через контекст каждого page-роута.
 
 ## Печать документов (`app/modules/printing/`)
 
