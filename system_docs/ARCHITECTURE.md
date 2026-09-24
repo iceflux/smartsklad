@@ -18,7 +18,7 @@
 
 - `tests/` на **pytest** + `httpx` (`TestClient`).
 - БД в тестах — **SQLite in-memory** (`StaticPool`), таблицы создаются из `Base.metadata` в `tests/conftest.py` — `pytest` запускается одной командой, Docker не нужен.
-- Сейчас: 332 теста (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI, printing service/API, notifications service/API/UI + PDF-вложение).
+- Сейчас: 332 теста (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI, printing service/API, notifications service/API/UI + PDF-вложение, AI service/API/UI).
 
 ## Аутентификация и роли (`app/modules/auth/`)
 
@@ -80,7 +80,8 @@
 - Источник данных: позиции заказов со `status='done'` и `deleted_at IS NULL`, окно 90 дней; плотный ряд дневных продаж (дни без продаж = 0). Товары в выборке — `is_deleted=False` и `track_rest=True`.
 - Метод: линейная регрессия по методу наименьших квадратов на stdlib; новых зависимостей нет. Порог данных — 14 дней с ненулевыми продажами, иначе прогнозы и рекомендация `None`.
 - Горизонты 7/14/30 дней. Правило закупки: `need = прогноз_30 + min_stock − rest`, рекомендация при `need > 0`.
-- Порог запаска: `Product.min_stock` (штуки) как переопределение, иначе `round(средние_дневные_продажи × min_stock_days)` из настройки `min_stock_days` (дефолт 14, диапазон 0-365).
+- Порог запаска: `Product.min_stock` (штуки) как переопределение, иначе `round(средние_дневные_продажи × min_stock_days)` из настройки `min_stock_days` (дефолт 14, диапазон 0-365). Настройка **обязательна** в `POST /settings`: отсутствие поля отклоняется, и тогда не сохраняется ничего — это защита от неполного POST, который иначе молча сбросил бы сохранённое значение на дефолт.
+- `min_stock` отклоняется в отрицательную сторону и при создании, и при правке (в `update_product` проверка идёт до любых мутаций, поэтому частичной правки не остаётся); значение попадает в снимок аудита `product.update`; пустое поле формы отправляет `null` (снятие переопределения), а не `0`.
 - API: `GET /api/forecast` (`only_purchase`, `product_id`, `page`, `page_size`). Page: `/forecast`. Право: `analytics.view` (manager + admin). Аудита нет — только чтение.
 
 ## Audit UI (`app/modules/audit/`)
@@ -91,7 +92,7 @@
 
 ## Навигация
 
-- `base.html`: ссылки Товары/Категории/Клиенты/Заказы/Прогноз/Роли/Пользователи/Журнал аудита, видимость по флагам прав из `page_context(user)` (в `auth/dependencies.py`), передаются через контекст каждого page-роута.
+- `base.html`: ссылки Товары/Категории/Клиенты/Заказы/Прогноз/Роли/Пользователи/Журнал аудита/Уведомления/Настройки, видимость по флагам прав из `page_context(user)` (в `auth/dependencies.py`), передаются через контекст каждого page-роута.
 
 ## Печать документов (`app/modules/printing/`)
 
