@@ -1,5 +1,7 @@
+import pytest
+
 from app.modules.audit.models import AuditLog
-from app.modules.inventory.models import PriceHistory
+from app.modules.inventory.models import PriceHistory, Product
 from app.modules.inventory.service import (
     change_bulk_category,
     create_category,
@@ -186,3 +188,35 @@ def test_list_categories_excludes_deleted(db_session):
     delete_category(db_session, a.id)
     names = [c.name for c in list_categories(db_session)]
     assert names == ["Б"]
+
+
+def test_create_product_with_min_stock(db_session):
+    p = create_product(db_session, "Гвозди", "NAIL-9", None, "шт", 10.0, None, 5, min_stock=7)
+    assert p.min_stock == 7
+
+
+def test_create_product_min_stock_defaults_to_none(db_session):
+    p = create_product(db_session, "Шуруп", "SCR-9", None, "шт", 10.0, None, 0)
+    assert p.min_stock is None
+
+
+def test_update_product_min_stock(db_session):
+    p = create_product(db_session, "Гвозди", "NAIL-10", None, "шт", 10.0, None, 5)
+    updated = update_product(db_session, p.id, {"min_stock": 12})
+    assert updated.min_stock == 12
+
+
+def test_update_product_min_stock_negative_rejected(db_session):
+    p = create_product(db_session, "Гвозди", "NAIL-11", None, "шт", 10.0, None, 5)
+    with pytest.raises(ValueError):
+        update_product(db_session, p.id, {"min_stock": -1})
+    db_session.expire_all()
+    assert db_session.get(Product, p.id).min_stock is None
+
+
+def test_update_product_min_stock_in_audit(db_session):
+    p = create_product(db_session, "Гвозди", "NAIL-12", None, "шт", 10.0, None, 5)
+    update_product(db_session, p.id, {"min_stock": 3})
+    entries = db_session.query(AuditLog).filter_by(action="product.update", entity_id=p.id).all()
+    assert len(entries) == 1
+    assert '"min_stock": 3' in entries[0].new_value

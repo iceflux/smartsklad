@@ -45,6 +45,7 @@ class ProductIn(BaseModel):
     characteristic: Optional[dict] = None
     rest: int = 0
     track_rest: Optional[bool] = None
+    min_stock: Optional[int] = None
 
 
 class ProductPatch(BaseModel):
@@ -56,6 +57,7 @@ class ProductPatch(BaseModel):
     characteristic: Optional[dict] = None
     rest: Optional[int] = None
     track_rest: Optional[bool] = None
+    min_stock: Optional[int] = None
 
 
 class BulkCategoryIn(BaseModel):
@@ -170,10 +172,13 @@ def api_create_product(payload: ProductIn, user=Depends(get_current_user), db=De
     _ensure(user, *perms)
     if not payload.name.strip() or not payload.sku.strip():
         raise HTTPException(status_code=400, detail="Название и артикул обязательны")
+    if payload.min_stock is not None and payload.min_stock < 0:
+        raise HTTPException(status_code=400, detail="Минимальный запас не может быть отрицательным")
     try:
         product = create_product(db, payload.name, payload.sku, payload.category_id,
                                  payload.unit, payload.price, payload.characteristic,
-                                 payload.rest, track_rest=payload.track_rest, user=user)
+                                 payload.rest, track_rest=payload.track_rest,
+                                 min_stock=payload.min_stock, user=user)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return _product_out(product)
@@ -189,6 +194,8 @@ def api_patch_product(product_id: int, payload: ProductPatch, user=Depends(get_c
         raise HTTPException(status_code=400, detail="Название товара не может быть пустым")
     if "sku" in payload.model_fields_set and not (payload.sku or "").strip():
         raise HTTPException(status_code=400, detail="Артикул не может быть пустым")
+    if "min_stock" in payload.model_fields_set and payload.min_stock is not None and payload.min_stock < 0:
+        raise HTTPException(status_code=400, detail="Минимальный запас не может быть отрицательным")
     try:
         product = update_product(db, product_id, payload.model_dump(exclude_unset=True), user)
     except ValueError as e:
@@ -252,6 +259,7 @@ def _product_out(product: Product) -> dict:
         "price": product.price,
         "characteristic": product.characteristic,
         "rest": product.rest,
+        "min_stock": product.min_stock,
         "is_deleted": product.is_deleted,
         "track_rest": product.track_rest,
     }

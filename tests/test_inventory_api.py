@@ -276,3 +276,27 @@ def test_product_detail_includes_category_and_price_history(client, db_session):
     assert body["price_history"][0]["old_price"] == 80.0
     assert body["price_history"][0]["new_price"] == 95.0
     assert admin.id is not None
+
+
+def test_create_product_with_min_stock(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/api/products", json={
+        "name": "Гвозди", "sku": "NAIL-A1", "unit": "шт", "price": 10.0, "min_stock": 9,
+    })
+    assert r.status_code == 201
+    assert r.json()["min_stock"] == 9
+
+
+def test_patch_product_min_stock(client, db_session):
+    _admin(client, db_session)
+    pid = client.post("/api/products", json={"name": "Гвозди", "sku": "NAIL-A2"}).json()["id"]
+    r = client.patch(f"/api/products/{pid}", json={"min_stock": 15})
+    assert r.status_code == 200
+    assert r.json()["min_stock"] == 15
+
+
+def test_patch_product_negative_min_stock_returns_400(client, db_session):
+    _admin(client, db_session)
+    pid = client.post("/api/products", json={"name": "Гвозди", "sku": "NAIL-A3"}).json()["id"]
+    r = client.patch(f"/api/products/{pid}", json={"min_stock": -5})
+    assert r.status_code == 400

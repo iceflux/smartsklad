@@ -33,6 +33,7 @@ class Product(Base):
     price: Mapped[float] = mapped_column(default=0.0)
     characteristic: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     rest: Mapped[int] = mapped_column(Integer, default=0)
+    min_stock: Mapped[int | None] = mapped_column(Integer, nullable=True)
     track_rest: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
