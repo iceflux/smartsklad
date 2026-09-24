@@ -166,6 +166,15 @@ def test_dashboard_empty_preset_matches_default_across_layers(client, db_session
     empty = client.get("/api/dashboard/sales?preset=").json()
     assert empty["date_from"] == default["date_from"]
     assert empty["date_to"] == default["date_to"]
+    start = date.fromisoformat(default["date_from"])
+    end = date.fromisoformat(default["date_to"])
     page = client.get("/dashboard?preset=")
     assert page.status_code == 200
-    assert date.fromisoformat(default["date_to"]).strftime("%d.%m.%Y") in page.text
+    assert start.strftime("%d.%m.%Y") in page.text
+    assert end.strftime("%d.%m.%Y") in page.text
+    csv = client.get("/dashboard/export.csv?preset=")
+    assert csv.status_code == 200
+    lines = csv.text.replace("\ufeff", "", 1).splitlines()
+    assert len(lines) == 31
+    assert lines[1] == f"{start.isoformat()};0;0.0"
+    assert lines[-1] == f"{end.isoformat()};0;0.0"
