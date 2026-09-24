@@ -100,8 +100,8 @@ def send_report(db: Session, *, now: datetime | None = None,
         result["failed"] = len(settings_row["recipient_ids"])
         _stamp(db, now, result)
         return result
-    for user_id in settings_row["recipient_ids"]:
-        recipient = db.get(User, user_id)
+    for recipient_id in settings_row["recipient_ids"]:
+        recipient = db.get(User, recipient_id)
         address = ((recipient.email if recipient else "") or "").strip()
         if not address:
             result["skipped"] += 1

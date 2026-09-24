@@ -4,7 +4,12 @@ import pytest
 
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
-from app.modules.backup.report import parse_recipients, read_report_settings, send_report
+from app.modules.backup.report import (
+    parse_recipients,
+    read_report_settings,
+    send_report,
+    write_report_settings,
+)
 from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
@@ -59,6 +64,38 @@ def test_read_report_settings_defaults(db_session):
     assert settings["period"] == "week"
     assert settings["send_time"] == "09:00"
     assert settings["recipient_ids"] == []
+
+
+def test_write_report_settings_rejects_bad_period(db_session):
+    with pytest.raises(ValueError):
+        write_report_settings(db_session, enabled=True, period="year",
+                              send_time="09:00", recipient_ids=[])
+
+
+def test_write_report_settings_rejects_bad_time(db_session):
+    with pytest.raises(ValueError):
+        write_report_settings(db_session, enabled=True, period="week",
+                              send_time="25:99", recipient_ids=[])
+
+
+def test_write_report_settings_rejects_bad_recipient(db_session):
+    with pytest.raises(ValueError):
+        write_report_settings(db_session, enabled=True, period="week",
+                              send_time="09:00", recipient_ids=["не число"])
+
+
+def test_write_report_settings_persists_and_attributes_audit(db_session):
+    from app.modules.audit.models import AuditLog
+    actor = _user(db_session, "boss", "boss@example.com")
+    result = write_report_settings(db_session, enabled=True, period="month",
+                                   send_time="08:15",
+                                   recipient_ids=[str(actor.id)], user_id=actor.id)
+    assert result["enabled"] is True
+    assert result["period"] == "month"
+    assert result["send_time"] == "08:15"
+    assert result["recipient_ids"] == [actor.id]
+    entry = db_session.query(AuditLog).filter(AuditLog.action == "report.settings").one()
+    assert entry.user_id == actor.id
 
 
 def test_report_skips_user_without_email(db_session, monkeypatch, smtp_ready):
@@ -155,3 +192,15 @@ def test_report_marks_when_sent(db_session, monkeypatch, smtp_ready):
     row = get_backup_settings(db_session)
     assert row.last_report_sent == 1
     assert row.last_report_at is not None
+
+
+def test_report_audit_uses_actor(db_session, monkeypatch, smtp_ready):
+    from app.modules.audit.models import AuditLog
+    recipient = _user(db_session, "recipient", "recipient@example.com")
+    actor = _user(db_session, "actor", "actor@example.com")
+    set_setting(db_session, REPORT_ENABLED_KEY, "true")
+    set_setting(db_session, REPORT_RECIPIENTS_KEY, '[%d]' % recipient.id)
+    monkeypatch.setattr("app.modules.backup.report.send_email", lambda *a, **k: None)
+    send_report(db_session, now=datetime(2026, 9, 25, 9, 0), user_id=actor.id)
+    entry = db_session.query(AuditLog).filter(AuditLog.action == "report.send").one()
+    assert entry.user_id == actor.id
