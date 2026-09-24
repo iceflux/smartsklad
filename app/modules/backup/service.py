@@ -41,11 +41,13 @@ def find_binary(name: str, configured: str | None = None) -> str | None:
 def pg_env() -> dict[str, str]:
     url = make_url(app_settings.database_url)
     env = {
-        "PGHOST": url.host or "localhost",
         "PGPORT": str(url.port or 5432),
         "PGUSER": url.username or "",
         "PGDATABASE": (url.database or "").lstrip("/"),
     }
+    host = url.host or url.query.get("host")
+    if host:
+        env["PGHOST"] = host
     if url.password:
         env["PGPASSWORD"] = url.password
     return env
@@ -55,7 +57,7 @@ def pg_dump_command(binary: str, target: Path) -> list[str]:
     return [binary, "--format=custom", "--no-password", "--file", str(target)]
 
 
-def pg_restore_command(binary: str, archive: Path) -> dict[str, list[str]]:
+def pg_restore_command(binary: str, archive: Path) -> dict[str, list[str] | dict[str, str]]:
     return {
         "command": [binary, "--clean", "--if-exists", "--no-password",
                     "--dbname", pg_env()["PGDATABASE"], str(archive)],
@@ -84,16 +86,18 @@ def _server_major(db: Session) -> int | None:
 
 def _path_writable(path: str) -> bool:
     target = Path(path)
-    probe = target if target.is_dir() else target.parent
-    return probe.is_dir() and os.access(probe, os.W_OK)
+    if target.exists():
+        return target.is_dir() and os.access(target, os.W_OK)
+    parent = target.parent
+    return parent.is_dir() and os.access(parent, os.W_OK)
 
 
 def _dump_major(dump: str) -> int | None:
     try:
         result = subprocess.run([dump, "--version"], capture_output=True, text=True, timeout=10)
+        return parse_binary_version(result.stdout or "")
     except Exception:
         return None
-    return parse_binary_version(result.stdout or "")
 
 
 def pg_dump_health(db: Session, bs: BackupSettings) -> dict:

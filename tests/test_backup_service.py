@@ -87,25 +87,54 @@ def test_pg_env_carries_connection_parts():
     assert env["PGPASSWORD"] == "smartsklad"
 
 
+def test_pg_env_preserves_socket_host(monkeypatch):
+    monkeypatch.setattr(
+        "app.config.settings.database_url",
+        "postgresql:///smartsklad?host=/var/run/postgresql",
+    )
+    env = pg_env()
+    assert env["PGHOST"] == "/var/run/postgresql"
+
+
+def test_pg_env_does_not_default_missing_host(monkeypatch):
+    monkeypatch.setattr("app.config.settings.database_url", "postgresql:///smartsklad")
+    env = pg_env()
+    assert "PGHOST" not in env
+
+
 def test_dump_command_has_no_password(tmp_path):
+    password = pg_env()["PGPASSWORD"]
+    database = pg_env()["PGDATABASE"]
     command = pg_dump_command("pg_dump", tmp_path / "a.dump")
     joined = " ".join(command)
     assert command[0] == "pg_dump"
     assert "--format=custom" in command
     assert "--no-password" in command
-    assert "smartsklad:smartsklad" not in joined
+    assert "--dbname" not in command
+    assert "-d" not in command
+    assert database not in command
+    assert password not in command
+    for argument in command:
+        assert password not in argument or argument.endswith(".dump")
     assert "postgresql" not in joined
 
 
-def test_restore_command_cleans_and_keeps_database(tmp_path):
+def test_restore_command_cleans_and_keeps_database(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "app.config.settings.database_url",
+        "postgresql://smartsklad:test-secret@localhost:5432/smartsklad",
+    )
     prepared = pg_restore_command("pg_restore", tmp_path / "a.dump")
     command = prepared["command"]
+    password = prepared["env"]["PGPASSWORD"]
     assert command[0] == "pg_restore"
     assert "--clean" in command
     assert "--if-exists" in command
     assert "--create" not in command
-    assert "smartsklad:smartsklad" not in " ".join(command)
-    assert prepared["env"]["PGPASSWORD"] == "smartsklad"
+    assert password not in command
+    for argument in command:
+        assert password not in argument or argument.endswith(".dump")
+    assert prepared["env"]["PGPASSWORD"] == "test-secret"
 
 
 def test_find_binary_prefers_configured_path(tmp_path):
@@ -114,7 +143,8 @@ def test_find_binary_prefers_configured_path(tmp_path):
     assert find_binary("pg_dump", str(binary)) == str(binary)
 
 
-def test_find_binary_returns_none_for_missing_configured_path(tmp_path):
+def test_find_binary_returns_none_for_missing_configured_path(tmp_path, monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: "C:/should-not-be-used/pg_dump.exe")
     assert find_binary("pg_dump", str(tmp_path / "nope.exe")) is None
 
 
@@ -147,6 +177,8 @@ def test_health_reports_missing_tools(db_session, tmp_path, monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: None)
     health = pg_dump_health(db_session, row)
     assert health["dump_found"] is False
+    assert health["restore_found"] is False
+    assert health["restore_path"] is None
     assert health["compatible"] is None
 
 
@@ -162,6 +194,43 @@ def test_health_reports_writable_directory(db_session, tmp_path, monkeypatch):
     health = pg_dump_health(db_session, row)
     assert health["path_writable"] is True
     assert health["dump_major"] == 18
+    assert health["restore_found"] is True
+    assert health["restore_path"] == str(binary)
+
+
+def test_health_rejects_file_as_backup_directory(db_session, tmp_path, monkeypatch):
+    row = ensure_default_backup_settings(db_session)
+    local_path = tmp_path / "backups"
+    local_path.write_text("not a directory", encoding="utf-8")
+    row.local_path = str(local_path)
+    db_session.commit()
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    health = pg_dump_health(db_session, row)
+    assert health["path_writable"] is False
+
+
+def test_health_finds_sibling_restore_for_configured_dump(db_session, tmp_path, monkeypatch):
+    import app.modules.backup.service as service
+
+    row = ensure_default_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    dump = tmp_path / "pg_dump.exe"
+    restore = tmp_path / "pg_restore.exe"
+    dump.write_text("stub", encoding="utf-8")
+    restore.write_text("stub", encoding="utf-8")
+    row.pg_dump_path = str(dump)
+    db_session.commit()
+    monkeypatch.setattr("shutil.which", lambda name: "C:/should-not-be-used/pg_restore.exe")
+    monkeypatch.setattr(
+        service.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess([], 0, "pg_dump (PostgreSQL) 18.6", ""),
+    )
+    health = service.pg_dump_health(db_session, row)
+    assert health["dump_found"] is True
+    assert health["dump_path"] == str(dump)
+    assert health["restore_found"] is True
+    assert health["restore_path"] == str(restore)
 
 
 def test_health_survives_unexecutable_binary(db_session, tmp_path, monkeypatch):
@@ -180,6 +249,29 @@ def test_health_survives_unexecutable_binary(db_session, tmp_path, monkeypatch):
     assert health["dump_found"] is True
     assert health["dump_major"] is None
     assert health["compatible"] is None
+
+
+def test_health_survives_parser_failure(db_session, tmp_path, monkeypatch):
+    import app.modules.backup.service as service
+
+    row = ensure_default_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    row.pg_dump_path = str(tmp_path / "pg_dump.exe")
+    db_session.commit()
+    binary = tmp_path / "pg_dump.exe"
+    binary.write_text("stub", encoding="utf-8")
+    monkeypatch.setattr(
+        service.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess([], 0, "weird", ""),
+    )
+
+    def explode(text):
+        raise RuntimeError("парсер сломался")
+
+    monkeypatch.setattr(service, "parse_binary_version", explode)
+    health = service.pg_dump_health(db_session, row)
+    assert health["dump_major"] is None
 
 
 def test_email_regex_rejects_garbage():
