@@ -1,4 +1,5 @@
-from datetime import date, datetime, time
+import re
+from datetime import date, datetime, time, timedelta
 
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
@@ -34,6 +35,13 @@ def _seed(db_session, amount=100.0, number="00001"):
                              quantity=2, unit_snapshot="шт"))
     db_session.commit()
     return o
+
+
+def _input_value(html, name):
+    tag = re.search(rf'<input[^>]*name="{name}"[^>]*>', html)
+    assert tag is not None, f"input {name} not found"
+    value = re.search(r'value="([^"]*)"', tag.group(0))
+    return value.group(1) if value else ""
 
 
 def test_dashboard_page_redirects_anonymous(client, db_session):
@@ -76,6 +84,26 @@ def test_dashboard_page_shows_csv_link_for_manager(client, db_session):
     _admin(client, db_session)
     r = client.get("/dashboard")
     assert "/dashboard/export.csv" in r.text
+
+
+def test_dashboard_csv_link_includes_resolved_dates(client, db_session):
+    _admin(client, db_session)
+    r = client.get("/dashboard?date_from=2026-03-01&date_to=2026-03-10")
+    assert r.status_code == 200
+    assert 'href="/dashboard/export.csv?date_from=2026-03-01&date_to=2026-03-10"' in r.text
+
+
+def test_dashboard_page_preset_changes_period_and_keeps_dates_empty(client, db_session):
+    _admin(client, db_session)
+    today = date.today()
+    r = client.get("/dashboard?preset=day")
+    assert today.strftime("%d.%m.%Y") in r.text
+    assert _input_value(r.text, "date_from") == ""
+    assert _input_value(r.text, "date_to") == ""
+    r = client.get("/dashboard?preset=year")
+    assert (today - timedelta(days=364)).strftime("%d.%m.%Y") in r.text
+    assert _input_value(r.text, "date_from") == ""
+    assert _input_value(r.text, "date_to") == ""
 
 
 def test_dashboard_page_hides_csv_link_without_export_permission(client, db_session):
