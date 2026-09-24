@@ -115,3 +115,27 @@ def test_bulk_category_page_action(client, db_session):
     )
     assert r.status_code == 303
     assert client.get(f"/api/products/{p['id']}").json()["category_id"] == cat["id"]
+
+
+def test_product_new_page_shows_min_stock_field(client, db_session):
+    _admin(client, db_session)
+    r = client.get("/products/new")
+    assert r.status_code == 200
+    assert 'name="min_stock"' in r.text
+
+
+def test_product_edit_page_shows_current_min_stock(client, db_session):
+    _admin(client, db_session)
+    pid = client.post("/api/products", json={"name": "Гвозди", "sku": "NAIL-F1", "min_stock": 8}).json()["id"]
+    r = client.get(f"/products/{pid}/edit")
+    assert r.status_code == 200
+    assert 'name="min_stock"' in r.text
+    assert 'value="8"' in r.text
+
+
+def test_product_edit_page_min_stock_empty_when_not_set(client, db_session):
+    _admin(client, db_session)
+    pid = client.post("/api/products", json={"name": "Гвозди", "sku": "NAIL-F2"}).json()["id"]
+    r = client.get(f"/products/{pid}/edit")
+    assert r.status_code == 200
+    assert 'name="min_stock" type="number" min="0" value=""' in r.text

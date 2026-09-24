@@ -435,6 +435,7 @@ def create_app() -> FastAPI:
             "can_edit": True, "can_price": True,
             "can_stock": user_has_permission(user, Permission.stock_change),
             "stock_track_default": get_setting(db, STOCK_TRACK_DEFAULT_KEY),
+            "min_stock_days_hint": get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),
             **_page_context(user),
         })
 
@@ -527,6 +528,7 @@ def create_app() -> FastAPI:
             "tree": get_category_tree(db),
             "characteristic_json": json.dumps(product.characteristic, ensure_ascii=False) if product.characteristic else "",
             "can_edit": can_edit, "can_price": can_price, "can_stock": can_stock,
+            "min_stock_days_hint": get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),
             **_page_context(user),
         })
 
