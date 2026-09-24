@@ -2,7 +2,7 @@ import os
 import re
 import shutil
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import text
@@ -10,7 +10,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.config import settings as app_settings
-from app.modules.backup.models import BackupSettings
+from app.modules.audit.service import log_action
+from app.modules.backup.models import BackupLog, BackupSettings
 
 DEFAULT_BACKUP_DIR = Path(__file__).resolve().parents[3] / "backups"
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -120,3 +121,93 @@ def pg_dump_health(db: Session, bs: BackupSettings) -> dict:
         "compatible": is_compatible(dump_major, server_major),
         "path_writable": _path_writable(bs.local_path),
     }
+
+
+def archive_name(now: datetime) -> str:
+    return f"smartsklad-{now.strftime('%Y%m%d-%H%M%S')}.dump"
+
+
+def parse_archive_name(name: str) -> datetime | None:
+    match = re.fullmatch(r"smartsklad-(\d{8})-(\d{6})(?:-\d+)?\.dump", name)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+
+
+def unique_path(directory: Path, stem: str, suffix: str) -> Path:
+    candidate = directory / f"{stem}{suffix}"
+    counter = 1
+    while candidate.exists():
+        candidate = directory / f"{stem}-{counter}{suffix}"
+        counter += 1
+    return candidate
+
+
+def list_archives(bs) -> list[dict]:
+    directory = Path(bs.local_path)
+    if not directory.is_dir():
+        return []
+    archives = []
+    for path in directory.iterdir():
+        if not path.is_file() or parse_archive_name(path.name) is None:
+            continue
+        archives.append({"name": path.name, "size_bytes": path.stat().st_size, "path": str(path)})
+    archives.sort(key=lambda a: a["name"], reverse=True)
+    return archives
+
+
+def delete_expired(bs, now: datetime) -> int:
+    limit = now - timedelta(days=bs.retention_days)
+    removed = 0
+    for path in Path(bs.local_path).iterdir() if Path(bs.local_path).is_dir() else []:
+        stamp = parse_archive_name(path.name)
+        if stamp is not None and path.is_file() and stamp < limit:
+            path.unlink()
+            removed += 1
+    return removed
+
+
+def _record(db, *, kind, status, filename=None, size_bytes=None, error=None, user_id=None) -> dict:
+    entry = BackupLog(kind=kind, status=status, filename=filename,
+                      size_bytes=size_bytes, error=error, user_id=user_id)
+    db.add(entry)
+    db.commit()
+    log_action(db, action="backup.run", entity_type="backup", entity_id=entry.id,
+               new_value=status, user_id=user_id)
+    return {"kind": kind, "status": status, "filename": filename,
+            "size_bytes": size_bytes, "error": error, "log_id": entry.id}
+
+
+def create_backup(db, *, user_id: int | None = None, kind: str = "manual",
+                  now: datetime | None = None) -> dict:
+    if kind not in ("scheduled", "manual", "restore"):
+        raise ValueError("unknown backup kind")
+    now = now or datetime.now()
+    bs = get_backup_settings(db)
+    directory = Path(bs.local_path)
+    directory.mkdir(parents=True, exist_ok=True)
+    binary = find_binary("pg_dump", bs.pg_dump_path)
+    if binary is None:
+        return _record(db, kind=kind, status="failed", error="pg_dump не найден", user_id=user_id)
+    target = unique_path(directory, f"smartsklad-{now.strftime('%Y%m%d-%H%M%S')}", ".dump")
+    partial = directory / (target.name + ".part")
+    command = pg_dump_command(binary, partial)
+    result = subprocess.run(command, env={**os.environ, **pg_env()},
+                            capture_output=True, text=True, timeout=600)
+    if result.returncode != 0:
+        partial.unlink(missing_ok=True)
+        return _record(db, kind=kind, status="failed",
+                       error=(result.stderr or "pg_dump завершился с ошибкой").strip()[:512],
+                       user_id=user_id)
+    partial.replace(target)
+    size = target.stat().st_size
+    delete_expired(bs, now)
+    bs.last_backup_at = now
+    bs.last_status = "success"
+    bs.last_error = None
+    db.commit()
+    return _record(db, kind=kind, status="success", filename=target.name,
+                   size_bytes=size, user_id=user_id)

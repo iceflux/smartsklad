@@ -1,7 +1,7 @@
 import os
 import re
 import subprocess
-from datetime import time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
 import pytest
@@ -11,15 +11,21 @@ from app.modules.auth.service import get_role_by_name
 from app.modules.backup.models import BackupLog, BackupSettings
 from app.modules.backup.service import (
     EMAIL_RE,
+    archive_name,
+    create_backup,
+    delete_expired,
     ensure_default_backup_settings,
     find_binary,
     get_backup_settings,
     is_compatible,
+    list_archives,
+    parse_archive_name,
     parse_binary_version,
     pg_dump_command,
     pg_dump_health,
     pg_env,
     pg_restore_command,
+    unique_path,
 )
 
 PASSWORD = "password123"
@@ -279,3 +285,118 @@ def test_email_regex_rejects_garbage():
     assert not EMAIL_RE.match("boss")
     assert not EMAIL_RE.match("")
     assert not EMAIL_RE.match("a@b")
+
+
+def test_archive_name_format():
+    assert archive_name(datetime(2026, 9, 25, 3, 4, 5)) == "smartsklad-20260925-030405.dump"
+
+
+def test_parse_archive_name_roundtrip():
+    stamp = datetime(2026, 9, 25, 3, 4, 5)
+    assert parse_archive_name(archive_name(stamp)) == stamp
+
+
+def test_parse_archive_name_with_collision_suffix():
+    assert parse_archive_name("smartsklad-20260925-030405-2.dump") == datetime(2026, 9, 25, 3, 4, 5)
+
+
+def test_parse_archive_name_rejects_foreign_files():
+    assert parse_archive_name("readme.txt") is None
+    assert parse_archive_name("smartsklad-20261325-030405.dump") is None
+    assert parse_archive_name("smartsklad-20260925-030405.dump.part") is None
+
+
+def test_unique_path_avoids_overwrite(tmp_path):
+    first = unique_path(tmp_path, "smartsklad-x", ".dump")
+    first.write_text("a", encoding="utf-8")
+    second = unique_path(tmp_path, "smartsklad-x", ".dump")
+    assert second != first
+    assert second.name == "smartsklad-x-1.dump"
+
+
+def test_list_archives_ignores_foreign_files(tmp_path):
+    (tmp_path / "smartsklad-20260925-030405.dump").write_text("a", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("b", encoding="utf-8")
+    (tmp_path / "smartsklad-20260925-030405.dump.part").write_text("c", encoding="utf-8")
+
+    class Row:
+        local_path = str(tmp_path)
+        pg_dump_path = None
+
+    archives = list_archives(Row())
+    assert [a["name"] for a in archives] == ["smartsklad-20260925-030405.dump"]
+
+
+def test_delete_expired_removes_only_old(tmp_path):
+    now = datetime(2026, 9, 25, 12, 0)
+    fresh = tmp_path / archive_name(now - timedelta(days=1))
+    old = tmp_path / archive_name(now - timedelta(days=40))
+    fresh.write_text("a", encoding="utf-8")
+    old.write_text("b", encoding="utf-8")
+
+    class Row:
+        local_path = str(tmp_path)
+        pg_dump_path = None
+        retention_days = 30
+
+    assert delete_expired(Row(), now) == 1
+    assert fresh.exists()
+    assert not old.exists()
+
+
+def _stub_dump(payload=b"archive"):
+    def fake_run(command, **kwargs):
+        target = Path(command[command.index("--file") + 1])
+        target.write_bytes(payload)
+        return subprocess.CompletedProcess(command, 0, "", "")
+    return fake_run
+
+
+def test_create_backup_writes_archive_and_log(db_session, tmp_path, monkeypatch):
+    from app.modules.backup.service import get_backup_settings
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    monkeypatch.setattr("app.modules.backup.service.find_binary", lambda name, configured=None: name)
+    monkeypatch.setattr("app.modules.backup.service.subprocess.run", _stub_dump())
+    result = create_backup(db_session, now=datetime(2026, 9, 25, 3, 0))
+    assert result["status"] == "success"
+    assert result["filename"] == "smartsklad-20260925-030000.dump"
+    assert (tmp_path / result["filename"]).exists()
+    assert not list(tmp_path.glob("*.part"))
+    entry = db_session.query(BackupLog).one()
+    assert entry.kind == "manual"
+    assert entry.status == "success"
+    assert entry.size_bytes == len(b"archive")
+
+
+def test_create_backup_records_failure_and_removes_partial(db_session, tmp_path, monkeypatch):
+    from app.modules.backup.service import get_backup_settings
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    monkeypatch.setattr("app.modules.backup.service.find_binary", lambda name, configured=None: name)
+
+    def failing(command, **kwargs):
+        target = Path(command[command.index("--file") + 1])
+        target.write_text("partial", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 1, "", "pg_dump: ошибка подключения")
+
+    monkeypatch.setattr("app.modules.backup.service.subprocess.run", failing)
+    result = create_backup(db_session, now=datetime(2026, 9, 25, 3, 0))
+    assert result["status"] == "failed"
+    assert "ошибка подключения" in result["error"]
+    assert list(tmp_path.iterdir()) == []
+    entry = db_session.query(BackupLog).one()
+    assert entry.status == "failed"
+
+
+def test_create_backup_without_binary_is_logged_not_raised(db_session, tmp_path, monkeypatch):
+    from app.modules.backup.service import get_backup_settings
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    monkeypatch.setattr("app.modules.backup.service.find_binary", lambda name, configured=None: None)
+    result = create_backup(db_session, now=datetime(2026, 9, 25, 3, 0))
+    assert result["status"] == "failed"
+    assert "pg_dump" in result["error"]
