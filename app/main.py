@@ -18,7 +18,7 @@ from app.modules.audit.models import AuditLog
 from app.modules.ai.router import router as ai_router
 from app.modules.ai.service import forecast_rows
 from app.modules.dashboard.router import router as dashboard_router
-from app.modules.dashboard.service import dashboard_metrics, dashboard_sales_csv, resolve_period
+from app.modules.dashboard.service import chart_bars, dashboard_metrics, dashboard_sales_csv, resolve_period
 from app.modules.auth.dependencies import (
     SESSION_COOKIE, ensure_permissions, get_page_user as _page_user,
     page_context as _page_context, user_has_permission,
@@ -487,6 +487,36 @@ def create_app() -> FastAPI:
             media_type="application/csv",
             headers={"Content-Disposition": 'attachment; filename="dashboard.csv"'},
         )
+
+    @app.get("/dashboard")
+    def dashboard_page(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.analytics_view)
+        preset = request.query_params.get("preset") or "month"
+        try:
+            start, end = resolve_period(
+                preset,
+                request.query_params.get("date_from"),
+                request.query_params.get("date_to"),
+            )
+        except ValueError as e:
+            return RedirectResponse(
+                "/dashboard?" + urlencode({"preset": preset, "msg": str(e)}), status_code=303
+            )
+        metrics = dashboard_metrics(db, start, end)
+        return templates.TemplateResponse(request, "dashboard.html", {
+            "title": "Аналитика продаж", "user": user,
+            "metrics": metrics, "chart": chart_bars(metrics["daily"]),
+            "preset": preset,
+            "can_export": user_has_permission(user, Permission.reports_export),
+            "msg": request.query_params.get("msg"),
+            **_page_context(user),
+        })
 
     @app.get("/forecast")
     def forecast_page(
