@@ -151,6 +151,8 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
     product = db.get(Product, product_id)
     if product is None:
         raise ValueError("product not found")
+    if "min_stock" in data and data["min_stock"] is not None and data["min_stock"] < 0:
+        raise ValueError("min_stock must be >= 0")
     old_dict = _product_dict(product)
     if "sku" in data:
         new_sku = data["sku"].strip()
@@ -172,10 +174,7 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
         product.price = data["price"]
     for key in ("category_id", "unit", "characteristic", "rest", "track_rest", "min_stock"):
         if key in data:
-            value = data[key]
-            if key == "min_stock" and value is not None and value < 0:
-                raise ValueError("min_stock must be >= 0")
-            setattr(product, key, value)
+            setattr(product, key, data[key])
     old_value = json.dumps(old_dict, ensure_ascii=False)
     db.commit()
     new_value = json.dumps(_product_dict(product), ensure_ascii=False)

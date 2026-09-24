@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.modules.audit.models import AuditLog
@@ -214,9 +216,30 @@ def test_update_product_min_stock_negative_rejected(db_session):
     assert db_session.get(Product, p.id).min_stock is None
 
 
+def test_update_product_min_stock_negative_rejected_before_mutations(db_session):
+    p = create_product(db_session, "Гвозди", "NAIL-14", None, "шт", 10.0, None, 5)
+    with pytest.raises(ValueError):
+        update_product(db_session, p.id, {
+            "sku": "NAIL-14-UPDATED", "name": "Изменённый", "price": 20.0, "min_stock": -1,
+        })
+    db_session.commit()
+    db_session.expire_all()
+    stored = db_session.get(Product, p.id)
+    assert stored.min_stock is None
+    assert stored.sku == "NAIL-14"
+    assert stored.name == "Гвозди"
+    assert stored.price == 10.0
+
+
+def test_create_product_negative_min_stock_rejected(db_session):
+    with pytest.raises(ValueError):
+        create_product(db_session, "Гвозди", "NAIL-13", None, "шт", 10.0, None, 5, min_stock=-1)
+    assert db_session.query(Product).filter_by(sku="NAIL-13").first() is None
+
+
 def test_update_product_min_stock_in_audit(db_session):
     p = create_product(db_session, "Гвозди", "NAIL-12", None, "шт", 10.0, None, 5)
     update_product(db_session, p.id, {"min_stock": 3})
     entries = db_session.query(AuditLog).filter_by(action="product.update", entity_id=p.id).all()
     assert len(entries) == 1
-    assert '"min_stock": 3' in entries[0].new_value
+    assert json.loads(entries[0].new_value)["min_stock"] == 3

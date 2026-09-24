@@ -1,5 +1,6 @@
 from app.modules.auth.models import Role, User
 from app.modules.auth.service import get_role_by_name, hash_password, login
+from app.modules.inventory.models import Product
 
 PASSWORD = "password123"
 
@@ -293,6 +294,15 @@ def test_patch_product_min_stock(client, db_session):
     r = client.patch(f"/api/products/{pid}", json={"min_stock": 15})
     assert r.status_code == 200
     assert r.json()["min_stock"] == 15
+
+
+def test_create_product_negative_min_stock_returns_400(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/api/products", json={
+        "name": "Гвозди", "sku": "NAIL-A4", "min_stock": -5,
+    })
+    assert r.status_code == 400
+    assert db_session.query(Product).filter_by(sku="NAIL-A4").first() is None
 
 
 def test_patch_product_negative_min_stock_returns_400(client, db_session):
