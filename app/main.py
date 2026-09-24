@@ -41,6 +41,7 @@ import app.modules.inventory.models  # noqa: F401
 import app.modules.customers.models  # noqa: F401
 import app.modules.orders.models  # noqa: F401
 import app.modules.backup.models  # noqa: F401
+from app.modules.backup.maintenance import maintenance_middleware, maintenance_state
 from app.modules.backup.scheduler import scheduler_loop
 from app.modules.inventory.models import Category, PriceHistory
 from app.modules.customers.models import Customer
@@ -183,7 +184,9 @@ def create_app() -> FastAPI:
     app = FastAPI(title="СмартСклад", lifespan=lifespan)
     app.state.skip_seed_admin = False
     app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
+    app.middleware("http")(maintenance_middleware)
     templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
+    templates.env.globals["maintenance_state"] = maintenance_state
     app.state.templates = templates
 
     app.include_router(auth_router)

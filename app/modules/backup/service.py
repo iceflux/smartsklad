@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import subprocess
+import time as clock
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -10,7 +11,9 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.config import settings as app_settings
+from app.db import SessionLocal, engine
 from app.modules.audit.service import log_action
+from app.modules.backup.maintenance import set_idle, set_running
 from app.modules.backup.models import BackupLog, BackupSettings
 
 DEFAULT_BACKUP_DIR = Path(__file__).resolve().parents[3] / "backups"
@@ -220,3 +223,45 @@ def create_backup(db, *, user_id: int | None = None, kind: str = "manual",
         if partial is not None:
             partial.unlink(missing_ok=True)
         return _record(db, kind=kind, status="failed", error=str(error)[:512], user_id=user_id)
+
+
+def run_restore(db, filename: str, *, user_id: int | None = None) -> dict:
+    if parse_archive_name(filename) is None:
+        raise ValueError("некорректное имя архива")
+    archive = Path(get_backup_settings(db).local_path) / filename
+    if not archive.is_file():
+        raise FileNotFoundError("архив не найден")
+    binary = find_binary("pg_restore")
+    if binary is None:
+        raise ValueError("pg_restore не найден")
+    prepared = pg_restore_command(binary, archive)
+    result = subprocess.run(prepared["command"], env={**os.environ, **prepared["env"]},
+                            capture_output=True, text=True, timeout=3600)
+    if result.returncode != 0:
+        entry = BackupLog(kind="restore", status="failed", filename=filename,
+                          error=(result.stderr or "pg_restore завершился с ошибкой").strip()[:512],
+                          user_id=user_id)
+        db.add(entry)
+        db.commit()
+        return {"status": "failed", "filename": filename,
+                "error": entry.error, "log_id": entry.id}
+    entry = BackupLog(kind="restore", status="success", filename=filename, user_id=user_id)
+    db.add(entry)
+    db.commit()
+    log_action(db, action="backup.restore", entity_type="backup", entity_id=entry.id,
+               new_value=filename, user_id=user_id)
+    return {"status": "success", "filename": filename, "log_id": entry.id}
+
+
+def perform_restore(filename: str, *, user_id: int | None = None) -> dict:
+    set_running()
+    try:
+        clock.sleep(2)
+        engine.dispose()
+        db = SessionLocal()
+        try:
+            return run_restore(db, filename, user_id=user_id)
+        finally:
+            db.close()
+    finally:
+        set_idle()

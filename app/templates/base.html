@@ -7,6 +7,29 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 text-gray-900">
+{% set maintenance = maintenance_state() %}
+{% if maintenance.mode == "countdown" %}
+<div class="bg-amber-100 border-b border-amber-300 p-3 text-center" data-starts-at="{{ maintenance.starts_at }}">
+    <p class="font-semibold">Через <span id="countdown">?</span> начнётся восстановление из резервной копии.</p>
+    <p class="text-sm">Недоработанные изменения будут потеряны. Сохраните открытые документы и выйдите из заказов.</p>
+</div>
+<script>
+(function () {
+    var box = document.querySelector("[data-starts-at]");
+    if (!box) return;
+    var left = Math.max(0, Math.floor(Number(box.dataset.startsAt) - Date.now() / 1000));
+    var out = document.getElementById("countdown");
+    function tick() {
+        if (left <= 0) { location.reload(); return; }
+        var m = Math.floor(left / 60), s = left % 60;
+        out.textContent = m + " мин " + (s < 10 ? "0" : "") + s + " с";
+        left -= 1;
+        setTimeout(tick, 1000);
+    }
+    tick();
+})();
+</script>
+{% endif %}
     <header class="flex items-center justify-between p-4 border-b">
         <a href="/" class="text-xl font-bold">СмартСклад</a>
         <nav>
