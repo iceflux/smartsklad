@@ -39,6 +39,7 @@ from app.modules.auth.users_router import router as users_router
 import app.modules.inventory.models  # noqa: F401
 import app.modules.customers.models  # noqa: F401
 import app.modules.orders.models  # noqa: F401
+import app.modules.backup.models  # noqa: F401
 from app.modules.inventory.models import Category, PriceHistory
 from app.modules.customers.models import Customer
 from app.modules.customers.router import router as customers_router
