@@ -1,5 +1,6 @@
+import asyncio
 import json
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import Annotated
@@ -40,6 +41,7 @@ import app.modules.inventory.models  # noqa: F401
 import app.modules.customers.models  # noqa: F401
 import app.modules.orders.models  # noqa: F401
 import app.modules.backup.models  # noqa: F401
+from app.modules.backup.scheduler import scheduler_loop
 from app.modules.inventory.models import Category, PriceHistory
 from app.modules.customers.models import Customer
 from app.modules.customers.router import router as customers_router
@@ -167,7 +169,16 @@ def create_app() -> FastAPI:
         if not app.state.skip_seed_admin:
             create_admin_if_empty(SessionLocal())
             ensure_default_settings(SessionLocal())  # seed глобалки дефолт; в тестах skip_seed_admin=True → не триггерим реальный PG
-        yield
+        task = None
+        if not app.state.skip_seed_admin:
+            task = asyncio.create_task(scheduler_loop())
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
 
     app = FastAPI(title="СмартСклад", lifespan=lifespan)
     app.state.skip_seed_admin = False
