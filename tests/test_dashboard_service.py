@@ -52,6 +52,11 @@ def test_inverted_period_raises():
         resolve_period(None, "2026-02-01", "2026-01-01")
 
 
+def test_future_date_from_raises_even_without_date_to():
+    with pytest.raises(ValueError):
+        resolve_period("day", date.today() + timedelta(days=1))
+
+
 def test_date_objects_are_accepted():
     assert resolve_period("month", date(2026, 3, 1), date(2026, 3, 2)) == (date(2026, 3, 1), date(2026, 3, 2))
 
@@ -80,8 +85,8 @@ def test_chart_bars_zero_totals_do_not_divide_by_zero():
 
 
 def test_chart_bars_proportional_heights():
-    chart = chart_bars(_daily([100.0, 200.0]))
-    assert chart["bars"][1]["h"] == 2 * chart["bars"][0]["h"]
+    chart = chart_bars(_daily([100.0, 200.0, 300.0]))
+    assert [b["h"] for b in chart["bars"]] == [47, 93, 140]
 
 
 def test_chart_bars_stay_inside_viewbox():
@@ -91,9 +96,16 @@ def test_chart_bars_stay_inside_viewbox():
         last = chart["bars"][-1]
         assert last["x"] + last["w"] <= chart["width"]
         assert chart["width"] >= 50 + n
+    assert chart_bars(_daily([1.0] * 365))["width"] == 780
 
 
 def test_chart_bars_long_series_thins_labels():
     chart = chart_bars(_daily([1.0] * 30))
-    labelled = [b for b in chart["bars"] if b["label"]]
-    assert 0 < len(labelled) < 30
+    assert [b["label"] for b in chart["bars"] if b["label"]] == [
+        "01.03",
+        "06.03",
+        "11.03",
+        "16.03",
+        "21.03",
+        "26.03",
+    ]

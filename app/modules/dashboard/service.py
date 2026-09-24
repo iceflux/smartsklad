@@ -25,18 +25,22 @@ def resolve_period(preset=None, date_from=None, date_to=None) -> tuple[date, dat
     start = _parse_iso(date_from)
     end = _parse_iso(date_to)
     if start is not None and end is not None:
-        if start > end:
-            raise ValueError("период: начало позже конца")
-        return start, end
-    if preset is None:
-        days = PRESET_DAYS[DEFAULT_PRESET]
+        resolved_start, resolved_end = start, end
+    elif start is not None:
+        resolved_start, resolved_end = start, today
+    elif end is not None:
+        resolved_start = end - timedelta(days=PRESET_DAYS[DEFAULT_PRESET] - 1)
+        resolved_end = end
     else:
-        days = PRESET_DAYS.get(preset, PRESET_DAYS["day"])
-    if start is not None:
-        return start, today
-    if end is not None:
-        return end - timedelta(days=PRESET_DAYS["month"] - 1), end
-    return today - timedelta(days=days - 1), today
+        if preset is None:
+            days = PRESET_DAYS[DEFAULT_PRESET]
+        else:
+            days = PRESET_DAYS.get(preset, PRESET_DAYS["day"])
+        resolved_start = today - timedelta(days=days - 1)
+        resolved_end = today
+    if resolved_start > resolved_end:
+        raise ValueError("период: начало позже конца")
+    return resolved_start, resolved_end
 
 
 def chart_bars(daily: list[dict], *, width: int = 600, height: int = 180) -> dict:
