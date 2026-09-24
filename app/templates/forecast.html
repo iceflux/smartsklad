@@ -33,9 +33,9 @@
                 <td class="p-2 text-right">{{ row.rest }} {{ row.unit }}</td>
                 <td class="p-2 text-right">{{ row.min_stock }}</td>
                 <td class="p-2 text-right">{{ '%.2f'|format(row.avg_daily_sold) }}</td>
-                <td class="p-2 text-right">{% if row.has_data %}{{ row.forecast_7 }}{% else %}<span class="text-gray-500">мало данных</span>{% endif %}</td>
-                <td class="p-2 text-right">{% if row.has_data %}{{ row.forecast_14 }}{% else %}—{% endif %}</td>
-                <td class="p-2 text-right">{% if row.has_data %}{{ row.forecast_30 }}{% else %}—{% endif %}</td>
+                <td class="p-2 text-right">{% if not row.has_data %}<span class="text-gray-500">мало данных</span>{% elif row.forecast_7 is not none %}{{ row.forecast_7 }}{% else %}—{% endif %}</td>
+                <td class="p-2 text-right">{% if row.forecast_14 is not none %}{{ row.forecast_14 }}{% else %}—{% endif %}</td>
+                <td class="p-2 text-right">{% if row.forecast_30 is not none %}{{ row.forecast_30 }}{% else %}—{% endif %}</td>
                 <td class="p-2 text-right">{% if row.recommended_qty is not none %}<span class="font-bold">{{ row.recommended_qty }}</span>{% else %}—{% endif %}</td>
             </tr>
             {% endfor %}
