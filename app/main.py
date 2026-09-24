@@ -17,6 +17,8 @@ from app.modules.audit.router import router as audit_router
 from app.modules.audit.models import AuditLog
 from app.modules.ai.router import router as ai_router
 from app.modules.ai.service import forecast_rows
+from app.modules.dashboard.router import router as dashboard_router
+from app.modules.dashboard.service import dashboard_metrics, dashboard_sales_csv, resolve_period
 from app.modules.auth.dependencies import (
     SESSION_COOKIE, ensure_permissions, get_page_user as _page_user,
     page_context as _page_context, user_has_permission,
@@ -175,6 +177,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_router, prefix="/api")
     app.include_router(notifications_router, prefix="/api")
     app.include_router(ai_router, prefix="/api")
+    app.include_router(dashboard_router, prefix="/api")
     app.include_router(audit_router)
 
     @app.get("/")
@@ -459,6 +462,30 @@ def create_app() -> FastAPI:
             content=export_products_csv(db),
             media_type="application/csv",
             headers={"Content-Disposition": 'attachment; filename="products.csv"'},
+        )
+
+    @app.get("/dashboard/export.csv")
+    def dashboard_export_page(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.reports_export)
+        try:
+            start, end = resolve_period(
+                request.query_params.get("preset"),
+                request.query_params.get("date_from"),
+                request.query_params.get("date_to"),
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        daily = dashboard_metrics(db, start, end)["daily"]
+        return Response(
+            content=dashboard_sales_csv(daily),
+            media_type="application/csv",
+            headers={"Content-Disposition": 'attachment; filename="dashboard.csv"'},
         )
 
     @app.get("/forecast")
