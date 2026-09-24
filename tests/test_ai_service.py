@@ -33,10 +33,12 @@ def test_empty_series_returns_none():
     assert _linear_forecast([], 7) is None
 
 
-def test_declining_series_never_negative():
-    result = _linear_forecast(list(range(10, 0, -1)), 30)
-    assert result is not None
-    assert result >= 0
+def test_declining_series_predicts_zero():
+    assert _linear_forecast(list(range(10, 0, -1)), 30) == 0
+
+
+def test_declining_series_clamps_each_day():
+    assert _linear_forecast([5, 4, 3], 30) == 3
 
 
 def test_flat_series_one_per_day():
@@ -58,3 +60,7 @@ def test_min_stock_zero_demand():
 
 def test_min_stock_negative_override_clamped():
     assert _min_stock(-3, 2.0, 14) == 0
+
+
+def test_min_stock_negative_fallback_clamped():
+    assert _min_stock(None, -2.0, 14) == 0
