@@ -133,6 +133,17 @@ def _order_form_items(form: dict) -> list[dict]:
     return items
 
 
+def _to_int(raw, default):
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def _page_param(raw):
+    return min(10000, max(1, _to_int(raw, 1)))
+
+
 def _category_label(category: Category | None) -> str:
     if category is None:
         return ""
@@ -258,7 +269,7 @@ def create_app() -> FastAPI:
         channel = request.query_params.get("channel") or None
         status = request.query_params.get("status") or None
         raw_page = request.query_params.get("page") or "1"
-        page = max(1, int(raw_page)) if raw_page.isdigit() else 1
+        page = _page_param(raw_page)
         q = db.query(NotificationLog)
         if channel:
             q = q.filter(NotificationLog.channel == channel)
@@ -392,10 +403,10 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.products_view)
         search = request.query_params.get("search") or None
         raw_category = request.query_params.get("category_id")
-        category_id = int(raw_category) if raw_category and raw_category.isdigit() else None
+        category_id = _to_int(raw_category, None)
         include_deleted = request.query_params.get("include_deleted") == "1"
         raw_page = request.query_params.get("page") or "1"
-        page = max(1, int(raw_page)) if raw_page.isdigit() else 1
+        page = _page_param(raw_page)
         items, total = list_products(db, search=search, category_id=category_id,
                                      include_deleted=include_deleted, page=page)
         pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -460,10 +471,7 @@ def create_app() -> FastAPI:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.analytics_view)
         only_purchase = request.query_params.get("only_purchase") == "1"
-        try:
-            page = max(1, int(request.query_params.get("page") or "1"))
-        except (TypeError, ValueError):
-            page = 1
+        page = _page_param(request.query_params.get("page"))
         rows, total = forecast_rows(
             db,
             only_purchase=only_purchase,
@@ -544,7 +552,7 @@ def create_app() -> FastAPI:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.products_edit)
         form = parse_qs((await request.body()).decode())
-        product_ids = [int(v) for v in form.get("product_ids", []) if v.isdigit()]
+        product_ids = [v for v in (_to_int(x, None) for x in form.get("product_ids", [])) if v is not None]
         raw_category = (form.get("category_id") or [""])[0]
         if not product_ids:
             return RedirectResponse("/products?msg=Не выбрано ни одного товара", status_code=303)
@@ -590,7 +598,7 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.stock_change)
         form = parse_qs((await request.body()).decode())
         raw_rest = (form.get("rest") or [""])[0]
-        rest = int(raw_rest) if raw_rest.lstrip("-").isdigit() else 0
+        rest = _to_int(raw_rest, 0)
         try:
             update_product(db, product_id, {"rest": rest}, user)
         except ValueError:
@@ -642,7 +650,7 @@ def create_app() -> FastAPI:
         search = request.query_params.get("search") or None
         include_deleted = request.query_params.get("include_deleted") == "1"
         raw_page = request.query_params.get("page") or "1"
-        page = max(1, int(raw_page)) if raw_page.isdigit() else 1
+        page = _page_param(raw_page)
         items, total = list_customers(db, search=search, include_deleted=include_deleted, page=page)
         pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
         customers = [{
@@ -735,7 +743,7 @@ def create_app() -> FastAPI:
         if status not in VALID_STATUSES:
             status = None
         raw_customer = request.query_params.get("customer_id")
-        customer_id = int(raw_customer) if raw_customer and raw_customer.isdigit() else None
+        customer_id = _to_int(raw_customer, None)
         d_from = _parse_date(request.query_params.get("date_from"))
         d_to = _parse_date(request.query_params.get("date_to"))
         raw_amount = request.query_params.get("min_amount")
@@ -745,7 +753,7 @@ def create_app() -> FastAPI:
             min_amount = None
         include_deleted = request.query_params.get("include_deleted") == "1"
         raw_page = request.query_params.get("page") or "1"
-        page = max(1, int(raw_page)) if raw_page.isdigit() else 1
+        page = _page_param(raw_page)
         items, total = list_orders(
             db, search=search, customer_id=customer_id, status=status,
             date_from=datetime.combine(d_from, time.min) if d_from else None,
