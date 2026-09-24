@@ -53,8 +53,10 @@ def write_report_settings(db: Session, *, enabled, period, send_time,
                           recipient_ids, user_id: int | None = None) -> dict:
     if period not in PERIOD_LABELS:
         raise ValueError("период отчёта: day, week или month")
-    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", send_time or ""):
+    if not isinstance(send_time, str) or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", send_time):
         raise ValueError("время отправки в формате ЧЧ:ММ")
+    if isinstance(recipient_ids, (str, bytes)) or not hasattr(recipient_ids, "__iter__"):
+        raise ValueError("получатели: нужен список id")
     ids = []
     for value in recipient_ids:
         try:
