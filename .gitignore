@@ -9,3 +9,5 @@ venv/
 
 # Env
 .env
+
+backups/
