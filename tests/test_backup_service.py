@@ -435,6 +435,36 @@ def test_create_backup_blocked_directory_is_logged(db_session, tmp_path):
     assert db_session.query(BackupLog).one().status == "failed"
 
 
+def test_update_backup_settings_validates_before_mutating(db_session):
+    from app.modules.backup.service import update_backup_settings
+    row = get_backup_settings(db_session)
+    row.retention_days = 11
+    db_session.commit()
+    with pytest.raises(ValueError):
+        update_backup_settings(db_session, enabled=True, schedule_time="04:30",
+                               check_interval_minutes=0, retention_days=30, local_path="b")
+    assert get_backup_settings(db_session).retention_days == 11
+
+
+def test_update_backup_settings_rejects_bad_time(db_session):
+    from app.modules.backup.service import update_backup_settings
+    with pytest.raises(ValueError):
+        update_backup_settings(db_session, enabled=True, schedule_time="25:99",
+                               check_interval_minutes=15, retention_days=30, local_path="b")
+
+
+def test_update_backup_settings_normalises_empty_path(db_session):
+    from app.modules.backup.service import update_backup_settings
+    update_backup_settings(db_session, enabled=True, schedule_time="04:30",
+                           check_interval_minutes=20, retention_days=15,
+                           local_path="backups-x", pg_dump_path="")
+    row = get_backup_settings(db_session)
+    assert row.pg_dump_path is None
+    assert row.local_path == "backups-x"
+    assert row.check_interval_minutes == 20
+    assert row.schedule_time.strftime("%H:%M") == "04:30"
+
+
 def test_create_backup_timeout_is_logged_and_cleans_partial(db_session, tmp_path, monkeypatch):
     row = get_backup_settings(db_session)
     row.local_path = str(tmp_path)

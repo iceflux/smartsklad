@@ -7,7 +7,7 @@ from typing import Annotated
 from urllib.parse import parse_qs, urlencode
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
@@ -41,8 +41,18 @@ import app.modules.inventory.models  # noqa: F401
 import app.modules.customers.models  # noqa: F401
 import app.modules.orders.models  # noqa: F401
 import app.modules.backup.models  # noqa: F401
-from app.modules.backup.maintenance import maintenance_middleware, maintenance_state
+from app.modules.backup.maintenance import arm_restore, maintenance_middleware, maintenance_state
+from app.modules.backup.models import BackupLog
+from app.modules.backup.report import read_report_settings, write_report_settings
 from app.modules.backup.router import router as backup_router
+from app.modules.backup.service import (
+    create_backup,
+    get_backup_settings,
+    list_archives,
+    parse_archive_name,
+    pg_dump_health,
+    update_backup_settings,
+)
 from app.modules.backup.scheduler import scheduler_loop
 from app.modules.inventory.models import Category, PriceHistory
 from app.modules.customers.models import Customer
@@ -540,6 +550,147 @@ def create_app() -> FastAPI:
             "msg": request.query_params.get("msg"),
             **_page_context(user),
         })
+
+    @app.get("/backups")
+    def backups_page(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.backup_manage)
+        row = get_backup_settings(db)
+        candidates = (
+            db.query(User)
+            .filter(User.is_active.is_(True), User.email.isnot(None), User.email != "")
+            .order_by(User.username)
+            .all()
+        )
+        return templates.TemplateResponse(request, "backups.html", {
+            "title": "Резервные копии", "user": user,
+            "settings_row": row,
+            "scheduler": {
+                "last_check_at": row.last_check_at,
+                "last_backup_at": row.last_backup_at,
+                "last_status": row.last_status,
+                "last_error": row.last_error,
+                "last_report_at": row.last_report_at,
+                "last_report_sent": row.last_report_sent,
+                "last_report_skipped": row.last_report_skipped,
+            },
+            "health": pg_dump_health(db, row),
+            "archives": list_archives(row),
+            "log_entries": db.query(BackupLog).order_by(BackupLog.id.desc()).limit(20).all(),
+            "report": read_report_settings(db),
+            "candidates": candidates,
+            "maintenance": maintenance_state(),
+            "msg": request.query_params.get("msg"),
+            **_page_context(user),
+        })
+
+    @app.post("/backups/run")
+    def backups_run_post(
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.backup_manage)
+        result = create_backup(db, user_id=user.id, kind="manual")
+        key = "Копия создана" if result["status"] == "success" else f"Ошибка: {result['error']}"
+        return RedirectResponse("/backups?" + urlencode({"msg": key}), status_code=303)
+
+    @app.post("/backups/settings")
+    async def backups_settings_post(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.backup_manage)
+        form = parse_qs((await request.body()).decode())
+        try:
+            update_backup_settings(
+                db,
+                enabled="enabled" in form,
+                schedule_time=(form.get("schedule_time") or [""])[0],
+                check_interval_minutes=int((form.get("check_interval_minutes") or ["0"])[0]),
+                retention_days=int((form.get("retention_days") or ["0"])[0]),
+                local_path=(form.get("local_path") or [""])[0],
+                pg_dump_path=(form.get("pg_dump_path") or [""])[0],
+                user_id=user.id,
+            )
+            key = "Настройки сохранены"
+        except ValueError as e:
+            db.rollback()
+            key = "Ошибка: " + str(e)
+        return RedirectResponse("/backups?" + urlencode({"msg": key}), status_code=303)
+
+    @app.post("/backups/report")
+    async def backups_report_post(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.backup_manage)
+        form = parse_qs((await request.body()).decode())
+        recipient_ids = [int(v) for v in form.get("recipient_ids", []) if v.isdigit()]
+        try:
+            write_report_settings(
+                db, enabled="enabled" in form,
+                period=(form.get("period") or ["week"])[0],
+                send_time=(form.get("send_time") or ["09:00"])[0],
+                recipient_ids=recipient_ids, user_id=user.id,
+            )
+            key = "Настройки отчёта сохранены"
+        except ValueError as e:
+            db.rollback()
+            key = "Ошибка: " + str(e)
+        return RedirectResponse("/backups?" + urlencode({"msg": key}), status_code=303)
+
+    @app.post("/backups/restore")
+    async def backups_restore_post(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.backup_manage)
+        form = parse_qs((await request.body()).decode())
+        filename = (form.get("filename") or [""])[0]
+        try:
+            delay = int((form.get("delay") or ["60"])[0])
+        except (TypeError, ValueError):
+            delay = 60
+        row = get_backup_settings(db)
+        if parse_archive_name(filename) is None or not (Path(row.local_path) / filename).is_file():
+            return RedirectResponse(
+                "/backups?" + urlencode({"msg": "Ошибка: Архив не найден"}), status_code=303)
+        asyncio.create_task(arm_restore(filename, delay, user_id=user.id))
+        return RedirectResponse(
+            "/backups?" + urlencode({"msg": f"Восстановление начнётся через {delay} с"}),
+            status_code=303)
+
+    @app.get("/backups/download/{filename}")
+    def backups_download(
+        filename: str,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.backup_manage)
+        if parse_archive_name(filename) is None:
+            raise HTTPException(status_code=404, detail="архив не найден")
+        path = Path(get_backup_settings(db).local_path) / filename
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="архив не найден")
+        return FileResponse(path, filename=filename, media_type="application/octet-stream")
 
     @app.get("/forecast")
     def forecast_page(

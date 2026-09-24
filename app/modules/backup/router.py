@@ -1,6 +1,3 @@
-import re
-from datetime import time
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -14,12 +11,11 @@ from app.modules.backup.service import (
     get_backup_settings,
     list_archives,
     pg_dump_health,
+    settings_dict,
+    update_backup_settings,
 )
-from app.modules.audit.service import log_action
 
 router = APIRouter()
-
-TIME_RE = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 
 
 class SettingsIn(BaseModel):
@@ -78,45 +74,21 @@ def backup_run(db=Depends(get_db),
 @router.get("/backup/settings")
 def backup_settings_get(db=Depends(get_db),
                         user=Depends(require_permissions(Permission.backup_manage))):
-    row = get_backup_settings(db)
-    return {
-        "enabled": row.enabled,
-        "schedule_time": row.schedule_time.strftime("%H:%M"),
-        "check_interval_minutes": row.check_interval_minutes,
-        "retention_days": row.retention_days,
-        "local_path": row.local_path,
-        "pg_dump_path": row.pg_dump_path,
-    }
+    return settings_dict(get_backup_settings(db))
 
 
 @router.put("/backup/settings")
 def backup_settings_put(payload: SettingsIn, db=Depends(get_db),
                         user=Depends(require_permissions(Permission.backup_manage))):
-    if not TIME_RE.fullmatch(payload.schedule_time or ""):
-        raise HTTPException(status_code=422, detail="время в формате ЧЧ:ММ")
-    schedule_time = time.fromisoformat(payload.schedule_time)
-    if not 1 <= payload.check_interval_minutes <= 1440:
-        raise HTTPException(status_code=422, detail="период проверки от 1 до 1440 минут")
-    if not 1 <= payload.retention_days <= 365:
-        raise HTTPException(status_code=422, detail="срок хранения от 1 до 365 дней")
-    local_path = (payload.local_path or "").strip()
-    if not local_path:
-        raise HTTPException(status_code=422, detail="папка для копий обязательна")
-    row = get_backup_settings(db)
-    before = {"enabled": row.enabled, "schedule_time": row.schedule_time.strftime("%H:%M"),
-              "check_interval_minutes": row.check_interval_minutes,
-              "retention_days": row.retention_days, "local_path": row.local_path}
-    row.enabled = payload.enabled
-    row.schedule_time = schedule_time
-    row.check_interval_minutes = payload.check_interval_minutes
-    row.retention_days = payload.retention_days
-    row.local_path = local_path
-    row.pg_dump_path = (payload.pg_dump_path or "").strip() or None
-    db.commit()
-    log_action(db, action="backup.settings", entity_type="settings", entity_id=row.id,
-               old_value=str(before), new_value=f"{payload.schedule_time} {local_path}",
-               user_id=user.id)
-    return backup_settings_get(db=db, user=user)
+    try:
+        return update_backup_settings(
+            db, enabled=payload.enabled, schedule_time=payload.schedule_time,
+            check_interval_minutes=payload.check_interval_minutes,
+            retention_days=payload.retention_days, local_path=payload.local_path,
+            pg_dump_path=payload.pg_dump_path, user_id=user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.get("/backup/report")

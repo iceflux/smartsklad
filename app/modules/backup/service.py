@@ -3,7 +3,7 @@ import re
 import shutil
 import subprocess
 import time as clock
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
 from sqlalchemy import text
@@ -275,3 +275,44 @@ def perform_restore(filename: str, *, user_id: int | None = None) -> dict:
             db.close()
     finally:
         set_idle()
+
+
+def update_backup_settings(db, *, enabled, schedule_time, check_interval_minutes,
+                           retention_days, local_path, pg_dump_path=None,
+                           user_id: int | None = None) -> dict:
+    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", schedule_time or ""):
+        raise ValueError("время в формате ЧЧ:ММ")
+    if not 1 <= int(check_interval_minutes) <= 1440:
+        raise ValueError("период проверки от 1 до 1440 минут")
+    if not 1 <= int(retention_days) <= 365:
+        raise ValueError("срок хранения от 1 до 365 дней")
+    path = str(local_path or "").strip()
+    if not path:
+        raise ValueError("папка для копий обязательна")
+    row = get_backup_settings(db)
+    before = {"enabled": row.enabled, "schedule_time": row.schedule_time.strftime("%H:%M"),
+              "check_interval_minutes": row.check_interval_minutes,
+              "retention_days": row.retention_days, "local_path": row.local_path,
+              "pg_dump_path": row.pg_dump_path}
+    row.enabled = bool(enabled)
+    row.schedule_time = time.fromisoformat(schedule_time)
+    row.check_interval_minutes = int(check_interval_minutes)
+    row.retention_days = int(retention_days)
+    row.local_path = path
+    row.pg_dump_path = str(pg_dump_path or "").strip() or None
+    db.commit()
+    log_action(db, action="backup.settings", entity_type="settings", entity_id=row.id,
+               old_value=str(before),
+               new_value=f"{schedule_time} {path}", user_id=user_id)
+    return settings_dict(row)
+
+
+def settings_dict(row) -> dict:
+    return {
+        "enabled": row.enabled,
+        "schedule_time": row.schedule_time.strftime("%H:%M"),
+        "check_interval_minutes": row.check_interval_minutes,
+        "retention_days": row.retention_days,
+        "local_path": row.local_path,
+        "pg_dump_path": row.pg_dump_path,
+    }
