@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 from app.modules.auth.models import Role, User
 from app.modules.auth.service import get_role_by_name, hash_password, login
@@ -21,6 +21,18 @@ def _admin(client, db_session):
 
 def _analyst(client, db_session, username="analyst"):
     role = Role(name=username, is_system=False, is_super=False, permissions=["analytics.view"])
+    db_session.add(role)
+    db_session.commit()
+    u = User(username=username, password_hash=hash_password(PASSWORD), role_id=role.id)
+    db_session.add(u)
+    db_session.commit()
+    s = login(db_session, username, PASSWORD)
+    client.cookies.set("session", s.token)
+    return u
+
+
+def _exporter(client, db_session, username="exporter"):
+    role = Role(name=username, is_system=False, is_super=False, permissions=["reports.export"])
     db_session.add(role)
     db_session.commit()
     u = User(username=username, password_hash=hash_password(PASSWORD), role_id=role.id)
@@ -85,15 +97,37 @@ def test_dashboard_api_inverted_period_returns_422(client, db_session):
 
 def test_dashboard_api_garbage_period_does_not_500(client, db_session):
     _admin(client, db_session)
-    for query in ("preset=nonsense", "date_from=не%20дата", "date_to=abc"):
+    today = date.today()
+    month_start = today - timedelta(days=29)
+    r = client.get("/api/dashboard/sales?preset=nonsense")
+    assert r.status_code == 200
+    assert r.json()["date_from"] == today.isoformat()
+    assert r.json()["date_to"] == today.isoformat()
+    for query in ("date_from=не%20дата", "date_to=abc"):
         r = client.get(f"/api/dashboard/sales?{query}")
         assert r.status_code == 200
+        assert r.json()["date_from"] == month_start.isoformat()
+        assert r.json()["date_to"] == today.isoformat()
 
 
 def test_dashboard_csv_requires_permission(client, db_session):
     _analyst(client, db_session)
     r = client.get("/dashboard/export.csv")
     assert r.status_code == 403
+
+
+def test_dashboard_csv_for_reports_exporter_only(client, db_session):
+    _exporter(client, db_session)
+    _seed(db_session)
+    r = client.get("/dashboard/export.csv")
+    assert r.status_code == 200
+    assert client.get("/api/dashboard/sales").status_code == 403
+
+
+def test_dashboard_csv_anonymous_redirects_to_login(client, db_session):
+    r = client.get("/dashboard/export.csv", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers.get("location") == "/login"
 
 
 def test_dashboard_csv_inverted_period_returns_422(client, db_session):
@@ -108,5 +142,6 @@ def test_dashboard_csv_for_manager(client, db_session):
     r = client.get("/dashboard/export.csv")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/csv")
+    assert r.headers["content-disposition"] == 'attachment; filename="dashboard.csv"'
     text = r.text.replace("\ufeff", "", 1)
     assert text.splitlines()[0] == "date;orders;amount"
