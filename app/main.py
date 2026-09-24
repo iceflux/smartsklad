@@ -460,8 +460,10 @@ def create_app() -> FastAPI:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.analytics_view)
         only_purchase = request.query_params.get("only_purchase") == "1"
-        raw_page = request.query_params.get("page") or "1"
-        page = max(1, int(raw_page)) if raw_page.isdigit() else 1
+        try:
+            page = max(1, int(request.query_params.get("page") or "1"))
+        except (TypeError, ValueError):
+            page = 1
         rows, total = forecast_rows(
             db,
             only_purchase=only_purchase,

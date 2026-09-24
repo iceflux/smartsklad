@@ -63,6 +63,11 @@ def test_min_stock_product_override_wins():
     assert _min_stock(5, 2.0, 14) == 5
 
 
+def test_min_stock_zero_is_explicit_override(db_session):
+    from app.modules.ai.service import _min_stock
+    assert _min_stock(0, 2.0, 14) == 0
+
+
 def test_min_stock_zero_demand():
     assert _min_stock(None, 0.0, 14) == 0
 

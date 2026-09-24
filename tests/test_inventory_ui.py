@@ -139,3 +139,11 @@ def test_product_edit_page_min_stock_empty_when_not_set(client, db_session):
     r = client.get(f"/products/{pid}/edit")
     assert r.status_code == 200
     assert 'name="min_stock" type="number" min="0" value=""' in r.text
+
+
+def test_product_edit_page_renders_zero_min_stock(client, db_session):
+    _admin(client, db_session)
+    pid = client.post("/api/products", json={"name": "Гвозди", "sku": "NAIL-Z1", "min_stock": 0}).json()["id"]
+    r = client.get(f"/products/{pid}/edit")
+    assert r.status_code == 200
+    assert 'name="min_stock" type="number" min="0" value="0"' in r.text

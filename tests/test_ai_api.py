@@ -114,3 +114,19 @@ def test_forecast_api_only_purchase_returns_only_qualifying_rows(client, db_sess
     assert len(body) == 1
     assert body[0]["sku"] == "SKU-NEED"
     assert body[0]["recommended_qty"] is not None
+
+
+def test_forecast_api_rejects_out_of_range_pagination(client, db_session):
+    _admin(client, db_session)
+    for query in ("page=0", "page=-1", "page_size=0", "page_size=101"):
+        r = client.get(f"/api/forecast?{query}")
+        assert r.status_code == 422
+
+
+def test_forecast_api_accepts_pagination_boundaries(client, db_session):
+    _admin(client, db_session)
+    _seed(db_session)
+    r = client.get("/api/forecast?page=1&page_size=1")
+    assert r.status_code == 200
+    r = client.get("/api/forecast?page_size=100")
+    assert r.status_code == 200

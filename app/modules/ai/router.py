@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.db import get_db
 from app.modules.ai.service import forecast_rows
@@ -13,8 +13,8 @@ router = APIRouter()
 def api_forecast(
     only_purchase: bool = False,
     product_id: int | None = None,
-    page: int = 1,
-    page_size: int = 25,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     db=Depends(get_db),
     user=Depends(require_permissions(Permission.analytics_view)),
 ):

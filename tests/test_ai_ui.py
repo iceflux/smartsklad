@@ -69,6 +69,13 @@ def test_forecast_page_renders_rows(client, db_session):
     assert "Гвозди" in r.text
 
 
+def test_forecast_page_survives_malformed_page(client, db_session):
+    _admin(client, db_session)
+    for raw in ("\u00b2", "abc", "-5", "0", "9" * 400):
+        r = client.get(f"/forecast?page={raw}")
+        assert r.status_code == 200
+
+
 def test_forecast_page_shows_little_data_marker(client, db_session):
     _admin(client, db_session)
     c = Customer(name="ООО Строй", personal_discount=0.0)

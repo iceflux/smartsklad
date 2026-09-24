@@ -86,7 +86,14 @@
                 body.sku = f.sku.value;
                 body.unit = f.unit.value;
                 body.category_id = f.category_id.value ? parseInt(f.category_id.value) : null;
-                body.min_stock = f.min_stock.value === '' ? null : parseInt(f.min_stock.value, 10);
+                var msRaw = f.min_stock.value.trim();
+                if (msRaw === '') {
+                    body.min_stock = null;
+                } else {
+                    var ms = f.min_stock.valueAsNumber;
+                    if (!Number.isInteger(ms) || ms < 0) { showError('Минимальный запас: целое неотрицательное число'); return; }
+                    body.min_stock = ms;
+                }
                 var raw = f.characteristic.value.trim();
                 if (raw) {
                     try { body.characteristic = JSON.parse(raw); }

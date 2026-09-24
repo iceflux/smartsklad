@@ -63,6 +63,8 @@ def forecast_rows(
     only_purchase=False, product_id=None, min_stock_days=None,
     page=1, page_size=25,
 ) -> tuple[list[dict], int]:
+    page = max(1, page or 1)
+    page_size = min(100, max(1, page_size or 25))
     days_setting = DEFAULT_MIN_STOCK_DAYS if min_stock_days is None else min_stock_days
     today = date.today()
     start = today - timedelta(days=lookback_days - 1)
