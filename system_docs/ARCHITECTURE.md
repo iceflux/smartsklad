@@ -18,7 +18,7 @@
 
 - `tests/` на **pytest** + `httpx` (`TestClient`).
 - БД в тестах — **SQLite in-memory** (`StaticPool`), таблицы создаются из `Base.metadata` в `tests/conftest.py` — `pytest` запускается одной командой, Docker не нужен.
-- Сейчас: 332 теста (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI, printing service/API, notifications service/API/UI + PDF-вложение, AI service/API/UI).
+- Сейчас: 399 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI, printing service/API, notifications service/API/UI + PDF-вложение, AI service/API/UI, dashboard service/API/UI).
 
 ## Аутентификация и роли (`app/modules/auth/`)
 
@@ -84,6 +84,17 @@
 - `min_stock` отклоняется в отрицательную сторону и при создании, и при правке (в `update_product` проверка идёт до любых мутаций, поэтому частичной правки не остаётся); значение попадает в снимок аудита `product.update`; пустое поле формы отправляет `null` (снятие переопределения), а не `0`.
 - API: `GET /api/forecast` (`only_purchase`, `product_id`, `page`, `page_size`). Page: `/forecast`. Право: `analytics.view` (manager + admin). Аудита нет — только чтение.
 
+## Аналитика продаж (`app/modules/dashboard/`)
+
+- Без моделей и миграций: агрегаты считаются на лету при запросе, кэша и сохранённых отчётов нет.
+- Источник: заказы `status='done'` с `deleted_at IS NULL` в выбранном периоде — тот же критерий, что у прогноза спроса и списания остатков. Мягко удалённые клиенты и товары в топах остаются: продажа состоялась.
+- Метрики: `orders_count`, `total_sum`, `avg_check` (округление 2, `0.0` при пустом периоде), плотный ряд `daily` (дни без продаж = нули), топ-10 товаров по количеству, топ-10 клиентов по сумме, сортировка детерминированная (по значению, затем по имени).
+- Период: `resolve_period` — скользящие окна `day`/`week`/`month`/`year` (1/7/30/365 дней, конец — сегодня) либо произвольные `date_from`/`date_to`; границы включительные. При `date_from > date_to` функция выбрасывает `ValueError`: API и CSV возвращают 422, а `/dashboard` перенаправляет с сообщением.
+- График: инлайновый SVG, геометрия в чистой функции `chart_bars`, возвращающей адаптивную ширину — при 365 полосах `viewBox` расширяется, чтобы полосы не обрезались.
+- UI-детали: поля дат намеренно оставляются пустыми, потому что `resolve_period` при двух заданных границах игнорирует `preset`; фактический диапазон показывается строкой `Показано`. Ссылка CSV передаёт resolved `date_from`/`date_to`, а не `preset`, чтобы экспорт совпадал с видимым диапазоном.
+- CSV: `dashboard_sales_csv` — плоская таблица дневных продаж с BOM, разделитель `;` (идиома `export_products_csv`).
+- API: `GET /api/dashboard/sales` (`analytics.view`). Страница: `/dashboard` (`analytics.view`) и `/dashboard/export.csv` (`reports.export`). Аудита нет — только чтение.
+
 ## Audit UI (`app/modules/audit/`)
 
 - `log_action(db, *, action, entity_type, entity_id, old_value, new_value, user_id, ip)` — keyword-only, коммитит сама.
@@ -92,7 +103,7 @@
 
 ## Навигация
 
-- `base.html`: ссылки Товары/Категории/Клиенты/Заказы/Прогноз/Роли/Пользователи/Журнал аудита/Уведомления/Настройки, видимость по флагам прав из `page_context(user)` (в `auth/dependencies.py`), передаются через контекст каждого page-роута.
+- `base.html`: ссылки Товары/Категории/Клиенты/Заказы/Аналитика/Прогноз/Роли/Пользователи/Журнал аудита/Уведомления/Настройки, видимость по флагам прав из `page_context(user)` (в `auth/dependencies.py`), передаются через контекст каждого page-роута.
 
 ## Печать документов (`app/modules/printing/`)
 
