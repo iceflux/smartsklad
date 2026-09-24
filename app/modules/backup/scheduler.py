@@ -8,6 +8,7 @@ from app.modules.settings.service import REPORT_ENABLED_KEY, REPORT_TIME_KEY, ge
 ADVISORY_LOCK_ID = 7_240_119
 MIN_INTERVAL_MINUTES = 1
 MAX_INTERVAL_MINUTES = 1440
+DEFAULT_INTERVAL_MINUTES = 15
 
 
 def due_for_backup(bs, now: datetime, last_backup_at: datetime | None) -> bool:
@@ -129,7 +130,11 @@ def _run_once() -> dict:
 async def scheduler_loop() -> None:
     while True:
         try:
-            await asyncio.sleep(_next_interval() * 60)
+            interval = await asyncio.to_thread(_next_interval)
+        except Exception:
+            interval = DEFAULT_INTERVAL_MINUTES
+        try:
+            await asyncio.sleep(interval * 60)
             await asyncio.to_thread(_run_once)
         except asyncio.CancelledError:
             raise

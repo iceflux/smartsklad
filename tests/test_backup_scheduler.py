@@ -50,6 +50,8 @@ def test_report_due_rules():
     assert due_for_report(True, time(9, 0), datetime(2026, 9, 25, 8, 59), None) is False
     sent = datetime(2026, 9, 25, 9, 0)
     assert due_for_report(True, time(9, 0), datetime(2026, 9, 25, 18, 0), sent) is False
+    yesterday = datetime(2026, 9, 24, 9, 0)
+    assert due_for_report(True, time(9, 0), datetime(2026, 9, 25, 9, 0), yesterday) is True
 
 
 def test_read_interval_is_clamped(db_session):
@@ -62,12 +64,13 @@ def test_read_interval_is_clamped(db_session):
     assert read_interval_minutes(db_session) == 1440
 
 
-def test_run_due_jobs_stamps_check_time(db_session):
+def test_run_due_jobs_stores_the_supplied_time(db_session):
     get_backup_settings(db_session)
-    result = run_due_jobs(db_session, now=datetime(2026, 9, 25, 2, 0))
+    moment = datetime(2026, 9, 25, 2, 0)
+    result = run_due_jobs(db_session, now=moment)
     assert result["backup"] is None
     assert result["report"] is None
-    assert get_backup_settings(db_session).last_check_at is not None
+    assert get_backup_settings(db_session).last_check_at == moment
 
 
 def test_run_due_jobs_runs_backup_when_due(db_session, tmp_path, monkeypatch):
