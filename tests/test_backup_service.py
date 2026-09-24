@@ -1,5 +1,8 @@
 from datetime import time
+from pathlib import Path
 
+from app.modules.auth.models import User
+from app.modules.auth.service import get_role_by_name
 from app.modules.backup.models import BackupLog, BackupSettings
 from app.modules.backup.service import ensure_default_backup_settings, get_backup_settings
 
@@ -20,9 +23,21 @@ def test_ensure_default_backup_settings_defaults(db_session):
     assert row.check_interval_minutes == 15
     assert row.retention_days == 30
     assert row.pg_dump_path is None
+    assert row.local_path == str(Path(__file__).resolve().parents[1] / "backups")
     assert row.last_status is None
     assert row.last_report_sent == 0
     assert row.last_report_skipped == 0
+
+
+def test_ensure_default_backup_settings_keeps_edited_values(db_session):
+    row = ensure_default_backup_settings(db_session)
+    row.retention_days = 7
+    row.enabled = False
+    db_session.commit()
+    again = ensure_default_backup_settings(db_session)
+    assert again.retention_days == 7
+    assert again.enabled is False
+    assert db_session.query(BackupSettings).count() == 1
 
 
 def test_get_backup_settings_seeds_on_first_read(db_session):
@@ -32,8 +47,16 @@ def test_get_backup_settings_seeds_on_first_read(db_session):
 
 
 def test_backup_log_accepts_all_kinds(db_session):
-    user_id = None
-    for kind in ("scheduled", "manual", "restore"):
-        db_session.add(BackupLog(kind=kind, status="success", user_id=user_id))
+    user = User(
+        username="boss",
+        password_hash="x",
+        role_id=get_role_by_name(db_session, "admin").id,
+    )
+    db_session.add(user)
     db_session.commit()
-    assert db_session.query(BackupLog).count() == 3
+    for kind in ("scheduled", "manual", "restore"):
+        db_session.add(BackupLog(kind=kind, status="success", user_id=user.id))
+    db_session.commit()
+    rows = db_session.query(BackupLog).order_by(BackupLog.id).all()
+    assert [row.kind for row in rows] == ["scheduled", "manual", "restore"]
+    assert all(row.user_id == user.id for row in rows)

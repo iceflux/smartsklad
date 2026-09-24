@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.backup.models import BackupSettings
 
-DEFAULT_BACKUP_DIR = Path(__file__).resolve().parents[2] / "backups"
+DEFAULT_BACKUP_DIR = Path(__file__).resolve().parents[3] / "backups"
 
 
 def ensure_default_backup_settings(db: Session) -> BackupSettings:
