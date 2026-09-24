@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal, get_db
 from app.modules.audit.router import router as audit_router
 from app.modules.audit.models import AuditLog
+from app.modules.ai.router import router as ai_router
+from app.modules.ai.service import forecast_rows
 from app.modules.auth.dependencies import (
     SESSION_COOKIE, ensure_permissions, get_page_user as _page_user,
     page_context as _page_context, user_has_permission,
@@ -161,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(orders_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
     app.include_router(notifications_router, prefix="/api")
+    app.include_router(ai_router, prefix="/api")
     app.include_router(audit_router)
 
     @app.get("/")
@@ -445,6 +448,33 @@ def create_app() -> FastAPI:
             media_type="application/csv",
             headers={"Content-Disposition": 'attachment; filename="products.csv"'},
         )
+
+    @app.get("/forecast")
+    def forecast_page(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.analytics_view)
+        only_purchase = request.query_params.get("only_purchase") == "1"
+        raw_page = request.query_params.get("page") or "1"
+        page = max(1, int(raw_page)) if raw_page.isdigit() else 1
+        rows, total = forecast_rows(
+            db,
+            only_purchase=only_purchase,
+            page=page,
+            min_stock_days=get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),
+        )
+        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+        base_qs = urlencode({"only_purchase": "1"} if only_purchase else {})
+        return templates.TemplateResponse(request, "forecast.html", {
+            "title": "Прогноз спроса", "user": user, "rows": rows, "total": total,
+            "page": page, "pages": pages, "base_qs": base_qs, "only_purchase": only_purchase,
+            "msg": request.query_params.get("msg"),
+            **_page_context(user),
+        })
 
     @app.get("/products/{product_id}")
     def products_detail_page(product_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):

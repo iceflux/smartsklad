@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="max-w-6xl mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4">Прогноз спроса</h1>
+    {% if msg %}<p class="mb-4 bg-green-50 border border-green-200 p-2">{{ msg }}</p>{% endif %}
+    <form method="get" action="/forecast" class="mb-4">
+        <label class="mr-4">
+            <input type="checkbox" name="only_purchase" value="1" {% if only_purchase %}checked{% endif %}>
+            только к закупке
+        </label>
+        <button class="border px-3 py-1">Применить</button>
+    </form>
+    <p class="mb-2 text-sm text-gray-600">Товаров: {{ total }}</p>
+    <table class="w-full bg-white border">
+        <thead>
+            <tr class="border-b">
+                <th class="p-2 text-left">Товар</th>
+                <th class="p-2 text-left">Артикул</th>
+                <th class="p-2 text-right">Остаток</th>
+                <th class="p-2 text-right">Запас</th>
+                <th class="p-2 text-right">Продажи/сутки</th>
+                <th class="p-2 text-right">7 дней</th>
+                <th class="p-2 text-right">14 дней</th>
+                <th class="p-2 text-right">30 дней</th>
+                <th class="p-2 text-right">К закупке</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr class="border-b">
+                <td class="p-2">{{ row.name }}</td>
+                <td class="p-2">{{ row.sku }}</td>
+                <td class="p-2 text-right">{{ row.rest }} {{ row.unit }}</td>
+                <td class="p-2 text-right">{{ row.min_stock }}</td>
+                <td class="p-2 text-right">{{ '%.2f'|format(row.avg_daily_sold) }}</td>
+                <td class="p-2 text-right">{% if row.has_data %}{{ row.forecast_7 }}{% else %}<span class="text-gray-500">мало данных</span>{% endif %}</td>
+                <td class="p-2 text-right">{% if row.has_data %}{{ row.forecast_14 }}{% else %}—{% endif %}</td>
+                <td class="p-2 text-right">{% if row.has_data %}{{ row.forecast_30 }}{% else %}—{% endif %}</td>
+                <td class="p-2 text-right">{% if row.recommended_qty is not none %}<span class="font-bold">{{ row.recommended_qty }}</span>{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if pages > 1 %}
+    <div class="mt-4 flex gap-2">
+        {% if page > 1 %}<a class="border px-3 py-1" href="/forecast?{{ base_qs }}{{ '&' if base_qs else '' }}page={{ page - 1 }}">Назад</a>{% endif %}
+        <span class="px-3 py-1">{{ page }} / {{ pages }}</span>
+        {% if page < pages %}<a class="border px-3 py-1" href="/forecast?{{ base_qs }}{{ '&' if base_qs else '' }}page={{ page + 1 }}">Вперёд</a>{% endif %}
+    </div>
+    {% endif %}
+</main>
+{% endblock %}

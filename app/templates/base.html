@@ -21,6 +21,9 @@
                 {% if can_view_orders|default(false) %}
                     <a href="/orders" class="mr-4">Заказы</a>
                 {% endif %}
+                {% if can_view_analytics|default(false) %}
+                    <a href="/forecast" class="mr-4">Прогноз</a>
+                {% endif %}
                 {% if can_view_roles|default(false) %}
                     <a href="/roles" class="mr-4">Роли</a>
                     <a href="/users" class="mr-4">Пользователи</a>
