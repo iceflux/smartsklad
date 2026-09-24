@@ -6,7 +6,7 @@ from app.modules.orders.models import Order, OrderItem
 from app.modules.settings.service import DEFAULT_MIN_STOCK_DAYS
 
 LOOKBACK_DAYS = 90
-MIN_DAYS_FOR_FOREECAST = 14
+MIN_DAYS_FOR_FORECAST = 14
 FORECAST_HORIZONS = (7, 14, 30)
 RECOMMENDATION_HORIZON = 30
 
@@ -59,7 +59,7 @@ def _sales_by_product(db, start: date, end: date) -> dict[int, dict[date, int]]:
 
 
 def forecast_rows(
-    db, *, lookback_days=LOOKBACK_DAYS, min_days=MIN_DAYS_FOR_FOREECAST,
+    db, *, lookback_days=LOOKBACK_DAYS, min_days=MIN_DAYS_FOR_FORECAST,
     only_purchase=False, product_id=None, min_stock_days=None,
     page=1, page_size=25,
 ) -> tuple[list[dict], int]:

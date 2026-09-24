@@ -5,7 +5,7 @@ import pytest
 from app.modules.ai.service import (
     FORECAST_HORIZONS,
     LOOKBACK_DAYS,
-    MIN_DAYS_FOR_FOREECAST,
+    MIN_DAYS_FOR_FORECAST,
     RECOMMENDATION_HORIZON,
     _linear_forecast,
     _min_stock,
@@ -19,7 +19,7 @@ from app.modules.orders.models import Order, OrderItem
 
 def test_constants_match_spec():
     assert LOOKBACK_DAYS == 90
-    assert MIN_DAYS_FOR_FOREECAST == 14
+    assert MIN_DAYS_FOR_FORECAST == 14
     assert FORECAST_HORIZONS == (7, 14, 30)
     assert RECOMMENDATION_HORIZON == 30
 
