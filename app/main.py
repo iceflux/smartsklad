@@ -42,6 +42,7 @@ import app.modules.customers.models  # noqa: F401
 import app.modules.orders.models  # noqa: F401
 import app.modules.backup.models  # noqa: F401
 from app.modules.backup.maintenance import maintenance_middleware, maintenance_state
+from app.modules.backup.router import router as backup_router
 from app.modules.backup.scheduler import scheduler_loop
 from app.modules.inventory.models import Category, PriceHistory
 from app.modules.customers.models import Customer
@@ -199,6 +200,7 @@ def create_app() -> FastAPI:
     app.include_router(notifications_router, prefix="/api")
     app.include_router(ai_router, prefix="/api")
     app.include_router(dashboard_router, prefix="/api")
+    app.include_router(backup_router, prefix="/api")
     app.include_router(audit_router)
 
     @app.get("/")
