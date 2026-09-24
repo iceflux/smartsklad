@@ -39,6 +39,10 @@ def set_idle() -> None:
     STATE["starts_at"] = None
 
 
+def _allowed(path: str) -> bool:
+    return any(path == entry or path.startswith(entry + "/") for entry in ALLOWED_WHILE_RUNNING)
+
+
 def _page() -> HTMLResponse:
     return HTMLResponse(
         "<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\">"
@@ -51,7 +55,7 @@ def _page() -> HTMLResponse:
 
 
 async def maintenance_middleware(request, call_next):
-    if STATE["mode"] == "running" and not request.url.path.startswith(ALLOWED_WHILE_RUNNING):
+    if STATE["mode"] == "running" and not _allowed(request.url.path):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "идёт восстановление из резервной копии"}, status_code=503)
         return _page()
@@ -62,5 +66,9 @@ async def arm_restore(filename: str, delay: int, *, user_id: int | None = None) 
     from app.modules.backup.service import perform_restore
 
     begin_countdown(delay)
-    await asyncio.sleep(delay)
+    try:
+        await asyncio.sleep(delay)
+    except asyncio.CancelledError:
+        set_idle()
+        raise
     return await asyncio.to_thread(perform_restore, filename, user_id=user_id)

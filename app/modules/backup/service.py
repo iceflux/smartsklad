@@ -231,12 +231,22 @@ def run_restore(db, filename: str, *, user_id: int | None = None) -> dict:
     archive = Path(get_backup_settings(db).local_path) / filename
     if not archive.is_file():
         raise FileNotFoundError("архив не найден")
+    db.rollback()
     binary = find_binary("pg_restore")
     if binary is None:
         raise ValueError("pg_restore не найден")
     prepared = pg_restore_command(binary, archive)
-    result = subprocess.run(prepared["command"], env={**os.environ, **prepared["env"]},
-                            capture_output=True, text=True, timeout=3600)
+    try:
+        result = subprocess.run(prepared["command"], env={**os.environ, **prepared["env"]},
+                                capture_output=True, text=True, timeout=3600)
+    except (OSError, subprocess.SubprocessError) as error:
+        entry = BackupLog(kind="restore", status="failed", filename=filename,
+                          error=(str(error) or "pg_restore завершился с ошибкой").strip()[:512],
+                          user_id=user_id)
+        db.add(entry)
+        db.commit()
+        return {"status": "failed", "filename": filename,
+                "error": entry.error, "log_id": entry.id}
     if result.returncode != 0:
         entry = BackupLog(kind="restore", status="failed", filename=filename,
                           error=(result.stderr or "pg_restore завершился с ошибкой").strip()[:512],

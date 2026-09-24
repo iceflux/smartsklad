@@ -1,3 +1,5 @@
+import asyncio
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from app.modules.backup.maintenance import (
     set_idle,
     set_running,
 )
+from app.modules.backup.models import BackupLog
 
 PASSWORD = "password123"
 
@@ -38,6 +41,22 @@ def test_countdown_is_visible():
     cancel_countdown()
 
 
+def test_countdown_expires_to_zero():
+    from app.modules.backup import maintenance
+
+    begin_countdown(10)
+    maintenance.STATE["starts_at"] -= 10
+    assert maintenance_state()["mode"] == "countdown"
+    assert maintenance_state()["seconds_left"] == 0
+    set_idle()
+
+
+@pytest.mark.parametrize("seconds", [5, 4000])
+def test_begin_countdown_rejects_out_of_range(seconds):
+    with pytest.raises(ValueError):
+        begin_countdown(seconds)
+
+
 def test_running_blocks_and_back_to_idle():
     set_running()
     assert maintenance_state()["mode"] == "running"
@@ -51,30 +70,98 @@ def test_running_mode_blocks_pages_and_recovers(client, db_session):
     try:
         blocked = client.get("/products")
         assert blocked.status_code == 503
+        boundary_blocked = client.get("/api/backup/status-anything")
+        assert boundary_blocked.status_code == 503
         allowed = client.get("/api/backup/status")
         assert allowed.status_code != 503
+        static = client.get("/static/missing.css")
+        assert static.status_code != 503
     finally:
         set_idle()
     assert client.get("/products").status_code == 200
 
 
+def test_arm_restore_cancellation_returns_to_idle():
+    from app.modules.backup import maintenance
+
+    async def scenario():
+        task = asyncio.create_task(maintenance.arm_restore("smartsklad-20260925-030000.dump", 3600))
+        await asyncio.sleep(0)
+        assert maintenance_state()["mode"] == "countdown"
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    try:
+        asyncio.run(scenario())
+        assert maintenance_state()["mode"] == "idle"
+    finally:
+        set_idle()
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "../smartsklad-20260925-030000.dump",
+        "sub/smartsklad-20260925-030000.dump",
+        "..\\smartsklad-20260925-030000.dump",
+    ],
+)
+def test_restore_rejects_path_traversal(db_session, filename):
+    from app.modules.backup.service import run_restore
+
+    with pytest.raises(ValueError):
+        run_restore(db_session, filename)
+
+
 def test_restore_command_is_called(db_session, tmp_path, monkeypatch):
-    from app.modules.backup.service import get_backup_settings, run_restore
-    row = get_backup_settings(db_session)
+    import app.modules.backup.service as service
+
+    row = service.get_backup_settings(db_session)
     row.local_path = str(tmp_path)
     db_session.commit()
     archive = tmp_path / "smartsklad-20260925-030000.dump"
     archive.write_bytes(b"archive")
+    monkeypatch.setattr(
+        "app.config.settings.database_url",
+        "postgresql://smartsklad:test-secret@localhost:5432/smartsklad",
+    )
+    password = service.pg_env()["PGPASSWORD"]
     calls = []
-    monkeypatch.setattr("app.modules.backup.service.find_binary", lambda name, configured=None: name)
-    monkeypatch.setattr("app.modules.backup.service.subprocess.run",
-                        lambda command, **kwargs: calls.append(command) or
-                        __import__("subprocess").CompletedProcess(command, 0, "", ""))
-    result = run_restore(db_session, "smartsklad-20260925-030000.dump")
+    monkeypatch.setattr(service, "find_binary", lambda name, configured=None: name)
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+    result = service.run_restore(db_session, "smartsklad-20260925-030000.dump")
     assert result["status"] == "success"
-    assert "--clean" in calls[0]
-    assert "--if-exists" in calls[0]
-    assert "--create" not in calls[0]
+    command, kwargs = calls[0]
+    assert "--clean" in command
+    assert "--if-exists" in command
+    assert "--create" not in command
+    assert kwargs["env"]["PGPASSWORD"] == password
+    assert all(password not in argument for argument in command)
+
+
+def test_restore_releases_settings_transaction_before_subprocess(db_session, tmp_path, monkeypatch):
+    import app.modules.backup.service as service
+
+    row = service.get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    archive = tmp_path / "smartsklad-20260925-030000.dump"
+    archive.write_bytes(b"archive")
+    monkeypatch.setattr(service, "find_binary", lambda name, configured=None: name)
+
+    def fake_run(command, **kwargs):
+        assert not db_session.in_transaction()
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+    result = service.run_restore(db_session, "smartsklad-20260925-030000.dump")
+    assert result["status"] == "success"
 
 
 def test_restore_unknown_file_is_not_found(db_session, tmp_path, monkeypatch):
@@ -90,37 +177,78 @@ def test_perform_restore_runs_and_returns_to_idle(monkeypatch):
     import app.modules.backup.service as service
     from app.modules.backup.maintenance import maintenance_state
 
+    events = []
+
     class FakeSession:
         def close(self):
-            pass
+            events.append("close")
+
+    class FakeEngine:
+        def dispose(self):
+            events.append("dispose")
+
+    def sleep(seconds):
+        events.append(("sleep", seconds, maintenance_state()["mode"]))
+
+    def restore(db, filename, user_id=None):
+        events.append("restore")
+        return {"status": "success"}
 
     monkeypatch.setattr(service, "SessionLocal", FakeSession)
-    monkeypatch.setattr(service, "engine", type("E", (), {"dispose": lambda self: None})())
-    seen = {}
-    monkeypatch.setattr(service, "run_restore",
-                        lambda db, filename, user_id=None: seen.update(
-                            {"filename": filename, "user_id": user_id}) or {"status": "success"})
+    monkeypatch.setattr(service, "engine", FakeEngine())
+    monkeypatch.setattr(service.clock, "sleep", sleep)
+    monkeypatch.setattr(service, "run_restore", restore)
     result = service.perform_restore("smartsklad-20260925-030000.dump", user_id=7)
     assert result["status"] == "success"
-    assert seen == {"filename": "smartsklad-20260925-030000.dump", "user_id": 7}
+    assert events == [("sleep", 2, "running"), "dispose", "restore", "close"]
     assert maintenance_state()["mode"] == "idle"
 
 
-def test_perform_restore_returns_to_idle_even_on_failure(monkeypatch):
+def test_perform_restore_returns_to_idle_even_on_failure(db_session, tmp_path, monkeypatch):
     import app.modules.backup.service as service
-    from app.modules.backup.maintenance import maintenance_state
 
-    class FakeSession:
+    row = service.get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    archive = tmp_path / "smartsklad-20260925-030000.dump"
+    archive.write_bytes(b"archive")
+
+    class TrackingSession:
+        def __init__(self):
+            self.closed = False
+
+        def __getattr__(self, name):
+            return getattr(db_session, name)
+
         def close(self):
-            pass
+            self.closed = True
+            db_session.close()
 
-    monkeypatch.setattr(service, "SessionLocal", FakeSession)
+    session = TrackingSession()
+    monkeypatch.setattr(service, "SessionLocal", lambda: session)
     monkeypatch.setattr(service, "engine", type("E", (), {"dispose": lambda self: None})())
+    monkeypatch.setattr(service.clock, "sleep", lambda seconds: None)
+    monkeypatch.setattr(service, "find_binary", lambda name, configured=None: name)
 
-    def boom(*args, **kwargs):
-        raise RuntimeError("pg_restore упал")
+    def timeout(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, 3600)
 
-    monkeypatch.setattr(service, "run_restore", boom)
-    with pytest.raises(RuntimeError):
-        service.perform_restore("smartsklad-20260925-030000.dump")
+    monkeypatch.setattr(service.subprocess, "run", timeout)
+    calls = []
+    original_run_restore = service.run_restore
+
+    def tracked_run_restore(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original_run_restore(*args, **kwargs)
+
+    monkeypatch.setattr(service, "run_restore", tracked_run_restore)
+    result = service.perform_restore("smartsklad-20260925-030000.dump")
+    assert result["status"] == "failed"
+    assert len(calls) == 1
+    entry = db_session.query(BackupLog).filter_by(
+        kind="restore", filename="smartsklad-20260925-030000.dump"
+    ).one()
+    assert entry.status == "failed"
+    assert entry.error
+    assert session.closed is True
     assert maintenance_state()["mode"] == "idle"
