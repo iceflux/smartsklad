@@ -272,3 +272,69 @@ def test_dashboard_sales_csv_shape():
     assert lines[0] == "date;orders;amount"
     assert lines[1] == "2026-03-01;2;150.0"
     assert lines[2] == "2026-03-02;0;0.0"
+
+
+def test_dashboard_metrics_top_products_sums_repeated_items(db_session):
+    customer = _customer(db_session)
+    nails = _product(db_session, name="Гвозди", sku="SKU-S1")
+    day = date(2026, 3, 1)
+    _order(db_session, customer, nails, number="00001", day=day, amount=100.0, quantity=2)
+    _order(db_session, customer, nails, number="00002", day=day, amount=100.0, quantity=3)
+    m = dashboard_metrics(db_session, day, day)
+    assert [row["name"] for row in m["top_products"]] == ["Гвозди"]
+    assert m["top_products"][0]["quantity"] == 5
+
+
+def test_dashboard_metrics_top_customers_sums_repeated_orders(db_session):
+    product = _product(db_session)
+    buyer = _customer(db_session, "Оптовый клиент")
+    day = date(2026, 3, 1)
+    _order(db_session, buyer, product, number="00001", day=day, amount=100.0)
+    _order(db_session, buyer, product, number="00002", day=day, amount=250.0)
+    m = dashboard_metrics(db_session, day, day)
+    assert [row["name"] for row in m["top_customers"]] == ["Оптовый клиент"]
+    assert m["top_customers"][0]["total_sum"] == 350.0
+    assert m["top_customers"][0]["orders_count"] == 2
+
+
+def test_dashboard_metrics_top_products_uses_live_name_and_keeps_deleted(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session, name="Старое", sku="SKU-LV")
+    _order(db_session, customer, product, number="00001", day=date(2026, 3, 1), amount=100.0, quantity=4)
+    product.name = "Новое"
+    product.is_deleted = True
+    db_session.commit()
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 1))
+    assert [row["name"] for row in m["top_products"]] == ["Новое"]
+
+
+def test_dashboard_metrics_top_products_tie_break_by_name(db_session):
+    customer = _customer(db_session)
+    beta = _product(db_session, name="Бета", sku="SKU-TB")
+    alpha = _product(db_session, name="Альфа", sku="SKU-TA")
+    day = date(2026, 3, 1)
+    _order(db_session, customer, beta, number="00001", day=day, amount=100.0, quantity=3)
+    _order(db_session, customer, alpha, number="00002", day=day, amount=100.0, quantity=3)
+    m = dashboard_metrics(db_session, day, day)
+    assert [row["name"] for row in m["top_products"]] == ["Альфа", "Бета"]
+
+
+def test_dashboard_metrics_top_customers_limit(db_session):
+    product = _product(db_session)
+    for i in range(12):
+        buyer = _customer(db_session, f"Клиент {i}")
+        _order(db_session, buyer, product, number=f"{i + 1:05d}", day=date(2026, 3, 1), amount=float((i + 1) * 10))
+    m = dashboard_metrics(db_session, date(2026, 3, 1), date(2026, 3, 1))
+    assert len(m["top_customers"]) == 10
+    assert m["top_customers"][0]["name"] == "Клиент 11"
+
+
+def test_dashboard_metrics_avg_check_uses_rounded_total(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session)
+    day = date(2026, 3, 10)
+    _order(db_session, customer, product, number="00001", day=day, amount=10.004)
+    _order(db_session, customer, product, number="00002", day=day, amount=10.004)
+    m = dashboard_metrics(db_session, day, day)
+    assert m["total_sum"] == 20.01
+    assert m["avg_check"] == 10.01

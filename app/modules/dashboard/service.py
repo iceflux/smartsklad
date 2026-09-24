@@ -3,8 +3,6 @@ import io
 import math
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy.orm import Session
-
 from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
