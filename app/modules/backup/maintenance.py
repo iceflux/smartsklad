@@ -1,5 +1,6 @@
 import asyncio
 import time as clock
+from datetime import datetime
 
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -7,28 +8,36 @@ STATE = {"mode": "idle", "starts_at": None}
 
 MIN_COUNTDOWN_SECONDS = 10
 MAX_COUNTDOWN_SECONDS = 3600
-ALLOWED_WHILE_RUNNING = ("/static", "/api/backup/status")
+ALLOWED_WHILE_RUNNING = ("/static", "/api/backup/status", "/backups/restore/cancel")
 
 
 def maintenance_state() -> dict:
+    starts_at_text = (datetime.fromtimestamp(STATE["starts_at"]).strftime("%H:%M:%S")
+                      if STATE["mode"] == "countdown" and STATE["starts_at"] is not None else None)
     if STATE["mode"] != "countdown":
-        return {"mode": STATE["mode"], "starts_at": STATE["starts_at"], "seconds_left": 0}
+        return {"mode": STATE["mode"], "starts_at": STATE["starts_at"],
+                "starts_at_text": starts_at_text, "seconds_left": 0}
     left = int(STATE["starts_at"] - clock.time())
     if left <= 0:
-        return {"mode": "countdown", "starts_at": STATE["starts_at"], "seconds_left": 0}
-    return {"mode": "countdown", "starts_at": STATE["starts_at"], "seconds_left": left}
+        return {"mode": "countdown", "starts_at": STATE["starts_at"],
+                "starts_at_text": starts_at_text, "seconds_left": 0}
+    return {"mode": "countdown", "starts_at": STATE["starts_at"],
+            "starts_at_text": starts_at_text, "seconds_left": left}
 
 
 def begin_countdown(seconds: int) -> dict:
     if not MIN_COUNTDOWN_SECONDS <= seconds <= MAX_COUNTDOWN_SECONDS:
         raise ValueError("ожидание от 10 до 3600 секунд")
+    if STATE["mode"] in ("countdown", "running"):
+        raise ValueError("восстановление уже запланировано")
     STATE["mode"] = "countdown"
     STATE["starts_at"] = clock.time() + seconds
     return maintenance_state()
 
 
 def cancel_countdown() -> None:
-    set_idle()
+    if STATE["mode"] == "countdown":
+        set_idle()
 
 
 def set_running() -> None:
@@ -64,10 +73,12 @@ async def maintenance_middleware(request, call_next):
     return await call_next(request)
 
 
-async def arm_restore(filename: str, delay: int, *, user_id: int | None = None) -> dict:
+async def arm_restore(filename: str, delay: int, *, user_id: int | None = None,
+                      countdown_started: bool = False) -> dict:
     from app.modules.backup.service import perform_restore
 
-    begin_countdown(delay)
+    if not countdown_started:
+        begin_countdown(delay)
     try:
         await asyncio.sleep(delay)
     except asyncio.CancelledError:

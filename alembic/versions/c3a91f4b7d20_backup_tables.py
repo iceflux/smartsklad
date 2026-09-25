@@ -32,6 +32,7 @@ def upgrade() -> None:
         sa.Column('last_status', sa.String(length=16), nullable=True),
         sa.Column('last_error', sa.String(length=512), nullable=True),
         sa.Column('last_report_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('last_report_scheduled_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('last_report_sent', sa.Integer(), nullable=False),
         sa.Column('last_report_skipped', sa.Integer(), nullable=False),
         sa.PrimaryKeyConstraint('id'),

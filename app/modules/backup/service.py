@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time as clock
 from datetime import datetime, time, timedelta
 from pathlib import Path
@@ -18,6 +19,7 @@ from app.modules.backup.models import BackupLog, BackupSettings
 
 DEFAULT_BACKUP_DIR = Path(__file__).resolve().parents[3] / "backups"
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_BACKUP_LOCK = threading.Lock()
 
 
 def ensure_default_backup_settings(db: Session) -> BackupSettings:
@@ -113,8 +115,7 @@ def _dump_major(dump: str) -> int | None:
 
 def pg_dump_health(db: Session, bs: BackupSettings) -> dict:
     dump = find_binary("pg_dump", bs.pg_dump_path)
-    restore = None
-    restore = find_restore_binary(bs.pg_dump_path) if dump else None
+    restore = find_restore_binary(bs.pg_dump_path)
     dump_major = _dump_major(dump) if dump else None
     server_major = _server_major(db)
     return {
@@ -187,6 +188,17 @@ def _record(db, *, kind, status, filename=None, size_bytes=None, error=None, use
             "size_bytes": size_bytes, "error": error, "log_id": entry.id}
 
 
+def _record_failure(db, error: str, *, kind: str, filename: str | None = None,
+                    user_id: int | None = None) -> dict:
+    db.rollback()
+    row = get_backup_settings(db)
+    row.last_status = "failed"
+    row.last_error = error
+    db.commit()
+    return _record(db, kind=kind, status="failed", filename=filename,
+                   error=error, user_id=user_id)
+
+
 def create_backup(db, *, user_id: int | None = None, kind: str = "manual",
                   now: datetime | None = None) -> dict:
     if kind not in ("scheduled", "manual", "restore"):
@@ -195,37 +207,49 @@ def create_backup(db, *, user_id: int | None = None, kind: str = "manual",
     bs = get_backup_settings(db)
     directory = Path(bs.local_path)
     partial = None
-    try:
-        directory.mkdir(parents=True, exist_ok=True)
-        binary = find_binary("pg_dump", bs.pg_dump_path)
-        if binary is None:
-            return _record(db, kind=kind, status="failed",
-                           error="pg_dump не найден", user_id=user_id)
-        target = unique_path(directory, f"smartsklad-{now.strftime('%Y%m%d-%H%M%S')}", ".dump")
-        partial = directory / (target.name + ".part")
-        result = subprocess.run(pg_dump_command(binary, partial),
-                                env={**os.environ, **pg_env()},
-                                capture_output=True, text=True, timeout=600)
-        if result.returncode != 0:
-            partial.unlink(missing_ok=True)
-            return _record(db, kind=kind, status="failed",
-                           error=(result.stderr or "pg_dump завершился с ошибкой").strip()[:512],
-                           user_id=user_id)
-        partial.replace(target)
-        partial = None
-        size = target.stat().st_size
-        delete_expired(bs, now)
-        bs.last_backup_at = now
-        bs.last_status = "success"
-        bs.last_error = None
-        db.commit()
-        return _record(db, kind=kind, status="success", filename=target.name,
-                       size_bytes=size, user_id=user_id)
-    except Exception as error:
-        db.rollback()
-        if partial is not None:
-            partial.unlink(missing_ok=True)
-        return _record(db, kind=kind, status="failed", error=str(error)[:512], user_id=user_id)
+    with _BACKUP_LOCK:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            binary = find_binary("pg_dump", bs.pg_dump_path)
+            if binary is None:
+                return _record_failure(db, "pg_dump не найден", kind=kind, user_id=user_id)
+            target = unique_path(directory, f"smartsklad-{now.strftime('%Y%m%d-%H%M%S')}", ".dump")
+            partial = directory / (target.name + ".part")
+            result = subprocess.run(pg_dump_command(binary, partial),
+                                    env={**os.environ, **pg_env()},
+                                    capture_output=True, text=True, timeout=600)
+            if result.returncode != 0:
+                error = (result.stderr or "pg_dump завершился с ошибкой").strip()[:512]
+                partial.unlink(missing_ok=True)
+                partial = None
+                return _record_failure(db, error, kind=kind, filename=target.name, user_id=user_id)
+            partial.replace(target)
+            partial = None
+            size = target.stat().st_size
+            delete_expired(bs, now)
+            bs.last_backup_at = now
+            bs.last_status = "success"
+            bs.last_error = None
+            db.commit()
+            return _record(db, kind=kind, status="success", filename=target.name,
+                           size_bytes=size, user_id=user_id)
+        except Exception as error:
+            db.rollback()
+            if partial is not None:
+                partial.unlink(missing_ok=True)
+            return _record_failure(db, str(error)[:512], kind=kind, user_id=user_id)
+
+
+def _record_restore(db, filename: str, *, status: str, user_id: int | None = None,
+                    error: str | None = None) -> dict:
+    entry = BackupLog(kind="restore", status=status, filename=filename,
+                      error=error, user_id=user_id)
+    db.add(entry)
+    db.commit()
+    log_action(db, action="backup.restore", entity_type="backup", entity_id=entry.id,
+               new_value=error or filename, user_id=user_id)
+    return {"status": status, "filename": filename,
+            "error": error, "log_id": entry.id}
 
 
 def run_restore(db, filename: str, *, user_id: int | None = None) -> dict:
@@ -239,33 +263,23 @@ def run_restore(db, filename: str, *, user_id: int | None = None) -> dict:
     db.rollback()
     binary = find_restore_binary(configured_path)
     if binary is None:
-        raise ValueError("pg_restore не найден")
+        return _record_restore(db, filename, status="failed",
+                               error="pg_restore не найден", user_id=user_id)
     prepared = pg_restore_command(binary, archive)
     try:
         result = subprocess.run(prepared["command"], env={**os.environ, **prepared["env"]},
                                 capture_output=True, text=True, timeout=3600)
     except (OSError, subprocess.SubprocessError) as error:
-        entry = BackupLog(kind="restore", status="failed", filename=filename,
-                          error=(str(error) or "pg_restore завершился с ошибкой").strip()[:512],
-                          user_id=user_id)
-        db.add(entry)
-        db.commit()
-        return {"status": "failed", "filename": filename,
-                "error": entry.error, "log_id": entry.id}
+        return _record_restore(
+            db, filename, status="failed", user_id=user_id,
+            error=(str(error) or "pg_restore завершился с ошибкой").strip()[:512],
+        )
     if result.returncode != 0:
-        entry = BackupLog(kind="restore", status="failed", filename=filename,
-                          error=(result.stderr or "pg_restore завершился с ошибкой").strip()[:512],
-                          user_id=user_id)
-        db.add(entry)
-        db.commit()
-        return {"status": "failed", "filename": filename,
-                "error": entry.error, "log_id": entry.id}
-    entry = BackupLog(kind="restore", status="success", filename=filename, user_id=user_id)
-    db.add(entry)
-    db.commit()
-    log_action(db, action="backup.restore", entity_type="backup", entity_id=entry.id,
-               new_value=filename, user_id=user_id)
-    return {"status": "success", "filename": filename, "log_id": entry.id}
+        return _record_restore(
+            db, filename, status="failed", user_id=user_id,
+            error=(result.stderr or "pg_restore завершился с ошибкой").strip()[:512],
+        )
+    return _record_restore(db, filename, status="success", user_id=user_id)
 
 
 def perform_restore(filename: str, *, user_id: int | None = None) -> dict:

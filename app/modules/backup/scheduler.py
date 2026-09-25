@@ -1,9 +1,16 @@
 import asyncio
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 from app.db import SessionLocal
+from app.modules.backup.maintenance import maintenance_state
 from app.modules.backup.service import create_backup, get_backup_settings
-from app.modules.settings.service import REPORT_ENABLED_KEY, REPORT_TIME_KEY, get_setting
+from app.modules.settings.service import (
+    REPORT_ENABLED_KEY,
+    REPORT_PERIOD_KEY,
+    REPORT_PERIODS,
+    REPORT_TIME_KEY,
+    get_setting,
+)
 
 ADVISORY_LOCK_ID = 7_240_119
 MIN_INTERVAL_MINUTES = 1
@@ -21,15 +28,38 @@ def due_for_backup(bs, now: datetime, last_backup_at: datetime | None) -> bool:
     return True
 
 
-def due_for_report(enabled: bool, schedule_time: time, now: datetime,
-                   last_report_at: datetime | None) -> bool:
+def due_for_report(enabled: bool, schedule_time: time, period: str, now: datetime,
+                   last_report_scheduled_at: datetime | None) -> bool:
+    if not enabled or period not in REPORT_PERIODS or now.time() < schedule_time:
+        return False
+    if last_report_scheduled_at is None:
+        return True
+    if period == "day":
+        return last_report_scheduled_at.date() != now.date()
+    return now - last_report_scheduled_at >= timedelta(days=7 if period == "week" else 30)
+
+
+def next_backup_time(bs, now: datetime) -> datetime | None:
+    if not bs.enabled:
+        return None
+    candidate = datetime.combine(now.date(), bs.schedule_time)
+    if now < candidate or bs.last_backup_at is None or bs.last_backup_at.date() != now.date():
+        return candidate if now < candidate else now
+    return candidate + timedelta(days=1)
+
+
+def next_report_time(enabled: bool, schedule_time: time, period: str, now: datetime,
+                     last_report_scheduled_at: datetime | None) -> datetime | None:
     if not enabled:
-        return False
-    if now.time() < schedule_time:
-        return False
-    if last_report_at is not None and last_report_at.date() == now.date():
-        return False
-    return True
+        return None
+    candidate = datetime.combine(now.date(), schedule_time)
+    if now < candidate:
+        return candidate
+    if due_for_report(enabled, schedule_time, period, now, last_report_scheduled_at):
+        return now
+    if period == "day":
+        return candidate + timedelta(days=1)
+    return last_report_scheduled_at + timedelta(days=7 if period == "week" else 30)
 
 
 def read_interval_minutes(db) -> int:
@@ -86,21 +116,23 @@ def _run_job(label: str, db, job):
 def run_due_jobs(db, now: datetime | None = None) -> dict:
     now = now or datetime.now()
     result = {"backup": None, "report": None}
-    if not _try_lock(db):
+    if maintenance_state()["mode"] != "idle" or not _try_lock(db):
         return result
     try:
         bs = get_backup_settings(db)
         if due_for_backup(bs, now, bs.last_backup_at):
             result["backup"] = _run_job("backup", db, lambda: create_backup(db, kind="scheduled", now=now))
-        if due_for_report(
-            get_setting(db, REPORT_ENABLED_KEY) == "true",
-            _parse_time(get_setting(db, REPORT_TIME_KEY), time(9, 0)),
-            now,
-            bs.last_report_at,
-        ):
+        report_enabled = get_setting(db, REPORT_ENABLED_KEY) == "true"
+        report_period = get_setting(db, REPORT_PERIOD_KEY) or "week"
+        report_schedule_time = _parse_time(get_setting(db, REPORT_TIME_KEY), time(9, 0))
+        if due_for_report(report_enabled, report_schedule_time, report_period, now,
+                           bs.last_report_scheduled_at):
             from app.modules.backup.report import send_report
 
             result["report"] = _run_job("report", db, lambda: send_report(db, now=now))
+            bs = get_backup_settings(db)
+            bs.last_report_scheduled_at = now
+            db.commit()
         bs = get_backup_settings(db)
         bs.last_check_at = now
         db.commit()

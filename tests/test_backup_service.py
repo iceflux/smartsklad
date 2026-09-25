@@ -1,6 +1,8 @@
 import os
 import re
 import subprocess
+import threading
+import time as clock
 from datetime import datetime, time, timedelta
 from pathlib import Path
 
@@ -192,16 +194,34 @@ def test_health_reports_writable_directory(db_session, tmp_path, monkeypatch):
     row = ensure_default_backup_settings(db_session)
     row.local_path = str(tmp_path)
     db_session.commit()
-    binary = tmp_path / "pg_dump"
-    binary.write_text("stub", encoding="utf-8")
-    monkeypatch.setattr("shutil.which", lambda name: str(binary))
+    dump = tmp_path / "pg_dump"
+    restore = tmp_path / "pg_restore"
+    dump.write_text("stub", encoding="utf-8")
+    restore.write_text("stub", encoding="utf-8")
+    monkeypatch.setattr("shutil.which", lambda name: str(dump if name == "pg_dump" else restore))
     monkeypatch.setattr("subprocess.run", lambda *a, **k: subprocess.CompletedProcess(
         a[0] if a else [], 0, "pg_dump (PostgreSQL) 18.6", ""))
     health = pg_dump_health(db_session, row)
     assert health["path_writable"] is True
     assert health["dump_major"] == 18
     assert health["restore_found"] is True
-    assert health["restore_path"] == str(binary)
+    assert health["restore_path"] == str(restore)
+
+
+def test_health_finds_sibling_restore_when_dump_path_is_invalid(db_session, tmp_path, monkeypatch):
+    row = ensure_default_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    row.pg_dump_path = str(tmp_path / "missing-pg_dump.exe")
+    db_session.commit()
+    restore = tmp_path / "pg_restore.exe"
+    restore.write_text("stub", encoding="utf-8")
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    health = pg_dump_health(db_session, row)
+
+    assert health["dump_found"] is False
+    assert health["restore_found"] is True
+    assert health["restore_path"] == str(restore)
 
 
 def test_health_rejects_file_as_backup_directory(db_session, tmp_path, monkeypatch):
@@ -389,6 +409,47 @@ def test_create_backup_writes_archive_and_log(db_session, tmp_path, monkeypatch)
     assert entry.size_bytes == len(b"archive")
 
 
+def test_create_backup_serializes_concurrent_name_reservation(db_engine, tmp_path, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=db_engine, autoflush=False, autocommit=False)
+    session = Session()
+    row = get_backup_settings(session)
+    row.local_path = str(tmp_path)
+    session.commit()
+    session.close()
+    results = []
+    errors = []
+
+    def fake_run(command, **kwargs):
+        target = Path(command[command.index("--file") + 1])
+        target.write_bytes(b"archive")
+        clock.sleep(0.05)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("app.modules.backup.service.find_binary", lambda name, configured=None: name)
+    monkeypatch.setattr("app.modules.backup.service.subprocess.run", fake_run)
+
+    def worker():
+        session = Session()
+        try:
+            results.append(create_backup(session, now=datetime(2026, 9, 25, 3, 0)))
+        except Exception as error:
+            errors.append(error)
+        finally:
+            session.close()
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert len({result["filename"] for result in results}) == 2
+    assert not list(tmp_path.glob("*.part"))
+
+
 def test_create_backup_records_failure_and_removes_partial(db_session, tmp_path, monkeypatch):
     from app.modules.backup.service import get_backup_settings
     row = get_backup_settings(db_session)
@@ -407,9 +468,29 @@ def test_create_backup_records_failure_and_removes_partial(db_session, tmp_path,
     assert "ошибка подключения" in result["error"]
     assert list(tmp_path.iterdir()) == []
     assert row.last_backup_at is None
-    assert row.last_status != "success"
+    assert row.last_status == "failed"
+    assert row.last_error == "pg_dump: ошибка подключения"
     entry = db_session.query(BackupLog).one()
     assert entry.status == "failed"
+
+
+def test_create_backup_failure_overwrites_previous_status(db_session, tmp_path, monkeypatch):
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    monkeypatch.setattr("app.modules.backup.service.find_binary", lambda name, configured=None: name)
+    monkeypatch.setattr("app.modules.backup.service.subprocess.run", _stub_dump())
+    assert create_backup(db_session, now=datetime(2026, 9, 25, 3, 0))["status"] == "success"
+
+    def failing(command, **kwargs):
+        return subprocess.CompletedProcess(command, 1, "", "pg_dump: ошибка подключения")
+
+    monkeypatch.setattr("app.modules.backup.service.subprocess.run", failing)
+    result = create_backup(db_session, now=datetime(2026, 9, 25, 3, 1))
+
+    assert result["error"] == "pg_dump: ошибка подключения"
+    assert row.last_status == "failed"
+    assert row.last_error == "pg_dump: ошибка подключения"
 
 
 def test_create_backup_without_binary_is_logged_not_raised(db_session, tmp_path, monkeypatch):

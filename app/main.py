@@ -1,7 +1,7 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager, suppress
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import parse_qs, urlencode
@@ -45,6 +45,8 @@ from app.modules.backup.maintenance import (
     MAX_COUNTDOWN_SECONDS,
     MIN_COUNTDOWN_SECONDS,
     arm_restore,
+    begin_countdown,
+    cancel_countdown,
     maintenance_middleware,
     maintenance_state,
 )
@@ -59,7 +61,7 @@ from app.modules.backup.service import (
     pg_dump_health,
     update_backup_settings,
 )
-from app.modules.backup.scheduler import scheduler_loop
+from app.modules.backup.scheduler import next_backup_time, next_report_time, scheduler_loop
 from app.modules.inventory.models import Category, PriceHistory
 from app.modules.customers.models import Customer
 from app.modules.customers.router import router as customers_router
@@ -567,6 +569,16 @@ def create_app() -> FastAPI:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.backup_manage)
         row = get_backup_settings(db)
+        report = read_report_settings(db)
+        now = datetime.now()
+        report_schedule_time = time.fromisoformat(report["send_time"])
+        last_check = row.last_check_at
+        if last_check is None:
+            scheduler_live = False
+        else:
+            check_now = datetime.now(last_check.tzinfo) if last_check.tzinfo else now
+            scheduler_live = check_now - last_check <= timedelta(
+                minutes=max(2, row.check_interval_minutes * 2))
         candidates = (
             db.query(User)
             .filter(User.is_active.is_(True), User.email.isnot(None), User.email != "")
@@ -584,11 +596,16 @@ def create_app() -> FastAPI:
                 "last_report_at": row.last_report_at,
                 "last_report_sent": row.last_report_sent,
                 "last_report_skipped": row.last_report_skipped,
+                "next_backup_at": next_backup_time(row, now),
+                "next_report_at": next_report_time(
+                    report["enabled"], report_schedule_time, report["period"], now,
+                    row.last_report_scheduled_at),
+                "live": scheduler_live,
             },
             "health": pg_dump_health(db, row),
             "archives": list_archives(row),
             "log_entries": db.query(BackupLog).order_by(BackupLog.id.desc()).limit(20).all(),
-            "report": read_report_settings(db),
+            "report": report,
             "candidates": candidates,
             "maintenance": maintenance_state(),
             "msg": request.query_params.get("msg"),
@@ -644,8 +661,8 @@ def create_app() -> FastAPI:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.backup_manage)
         form = parse_qs((await request.body()).decode())
-        recipient_ids = [int(v) for v in form.get("recipient_ids", []) if v.isdigit()]
         try:
+            recipient_ids = [int(v) for v in form.get("recipient_ids", [])]
             write_report_settings(
                 db, enabled="enabled" in form,
                 period=(form.get("period") or ["week"])[0],
@@ -694,10 +711,34 @@ def create_app() -> FastAPI:
             return RedirectResponse(
                 "/backups?" + urlencode({"msg": "Ошибка: ожидание от 10 до 3600 секунд"}),
                 status_code=303)
-        asyncio.create_task(arm_restore(filename, delay, user_id=user.id))
+        try:
+            begin_countdown(delay)
+        except ValueError as error:
+            return RedirectResponse(
+                "/backups?" + urlencode({"msg": f"Ошибка: {error}"}), status_code=303)
+        asyncio.create_task(arm_restore(filename, delay, user_id=user.id,
+                                         countdown_started=True))
         return RedirectResponse(
             "/backups?" + urlencode({"msg": f"Восстановление начнётся через {delay} с"}),
             status_code=303)
+
+    @app.post("/backups/restore/cancel")
+    def backups_restore_cancel(
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.backup_manage)
+        state = maintenance_state()
+        if state["mode"] == "countdown":
+            cancel_countdown()
+            key = "Восстановление отменено"
+        elif state["mode"] == "running":
+            key = "Восстановление уже выполняется"
+        else:
+            key = "Нет запланированного восстановления"
+        return RedirectResponse("/backups?" + urlencode({"msg": key}), status_code=303)
 
     @app.get("/backups/download/{filename}")
     def backups_download(

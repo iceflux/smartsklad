@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from app.db import get_db
 from app.modules.auth.dependencies import require_permissions
 from app.modules.auth.permissions import Permission
-from app.modules.backup.maintenance import begin_countdown, maintenance_state
+from app.modules.backup.maintenance import maintenance_state
 from app.modules.backup.report import read_report_settings, write_report_settings
 from app.modules.backup.service import (
     create_backup,
@@ -45,6 +45,7 @@ def backup_status(db=Depends(get_db),
             "last_status": row.last_status,
             "last_error": row.last_error,
             "last_report_at": row.last_report_at,
+            "last_report_scheduled_at": row.last_report_scheduled_at,
             "last_report_sent": row.last_report_sent,
             "last_report_skipped": row.last_report_skipped,
             "check_interval_minutes": row.check_interval_minutes,

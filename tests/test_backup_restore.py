@@ -41,6 +41,16 @@ def test_countdown_is_visible():
     cancel_countdown()
 
 
+def test_begin_countdown_refuses_to_overwrite_countdown():
+    begin_countdown(120)
+    starts_at = maintenance_state()["starts_at"]
+    with pytest.raises(ValueError):
+        begin_countdown(120)
+    assert maintenance_state()["mode"] == "countdown"
+    assert maintenance_state()["starts_at"] == starts_at
+    cancel_countdown()
+
+
 def test_countdown_expires_to_zero():
     from app.modules.backup import maintenance
 
@@ -62,6 +72,13 @@ def test_running_blocks_and_back_to_idle():
     assert maintenance_state()["mode"] == "running"
     set_idle()
     assert maintenance_state()["mode"] == "idle"
+
+
+def test_cancel_countdown_does_not_stop_running_restore():
+    set_running()
+    cancel_countdown()
+    assert maintenance_state()["mode"] == "running"
+    set_idle()
 
 
 def test_running_mode_blocks_pages_and_recovers(client, db_session):
@@ -128,7 +145,7 @@ def test_restore_command_is_called(db_session, tmp_path, monkeypatch):
     )
     password = service.pg_env()["PGPASSWORD"]
     calls = []
-    monkeypatch.setattr(service, "find_binary", lambda name, configured=None: name)
+    monkeypatch.setattr(service, "find_restore_binary", lambda configured=None: "pg_restore")
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
@@ -201,7 +218,27 @@ def test_restore_unknown_file_is_not_found(db_session, tmp_path, monkeypatch):
         run_restore(db_session, "smartsklad-20200101-000000.dump")
 
 
-def test_perform_restore_runs_and_returns_to_idle(monkeypatch):
+def test_missing_restore_is_logged_and_audited(db_session, tmp_path, monkeypatch):
+    import app.modules.backup.service as service
+    from app.modules.audit.models import AuditLog
+
+    row = service.get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    archive = tmp_path / "smartsklad-20260925-030000.dump"
+    archive.write_bytes(b"archive")
+    monkeypatch.setattr(service, "find_restore_binary", lambda configured=None: None)
+
+    result = service.run_restore(db_session, archive.name)
+
+    assert result["status"] == "failed"
+    entry = db_session.query(BackupLog).one()
+    assert entry.status == "failed"
+    assert entry.error == "pg_restore не найден"
+    audit = db_session.query(AuditLog).filter(AuditLog.action == "backup.restore").one()
+    assert audit.entity_id == entry.id
+
+
     import app.modules.backup.service as service
     from app.modules.backup.maintenance import maintenance_state
 
@@ -256,7 +293,7 @@ def test_perform_restore_returns_to_idle_even_on_failure(db_session, tmp_path, m
     monkeypatch.setattr(service, "SessionLocal", lambda: session)
     monkeypatch.setattr(service, "engine", type("E", (), {"dispose": lambda self: None})())
     monkeypatch.setattr(service.clock, "sleep", lambda seconds: None)
-    monkeypatch.setattr(service, "find_binary", lambda name, configured=None: name)
+    monkeypatch.setattr(service, "find_restore_binary", lambda configured=None: "pg_restore")
 
     def timeout(command, **kwargs):
         raise subprocess.TimeoutExpired(command, 3600)
@@ -278,5 +315,8 @@ def test_perform_restore_returns_to_idle_even_on_failure(db_session, tmp_path, m
     ).one()
     assert entry.status == "failed"
     assert entry.error
+    from app.modules.audit.models import AuditLog
+    audit = db_session.query(AuditLog).filter(AuditLog.action == "backup.restore").one()
+    assert audit.entity_id == entry.id
     assert session.closed is True
     assert maintenance_state()["mode"] == "idle"
