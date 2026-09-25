@@ -41,7 +41,13 @@ import app.modules.inventory.models  # noqa: F401
 import app.modules.customers.models  # noqa: F401
 import app.modules.orders.models  # noqa: F401
 import app.modules.backup.models  # noqa: F401
-from app.modules.backup.maintenance import arm_restore, maintenance_middleware, maintenance_state
+from app.modules.backup.maintenance import (
+    MAX_COUNTDOWN_SECONDS,
+    MIN_COUNTDOWN_SECONDS,
+    arm_restore,
+    maintenance_middleware,
+    maintenance_state,
+)
 from app.modules.backup.models import BackupLog
 from app.modules.backup.report import read_report_settings, write_report_settings
 from app.modules.backup.router import router as backup_router
@@ -671,6 +677,10 @@ def create_app() -> FastAPI:
         if parse_archive_name(filename) is None or not (Path(row.local_path) / filename).is_file():
             return RedirectResponse(
                 "/backups?" + urlencode({"msg": "Ошибка: Архив не найден"}), status_code=303)
+        if not MIN_COUNTDOWN_SECONDS <= delay <= MAX_COUNTDOWN_SECONDS:
+            return RedirectResponse(
+                "/backups?" + urlencode({"msg": "Ошибка: ожидание от 10 до 3600 секунд"}),
+                status_code=303)
         asyncio.create_task(arm_restore(filename, delay, user_id=user.id))
         return RedirectResponse(
             "/backups?" + urlencode({"msg": f"Восстановление начнётся через {delay} с"}),

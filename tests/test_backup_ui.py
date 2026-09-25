@@ -1,5 +1,7 @@
 from urllib.parse import quote, unquote_plus, urlencode
 
+import pytest
+
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
 
@@ -71,6 +73,24 @@ def test_backups_restore_requires_known_archive(client, db_session, tmp_path):
                     follow_redirects=False)
     assert r.status_code == 303
     assert "Архив не найден" in unquote_plus(r.headers["location"])
+
+
+@pytest.mark.parametrize("delay", ["1", "99999"])
+def test_backups_restore_rejects_out_of_range_delay(client, db_session, tmp_path, delay):
+    from app.modules.backup.maintenance import maintenance_state, set_idle
+    from app.modules.backup.service import get_backup_settings
+    set_idle()
+    _admin(client, db_session)
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    archive = tmp_path / "smartsklad-20260925-030405.dump"
+    archive.write_bytes(b"archive")
+    r = client.post("/backups/restore", data={"filename": archive.name, "delay": delay},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    assert "ожидание от 10 до 3600 секунд" in unquote_plus(r.headers["location"])
+    assert maintenance_state()["mode"] == "idle"
 
 
 def test_nav_hides_backups_without_permission(client, db_session):
@@ -159,6 +179,51 @@ def test_backups_download_rejects_absolute_path(client, db_session, tmp_path):
     r = client.get(f"/backups/download/{filename}")
     assert r.status_code == 404
     assert b"secret" not in r.content
+
+
+def test_backups_download_rejects_windows_path_traversal(client, db_session, tmp_path):
+    from app.modules.backup.service import get_backup_settings
+    _admin(client, db_session)
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path / "backups")
+    db_session.commit()
+    secret = tmp_path / "secret.dump"
+    secret.write_bytes(b"secret")
+    filename = quote(r"..\secret.dump", safe="")
+    r = client.get(f"/backups/download/{filename}")
+    assert r.status_code == 404
+    assert b"secret" not in r.content
+
+
+def test_backups_download_rejects_null_byte(client, db_session, tmp_path):
+    from app.modules.backup.service import get_backup_settings
+    _admin(client, db_session)
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    filename = quote("smartsklad-20260925-030405.dump\x00.txt", safe="")
+    r = client.get(f"/backups/download/{filename}")
+    assert r.status_code == 404
+
+
+def test_backups_download_rejects_leading_slash(client, db_session, tmp_path):
+    from app.modules.backup.service import get_backup_settings
+    _admin(client, db_session)
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path / "backups")
+    db_session.commit()
+    r = client.get("/backups/download/%2Fsecret.dump")
+    assert r.status_code == 404
+
+
+def test_backups_download_rejects_valid_name_when_file_is_missing(client, db_session, tmp_path):
+    from app.modules.backup.service import get_backup_settings
+    _admin(client, db_session)
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    r = client.get("/backups/download/smartsklad-20260925-030405.dump")
+    assert r.status_code == 404
 
 
 def test_backups_bad_restore_filename_does_not_start_countdown(client, db_session, tmp_path):

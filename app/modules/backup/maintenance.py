@@ -5,6 +5,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 STATE = {"mode": "idle", "starts_at": None}
 
+MIN_COUNTDOWN_SECONDS = 10
+MAX_COUNTDOWN_SECONDS = 3600
 ALLOWED_WHILE_RUNNING = ("/static", "/api/backup/status")
 
 
@@ -18,7 +20,7 @@ def maintenance_state() -> dict:
 
 
 def begin_countdown(seconds: int) -> dict:
-    if seconds < 10 or seconds > 3600:
+    if not MIN_COUNTDOWN_SECONDS <= seconds <= MAX_COUNTDOWN_SECONDS:
         raise ValueError("ожидание от 10 до 3600 секунд")
     STATE["mode"] = "countdown"
     STATE["starts_at"] = clock.time() + seconds
