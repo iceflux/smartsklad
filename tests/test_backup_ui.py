@@ -36,9 +36,27 @@ def test_backups_renders_all_blocks(client, db_session):
     _admin(client, db_session)
     r = client.get("/backups")
     assert r.status_code == 200
-    for text in ("Состояние планировщика", "Последние запуски", "Резервные копии",
+    for text in ("Состояние планировщика", "Следующая копия", "Следующий отчёт",
+                 "Планировщик", "Последние запуски", "Резервные копии",
                  "Настройки", "Проверка окружения", "Отчёт по email"):
         assert text in r.text
+
+
+def test_backups_panel_shows_maintenance_pause_and_next_runs(client, db_session):
+    from app.modules.backup.maintenance import begin_countdown, set_idle
+
+    _admin(client, db_session)
+    begin_countdown(120)
+    try:
+        response = client.get("/backups")
+    finally:
+        set_idle()
+    assert response.status_code == 200
+    assert "Плановые копирование и отчёт пропускаются" in response.text
+    assert "Начало:" in response.text
+    assert "Отменить восстановление" in response.text
+    assert "Следующая копия" in response.text
+    assert "Следующий отчёт" in response.text
 
 
 def test_backups_settings_form_rejects_bad_values(client, db_session):
@@ -60,6 +78,43 @@ def test_backups_run_action_redirects(client, db_session, monkeypatch, tmp_path)
     monkeypatch.setattr("app.modules.backup.service.find_binary", lambda name, configured=None: None)
     r = client.post("/backups/run", follow_redirects=False)
     assert r.status_code == 303
+
+
+def test_backups_restore_rejects_second_post_during_countdown(client, db_session, tmp_path):
+    from app.modules.backup.maintenance import maintenance_state, set_idle
+    from app.modules.backup.service import get_backup_settings
+
+    set_idle()
+    _admin(client, db_session)
+    row = get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    db_session.commit()
+    archive = tmp_path / "smartsklad-20260925-030405.dump"
+    archive.write_bytes(b"archive")
+    data = {"filename": archive.name, "delay": "3600"}
+    first = client.post("/backups/restore", data=data, follow_redirects=False)
+    second = client.post("/backups/restore", data=data, follow_redirects=False)
+    try:
+        assert first.status_code == 303
+        assert second.status_code == 303
+        assert "восстановление уже запланировано" in unquote_plus(second.headers["location"])
+        assert maintenance_state()["mode"] == "countdown"
+    finally:
+        set_idle()
+
+
+def test_backups_restore_cancel_resets_countdown(client, db_session):
+    from app.modules.backup.maintenance import begin_countdown, maintenance_state, set_idle
+
+    set_idle()
+    _admin(client, db_session)
+    begin_countdown(120)
+    response = client.post("/backups/restore/cancel", follow_redirects=False)
+    try:
+        assert response.status_code == 303
+        assert maintenance_state()["mode"] == "idle"
+    finally:
+        set_idle()
 
 
 def test_backups_restore_requires_known_archive(client, db_session, tmp_path):
@@ -93,7 +148,19 @@ def test_backups_restore_rejects_out_of_range_delay(client, db_session, tmp_path
     assert maintenance_state()["mode"] == "idle"
 
 
-def test_nav_hides_backups_without_permission(client, db_session):
+def test_backups_restore_cancel_is_noop_while_running(client, db_session):
+    from app.modules.backup.maintenance import maintenance_state, set_idle, set_running
+
+    _admin(client, db_session)
+    set_running()
+    try:
+        response = client.post("/backups/restore/cancel", follow_redirects=False)
+        assert response.status_code == 303
+        assert maintenance_state()["mode"] == "running"
+    finally:
+        set_idle()
+
+
     u = User(username="plain", password_hash=hash_password(PASSWORD),
              role_id=get_role_by_name(db_session, "seller").id)
     db_session.add(u)
@@ -119,8 +186,7 @@ def test_page_context_has_backup_flag(db_session):
     assert page_context(admin)["can_manage_backups"] is True
 
 
-def test_backups_report_accepts_multiple_recipient_ids(client, db_session):
-    from app.modules.backup.report import read_report_settings
+def test_backups_report_rejects_unknown_recipient_ids(client, db_session):
     admin = _admin(client, db_session)
     admin.email = "boss@example.com"
     db_session.commit()
@@ -137,8 +203,20 @@ def test_backups_report_accepts_multiple_recipient_ids(client, db_session):
         follow_redirects=False,
     )
     assert r.status_code == 303
-    db_session.expire_all()
-    assert read_report_settings(db_session)["recipient_ids"] == [admin.id, 999]
+    assert "получатель не найден" in unquote_plus(r.headers["location"])
+
+
+def test_backups_report_malformed_recipient_id_is_handled(client, db_session):
+    _admin(client, db_session)
+    data = [("enabled", "on"), ("period", "week"), ("send_time", "08:15"),
+            ("recipient_ids", "not-an-id")]
+    response = client.post(
+        "/backups/report", content=urlencode(data, doseq=True).encode(),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "Ошибка:" in unquote_plus(response.headers["location"])
 
 
 def test_backups_report_send_runs_report_without_changing_settings(client, db_session, monkeypatch):
