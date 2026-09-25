@@ -14,6 +14,7 @@ from app.modules.notifications.models import NotificationLog
 from app.modules.settings.service import (
     REPORT_ENABLED_KEY,
     REPORT_PERIOD_KEY,
+    REPORT_PERIODS,
     REPORT_RECIPIENTS_KEY,
     REPORT_TIME_KEY,
     get_setting,
@@ -51,7 +52,7 @@ def read_report_settings(db: Session) -> dict:
 
 def write_report_settings(db: Session, *, enabled, period, send_time,
                           recipient_ids, user_id: int | None = None) -> dict:
-    if period not in PERIOD_LABELS:
+    if period not in REPORT_PERIODS:
         raise ValueError("период отчёта: day, week или month")
     if not isinstance(send_time, str) or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", send_time):
         raise ValueError("время отправки в формате ЧЧ:ММ")
@@ -60,9 +61,20 @@ def write_report_settings(db: Session, *, enabled, period, send_time,
     ids = []
     for value in recipient_ids:
         try:
-            ids.append(int(value))
+            recipient_id = int(value)
         except (TypeError, ValueError):
             raise ValueError("некорректный получатель")
+        recipient = db.get(User, recipient_id)
+        if recipient is None:
+            raise ValueError("получатель не найден")
+        if not recipient.is_active:
+            raise ValueError("получатель неактивен")
+        address = ((recipient.email or "").strip())
+        if not address:
+            raise ValueError("у получателя не указан email")
+        if not EMAIL_RE.match(address):
+            raise ValueError("некорректный email получателя")
+        ids.append(recipient_id)
     actor = db.get(User, user_id) if user_id else None
     set_setting(db, REPORT_ENABLED_KEY, "true" if enabled else "false", user=actor)
     set_setting(db, REPORT_PERIOD_KEY, period, user=actor)
@@ -101,6 +113,9 @@ def send_report(db: Session, *, now: datetime | None = None,
              error="SMTP не настроен")
         result["failed"] = len(settings_row["recipient_ids"])
         _stamp(db, now, result)
+        log_action(db, action="report.send", entity_type="settings", entity_id=None,
+                   new_value=f"sent={result['sent']} skipped={result['skipped']}",
+                   user_id=user_id)
         return result
     for recipient_id in settings_row["recipient_ids"]:
         recipient = db.get(User, recipient_id)

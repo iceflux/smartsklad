@@ -4,6 +4,7 @@ import pytest
 
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
+from app.modules.backup.scheduler import due_for_report
 from app.modules.backup.report import (
     parse_recipients,
     read_report_settings,
@@ -87,7 +88,28 @@ def test_write_report_settings_rejects_bad_recipient(db_session):
                               send_time="09:00", recipient_ids=["не число"])
 
 
-def test_write_report_settings_rejects_non_string_time(db_session):
+def test_write_report_settings_rejects_unknown_recipient(db_session):
+    with pytest.raises(ValueError, match="получатель не найден"):
+        write_report_settings(db_session, enabled=True, period="week",
+                              send_time="09:00", recipient_ids=[999])
+
+
+def test_write_report_settings_rejects_inactive_recipient(db_session):
+    user = _user(db_session, "inactive", "inactive@example.com")
+    user.is_active = False
+    db_session.commit()
+    with pytest.raises(ValueError, match="получатель неактивен"):
+        write_report_settings(db_session, enabled=True, period="week",
+                              send_time="09:00", recipient_ids=[user.id])
+
+
+def test_write_report_settings_rejects_malformed_address(db_session):
+    user = _user(db_session, "bad", "not-an-email")
+    with pytest.raises(ValueError, match="некорректный email"):
+        write_report_settings(db_session, enabled=True, period="week",
+                              send_time="09:00", recipient_ids=[user.id])
+
+
     with pytest.raises(ValueError):
         write_report_settings(db_session, enabled=True, period="week",
                               send_time=900, recipient_ids=[])
@@ -247,6 +269,9 @@ def test_report_without_smtp_is_recorded_as_failed(db_session, monkeypatch):
     entry = db_session.query(NotificationLog).one()
     assert entry.status == "failed"
     assert "SMTP" in entry.error
+    from app.modules.audit.models import AuditLog
+    audit = db_session.query(AuditLog).filter(AuditLog.action == "report.send").one()
+    assert audit.new_value == "sent=0 skipped=0"
 
 
 def test_report_marks_when_sent(db_session, monkeypatch, smtp_ready):
@@ -259,6 +284,26 @@ def test_report_marks_when_sent(db_session, monkeypatch, smtp_ready):
     row = get_backup_settings(db_session)
     assert row.last_report_sent == 1
     assert row.last_report_at is not None
+
+
+def test_manual_send_does_not_advance_scheduled_report_cadence(db_session, monkeypatch, smtp_ready):
+    from app.modules.backup.service import get_backup_settings
+    from datetime import time
+
+    user = _user(db_session, "boss", "boss@example.com")
+    set_setting(db_session, REPORT_ENABLED_KEY, "true")
+    set_setting(db_session, REPORT_PERIOD_KEY, "week")
+    set_setting(db_session, REPORT_RECIPIENTS_KEY, '[%d]' % user.id)
+    monkeypatch.setattr("app.modules.backup.report.send_email", lambda *a, **k: None)
+    moment = datetime(2026, 9, 25, 9, 0)
+
+    send_report(db_session, now=moment)
+    row = get_backup_settings(db_session)
+
+    assert row.last_report_at == moment
+    assert row.last_report_scheduled_at is None
+    assert due_for_report(True, time(9, 0), "week",
+                          datetime(2026, 10, 1, 9, 0), row.last_report_scheduled_at) is True
 
 
 def test_report_audit_uses_actor(db_session, monkeypatch, smtp_ready):

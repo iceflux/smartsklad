@@ -64,6 +64,24 @@ def test_settings_rejects_bad_time(client, db_session):
     assert r.status_code == 422
 
 
+def test_settings_rejects_bad_retention(client, db_session):
+    _admin(client, db_session)
+    response = client.put("/api/backup/settings", json={
+        "enabled": True, "schedule_time": "04:30", "check_interval_minutes": 15,
+        "retention_days": 0, "local_path": "backups-x",
+    })
+    assert response.status_code == 422
+
+
+def test_settings_rejects_empty_local_path(client, db_session):
+    _admin(client, db_session)
+    response = client.put("/api/backup/settings", json={
+        "enabled": True, "schedule_time": "04:30", "check_interval_minutes": 15,
+        "retention_days": 15, "local_path": "",
+    })
+    assert response.status_code == 422
+
+
 def test_report_settings_validation(client, db_session):
     _admin(client, db_session)
     r = client.put("/api/backup/report", json={"enabled": True, "period": "year",
@@ -84,6 +102,16 @@ def test_archives_list(client, db_session):
     r = client.get("/api/backup/archives")
     assert r.status_code == 200
     assert isinstance(r.json(), list)
+
+
+def test_run_allows_admin(client, db_session, monkeypatch):
+    _admin(client, db_session)
+    monkeypatch.setattr("app.modules.backup.router.create_backup",
+                        lambda db, *, user_id, kind: {"status": "success", "filename": "backup.dump",
+                                                      "size_bytes": 1, "skipped": 0, "failed": 0})
+    response = client.post("/api/backup/run")
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
 
 
 def test_run_requires_permission(client, db_session):
