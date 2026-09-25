@@ -42,6 +42,13 @@ def find_binary(name: str, configured: str | None = None) -> str | None:
     return shutil.which(name)
 
 
+def find_restore_binary(configured: str | None = None) -> str | None:
+    if configured:
+        sibling = Path(configured).with_name("pg_restore" + Path(configured).suffix)
+        return str(sibling) if sibling.is_file() else None
+    return shutil.which("pg_restore")
+
+
 def pg_env() -> dict[str, str]:
     url = make_url(app_settings.database_url)
     env = {
@@ -107,11 +114,7 @@ def _dump_major(dump: str) -> int | None:
 def pg_dump_health(db: Session, bs: BackupSettings) -> dict:
     dump = find_binary("pg_dump", bs.pg_dump_path)
     restore = None
-    if dump and bs.pg_dump_path:
-        sibling = Path(dump).with_name("pg_restore" + Path(dump).suffix)
-        restore = str(sibling) if sibling.is_file() else None
-    if restore is None and not bs.pg_dump_path:
-        restore = shutil.which("pg_restore")
+    restore = find_restore_binary(bs.pg_dump_path) if dump else None
     dump_major = _dump_major(dump) if dump else None
     server_major = _server_major(db)
     return {
@@ -228,11 +231,13 @@ def create_backup(db, *, user_id: int | None = None, kind: str = "manual",
 def run_restore(db, filename: str, *, user_id: int | None = None) -> dict:
     if parse_archive_name(filename) is None:
         raise ValueError("некорректное имя архива")
-    archive = Path(get_backup_settings(db).local_path) / filename
+    settings_row = get_backup_settings(db)
+    archive = Path(settings_row.local_path) / filename
     if not archive.is_file():
         raise FileNotFoundError("архив не найден")
+    configured_path = settings_row.pg_dump_path
     db.rollback()
-    binary = find_binary("pg_restore")
+    binary = find_restore_binary(configured_path)
     if binary is None:
         raise ValueError("pg_restore не найден")
     prepared = pg_restore_command(binary, archive)

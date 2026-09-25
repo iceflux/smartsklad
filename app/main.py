@@ -49,7 +49,7 @@ from app.modules.backup.maintenance import (
     maintenance_state,
 )
 from app.modules.backup.models import BackupLog
-from app.modules.backup.report import read_report_settings, write_report_settings
+from app.modules.backup.report import read_report_settings, send_report, write_report_settings
 from app.modules.backup.router import router as backup_router
 from app.modules.backup.service import (
     create_backup,
@@ -656,6 +656,19 @@ def create_app() -> FastAPI:
         except ValueError as e:
             db.rollback()
             key = "Ошибка: " + str(e)
+        return RedirectResponse("/backups?" + urlencode({"msg": key}), status_code=303)
+
+    @app.post("/backups/report/send")
+    def backups_report_send_post(
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.backup_manage)
+        result = send_report(db, user_id=user.id)
+        key = (f"Отправлено: {result['sent']}, "
+               f"пропущено: {result['skipped']}, ошибок: {result['failed']}")
         return RedirectResponse("/backups?" + urlencode({"msg": key}), status_code=303)
 
     @app.post("/backups/restore")

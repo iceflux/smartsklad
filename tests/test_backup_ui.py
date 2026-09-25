@@ -141,6 +141,41 @@ def test_backups_report_accepts_multiple_recipient_ids(client, db_session):
     assert read_report_settings(db_session)["recipient_ids"] == [admin.id, 999]
 
 
+def test_backups_report_send_runs_report_without_changing_settings(client, db_session, monkeypatch):
+    from app.modules.backup.report import read_report_settings
+    from app.modules.settings.service import (
+        REPORT_ENABLED_KEY,
+        REPORT_PERIOD_KEY,
+        REPORT_RECIPIENTS_KEY,
+        REPORT_TIME_KEY,
+        set_setting,
+    )
+
+    admin = _admin(client, db_session)
+    admin.email = "boss@example.com"
+    db_session.commit()
+    set_setting(db_session, REPORT_ENABLED_KEY, "true")
+    set_setting(db_session, REPORT_PERIOD_KEY, "week")
+    set_setting(db_session, REPORT_TIME_KEY, "08:15")
+    set_setting(db_session, REPORT_RECIPIENTS_KEY, f"[{admin.id}]")
+    before = read_report_settings(db_session)
+    calls = []
+
+    def fake_send(db, *, user_id=None):
+        calls.append(user_id)
+        return {"sent": 1, "skipped": 0, "failed": 0}
+
+    monkeypatch.setattr("app.main.send_report", fake_send)
+    response = client.post("/backups/report/send", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert calls == [admin.id]
+    assert "Отправлено: 1" in unquote_plus(response.headers["location"])
+    assert "пропущено: 0" in unquote_plus(response.headers["location"])
+    assert "ошибок: 0" in unquote_plus(response.headers["location"])
+    assert read_report_settings(db_session) == before
+
+
 def test_backups_download_returns_archive(client, db_session, tmp_path):
     from app.modules.backup.service import get_backup_settings
     _admin(client, db_session)

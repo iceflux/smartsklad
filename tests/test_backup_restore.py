@@ -145,6 +145,34 @@ def test_restore_command_is_called(db_session, tmp_path, monkeypatch):
     assert all(password not in argument for argument in command)
 
 
+def test_restore_uses_sibling_binary_for_configured_dump(db_session, tmp_path, monkeypatch):
+    import app.modules.backup.service as service
+
+    row = service.get_backup_settings(db_session)
+    row.local_path = str(tmp_path)
+    dump = tmp_path / "pg_dump.exe"
+    restore = tmp_path / "pg_restore.exe"
+    dump.write_bytes(b"dump")
+    restore.write_bytes(b"restore")
+    row.pg_dump_path = str(dump)
+    db_session.commit()
+    archive = tmp_path / "smartsklad-20260925-030000.dump"
+    archive.write_bytes(b"archive")
+    calls = []
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+    result = service.run_restore(db_session, archive.name)
+
+    assert result["status"] == "success"
+    assert calls == [[str(restore), "--clean", "--if-exists", "--no-password",
+                      "--dbname", "smartsklad", str(archive)]]
+
+
 def test_restore_releases_settings_transaction_before_subprocess(db_session, tmp_path, monkeypatch):
     import app.modules.backup.service as service
 
@@ -153,7 +181,7 @@ def test_restore_releases_settings_transaction_before_subprocess(db_session, tmp
     db_session.commit()
     archive = tmp_path / "smartsklad-20260925-030000.dump"
     archive.write_bytes(b"archive")
-    monkeypatch.setattr(service, "find_binary", lambda name, configured=None: name)
+    monkeypatch.setattr(service, "find_restore_binary", lambda configured=None: "pg_restore")
 
     def fake_run(command, **kwargs):
         assert not db_session.in_transaction()
