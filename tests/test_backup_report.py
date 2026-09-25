@@ -134,6 +134,7 @@ def test_report_skips_user_without_email(db_session, monkeypatch, smtp_ready):
     entry = db_session.query(NotificationLog).one()
     assert entry.status == "failed"
     assert entry.error
+    assert entry.recipient == without.username
     assert entry.document_type == "report"
     assert entry.document_id is None
 

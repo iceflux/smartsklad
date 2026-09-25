@@ -107,7 +107,8 @@ def send_report(db: Session, *, now: datetime | None = None,
         address = ((recipient.email if recipient else "") or "").strip()
         if not address:
             result["skipped"] += 1
-            _log(db, recipient="", status="failed", subject=subject, body=body,
+            _log(db, recipient=(recipient.username if recipient else ""),
+                 status="failed", subject=subject, body=body,
                  error="у пользователя не указан email")
             continue
         if not EMAIL_RE.match(address):
