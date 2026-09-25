@@ -102,7 +102,7 @@ def test_arm_restore_cancellation_returns_to_idle():
     from app.modules.backup import maintenance
 
     async def scenario():
-        task = asyncio.create_task(maintenance.arm_restore("smartsklad-20260925-030000.dump", 3600))
+        task = maintenance.arm_restore("smartsklad-20260925-030000.dump", 3600)
         await asyncio.sleep(0)
         assert maintenance_state()["mode"] == "countdown"
         task.cancel()
@@ -112,8 +112,129 @@ def test_arm_restore_cancellation_returns_to_idle():
     try:
         asyncio.run(scenario())
         assert maintenance_state()["mode"] == "idle"
+        assert maintenance.STATE["restore_task"] is None
     finally:
         set_idle()
+
+
+def test_cancel_countdown_prevents_restore_from_running(monkeypatch):
+    import app.modules.backup.service as service
+    from app.modules.backup import maintenance
+
+    calls = []
+    original_sleep = asyncio.sleep
+
+    async def blocked_sleep(seconds):
+        await asyncio.Event().wait()
+
+    def restore(filename, *, user_id=None):
+        calls.append(filename)
+        return {"status": "success"}
+
+    monkeypatch.setattr(maintenance.asyncio, "sleep", blocked_sleep)
+    monkeypatch.setattr(service, "perform_restore", restore)
+
+    async def scenario():
+        task = maintenance.arm_restore("smartsklad-20260925-030000.dump", 3600)
+        assert isinstance(task, asyncio.Task)
+        await original_sleep(0)
+        cancel_countdown()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        set_idle()
+
+    assert calls == []
+    assert maintenance.STATE["restore_task"] is None
+
+
+def test_cancel_countdown_does_not_cancel_running_restore_task(monkeypatch):
+    import app.modules.backup.service as service
+    from app.modules.backup import maintenance
+
+    calls = []
+
+    async def immediate_sleep(seconds):
+        return None
+
+    async def scenario():
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def blocked_to_thread(function, *args, **kwargs):
+            started.set()
+            await release.wait()
+            return function(*args, **kwargs)
+
+        def restore(filename, *, user_id=None):
+            calls.append(filename)
+            set_idle()
+            return {"status": "success"}
+
+        monkeypatch.setattr(maintenance.asyncio, "sleep", immediate_sleep)
+        monkeypatch.setattr(maintenance.asyncio, "to_thread", blocked_to_thread)
+        monkeypatch.setattr(service, "perform_restore", restore)
+        task = maintenance.arm_restore("smartsklad-20260925-030000.dump", 3600)
+        assert isinstance(task, asyncio.Task)
+        await asyncio.wait_for(started.wait(), 1)
+        set_running()
+        cancel_countdown()
+
+        assert maintenance_state()["mode"] == "running"
+        assert task.cancelled() is False
+        release.set()
+        await task
+        assert maintenance.STATE["restore_task"] is None
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        set_idle()
+
+    assert calls == ["smartsklad-20260925-030000.dump"]
+
+
+def test_rearming_after_cancel_runs_restore_once(monkeypatch):
+    import app.modules.backup.service as service
+    from app.modules.backup import maintenance
+
+    calls = []
+    original_sleep = asyncio.sleep
+
+    async def scenario():
+        release = asyncio.Event()
+
+        async def blocked_sleep(seconds):
+            await release.wait()
+
+        def restore(filename, *, user_id=None):
+            calls.append(filename)
+            return {"status": "success"}
+
+        monkeypatch.setattr(maintenance.asyncio, "sleep", blocked_sleep)
+        monkeypatch.setattr(service, "perform_restore", restore)
+        first = maintenance.arm_restore("smartsklad-20260925-030000.dump", 3600)
+        assert isinstance(first, asyncio.Task)
+        await original_sleep(0)
+        cancel_countdown()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+
+        second = maintenance.arm_restore("smartsklad-20260925-030000.dump", 3600)
+        assert isinstance(second, asyncio.Task)
+        await original_sleep(0)
+        release.set()
+        await second
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        set_idle()
+
+    assert calls == ["smartsklad-20260925-030000.dump"]
 
 
 @pytest.mark.parametrize(
@@ -239,6 +360,7 @@ def test_missing_restore_is_logged_and_audited(db_session, tmp_path, monkeypatch
     assert audit.entity_id == entry.id
 
 
+def test_perform_restore_runs_and_returns_to_idle(monkeypatch):
     import app.modules.backup.service as service
     from app.modules.backup.maintenance import maintenance_state
 

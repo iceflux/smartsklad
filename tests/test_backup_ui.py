@@ -81,7 +81,7 @@ def test_backups_run_action_redirects(client, db_session, monkeypatch, tmp_path)
 
 
 def test_backups_restore_rejects_second_post_during_countdown(client, db_session, tmp_path):
-    from app.modules.backup.maintenance import maintenance_state, set_idle
+    from app.modules.backup.maintenance import cancel_countdown, maintenance_state, set_idle
     from app.modules.backup.service import get_backup_settings
 
     set_idle()
@@ -100,6 +100,7 @@ def test_backups_restore_rejects_second_post_during_countdown(client, db_session
         assert "восстановление уже запланировано" in unquote_plus(second.headers["location"])
         assert maintenance_state()["mode"] == "countdown"
     finally:
+        cancel_countdown()
         set_idle()
 
 
@@ -161,6 +162,7 @@ def test_backups_restore_cancel_is_noop_while_running(client, db_session):
         set_idle()
 
 
+def test_nav_hides_backups_without_permission(client, db_session):
     u = User(username="plain", password_hash=hash_password(PASSWORD),
              role_id=get_role_by_name(db_session, "seller").id)
     db_session.add(u)

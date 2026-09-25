@@ -4,7 +4,7 @@ from datetime import datetime
 
 from fastapi.responses import HTMLResponse, JSONResponse
 
-STATE = {"mode": "idle", "starts_at": None}
+STATE = {"mode": "idle", "starts_at": None, "restore_task": None}
 
 MIN_COUNTDOWN_SECONDS = 10
 MAX_COUNTDOWN_SECONDS = 3600
@@ -37,6 +37,10 @@ def begin_countdown(seconds: int) -> dict:
 
 def cancel_countdown() -> None:
     if STATE["mode"] == "countdown":
+        task = STATE["restore_task"]
+        STATE["restore_task"] = None
+        if task is not None:
+            task.cancel()
         set_idle()
 
 
@@ -73,15 +77,25 @@ async def maintenance_middleware(request, call_next):
     return await call_next(request)
 
 
-async def arm_restore(filename: str, delay: int, *, user_id: int | None = None,
-                      countdown_started: bool = False) -> dict:
-    from app.modules.backup.service import perform_restore
-
+def arm_restore(filename: str, delay: int, *, user_id: int | None = None,
+                countdown_started: bool = False) -> asyncio.Task:
     if not countdown_started:
         begin_countdown(delay)
+    task = asyncio.create_task(_arm_restore(filename, delay, user_id=user_id))
+    STATE["restore_task"] = task
+    return task
+
+
+async def _arm_restore(filename: str, delay: int, *, user_id: int | None) -> dict:
     try:
-        await asyncio.sleep(delay)
-    except asyncio.CancelledError:
-        set_idle()
-        raise
-    return await asyncio.to_thread(perform_restore, filename, user_id=user_id)
+        from app.modules.backup.service import perform_restore
+
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            set_idle()
+            raise
+        return await asyncio.to_thread(perform_restore, filename, user_id=user_id)
+    finally:
+        if STATE["restore_task"] is asyncio.current_task():
+            STATE["restore_task"] = None

@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 
 import pytest
 
@@ -66,6 +66,15 @@ def test_week_report_is_not_due_on_day_after_and_due_after_seven_days():
                            datetime(2026, 10, 1, 9, 0), last_scheduled) is True
 
 
+def test_week_report_handles_aware_last_scheduled_at():
+    last_scheduled = datetime(2026, 9, 24, 9, 0, tzinfo=timezone.utc)
+    local_last = last_scheduled.astimezone().replace(tzinfo=None)
+    assert due_for_report(True, time(9, 0), "week",
+                           local_last + timedelta(days=1), last_scheduled) is False
+    assert due_for_report(True, time(9, 0), "week",
+                           local_last + timedelta(days=7), last_scheduled) is True
+
+
 def test_read_interval_is_clamped(db_session):
     row = get_backup_settings(db_session)
     row.check_interval_minutes = 0
@@ -125,6 +134,30 @@ def test_run_due_jobs_skips_jobs_during_maintenance(db_session, tmp_path, monkey
     monkeypatch.setitem(__import__("sys").modules, "app.modules.backup.report", type(
         "M", (), {"send_report": staticmethod(lambda *args, **kwargs: pytest.fail("report must be skipped"))}))
     begin_countdown(120)
+    try:
+        result = run_due_jobs(db_session, now=datetime(2026, 9, 25, 3, 30))
+    finally:
+        set_idle()
+
+    assert result == {"backup": None, "report": None}
+
+
+def test_run_due_jobs_stops_if_maintenance_starts_after_entry(db_session, monkeypatch):
+    import app.modules.backup.scheduler as scheduler
+    from app.modules.backup.maintenance import set_idle, set_running
+
+    row = get_backup_settings(db_session)
+    row.enabled = True
+    row.schedule_time = time(3, 0)
+    db_session.commit()
+
+    def enter_maintenance(db):
+        set_running()
+        return True
+
+    monkeypatch.setattr(scheduler, "_try_lock", enter_maintenance)
+    monkeypatch.setattr(scheduler, "create_backup",
+                        lambda *args, **kwargs: pytest.fail("backup must be skipped"))
     try:
         result = run_due_jobs(db_session, now=datetime(2026, 9, 25, 3, 30))
     finally:

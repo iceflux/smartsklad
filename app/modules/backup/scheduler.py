@@ -18,13 +18,19 @@ MAX_INTERVAL_MINUTES = 1440
 DEFAULT_INTERVAL_MINUTES = 15
 
 
+def _stored_local_naive(value: datetime) -> datetime:
+    return value.astimezone().replace(tzinfo=None) if value.tzinfo else value
+
+
 def due_for_backup(bs, now: datetime, last_backup_at: datetime | None) -> bool:
     if not bs.enabled:
         return False
     if now.time() < bs.schedule_time:
         return False
-    if last_backup_at is not None and last_backup_at.date() == now.date():
-        return False
+    if last_backup_at is not None:
+        last_backup_at = _stored_local_naive(last_backup_at)
+        if last_backup_at.date() == now.date():
+            return False
     return True
 
 
@@ -34,16 +40,19 @@ def due_for_report(enabled: bool, schedule_time: time, period: str, now: datetim
         return False
     if last_report_scheduled_at is None:
         return True
+    last_scheduled = _stored_local_naive(last_report_scheduled_at)
     if period == "day":
-        return last_report_scheduled_at.date() != now.date()
-    return now - last_report_scheduled_at >= timedelta(days=7 if period == "week" else 30)
+        return last_scheduled.date() != now.date()
+    return now - last_scheduled >= timedelta(days=7 if period == "week" else 30)
 
 
 def next_backup_time(bs, now: datetime) -> datetime | None:
     if not bs.enabled:
         return None
     candidate = datetime.combine(now.date(), bs.schedule_time)
-    if now < candidate or bs.last_backup_at is None or bs.last_backup_at.date() != now.date():
+    last_backup = (_stored_local_naive(bs.last_backup_at)
+                   if bs.last_backup_at is not None else None)
+    if now < candidate or last_backup is None or last_backup.date() != now.date():
         return candidate if now < candidate else now
     return candidate + timedelta(days=1)
 
@@ -59,7 +68,8 @@ def next_report_time(enabled: bool, schedule_time: time, period: str, now: datet
         return now
     if period == "day":
         return candidate + timedelta(days=1)
-    return last_report_scheduled_at + timedelta(days=7 if period == "week" else 30)
+    last_scheduled = _stored_local_naive(last_report_scheduled_at)
+    return last_scheduled + timedelta(days=7 if period == "week" else 30)
 
 
 def read_interval_minutes(db) -> int:
@@ -121,12 +131,16 @@ def run_due_jobs(db, now: datetime | None = None) -> dict:
     try:
         bs = get_backup_settings(db)
         if due_for_backup(bs, now, bs.last_backup_at):
+            if maintenance_state()["mode"] != "idle":
+                return result
             result["backup"] = _run_job("backup", db, lambda: create_backup(db, kind="scheduled", now=now))
         report_enabled = get_setting(db, REPORT_ENABLED_KEY) == "true"
         report_period = get_setting(db, REPORT_PERIOD_KEY) or "week"
         report_schedule_time = _parse_time(get_setting(db, REPORT_TIME_KEY), time(9, 0))
         if due_for_report(report_enabled, report_schedule_time, report_period, now,
                            bs.last_report_scheduled_at):
+            if maintenance_state()["mode"] != "idle":
+                return result
             from app.modules.backup.report import send_report
 
             result["report"] = _run_job("report", db, lambda: send_report(db, now=now))

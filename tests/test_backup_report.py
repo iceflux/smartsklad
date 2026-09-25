@@ -110,6 +110,7 @@ def test_write_report_settings_rejects_malformed_address(db_session):
                               send_time="09:00", recipient_ids=[user.id])
 
 
+def test_write_report_settings_rejects_non_string_time(db_session):
     with pytest.raises(ValueError):
         write_report_settings(db_session, enabled=True, period="week",
                               send_time=900, recipient_ids=[])

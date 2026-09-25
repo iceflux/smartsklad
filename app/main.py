@@ -716,8 +716,7 @@ def create_app() -> FastAPI:
         except ValueError as error:
             return RedirectResponse(
                 "/backups?" + urlencode({"msg": f"Ошибка: {error}"}), status_code=303)
-        asyncio.create_task(arm_restore(filename, delay, user_id=user.id,
-                                         countdown_started=True))
+        arm_restore(filename, delay, user_id=user.id, countdown_started=True)
         return RedirectResponse(
             "/backups?" + urlencode({"msg": f"Восстановление начнётся через {delay} с"}),
             status_code=303)
