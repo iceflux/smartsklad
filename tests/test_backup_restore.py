@@ -151,7 +151,7 @@ def test_cancel_countdown_prevents_restore_from_running(monkeypatch):
     assert maintenance.STATE["restore_task"] is None
 
 
-def test_cancel_countdown_does_not_cancel_running_restore_task(monkeypatch):
+def test_task_cancellation_after_running_leaves_mode_running(monkeypatch):
     import app.modules.backup.service as service
     from app.modules.backup import maintenance
 
@@ -162,31 +162,27 @@ def test_cancel_countdown_does_not_cancel_running_restore_task(monkeypatch):
 
     async def scenario():
         started = asyncio.Event()
-        release = asyncio.Event()
 
         async def blocked_to_thread(function, *args, **kwargs):
             started.set()
-            await release.wait()
+            await asyncio.Event().wait()
             return function(*args, **kwargs)
 
         def restore(filename, *, user_id=None):
             calls.append(filename)
-            set_idle()
             return {"status": "success"}
 
         monkeypatch.setattr(maintenance.asyncio, "sleep", immediate_sleep)
         monkeypatch.setattr(maintenance.asyncio, "to_thread", blocked_to_thread)
         monkeypatch.setattr(service, "perform_restore", restore)
         task = maintenance.arm_restore("smartsklad-20260925-030000.dump", 3600)
-        assert isinstance(task, asyncio.Task)
         await asyncio.wait_for(started.wait(), 1)
         set_running()
-        cancel_countdown()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
         assert maintenance_state()["mode"] == "running"
-        assert task.cancelled() is False
-        release.set()
-        await task
         assert maintenance.STATE["restore_task"] is None
 
     try:
@@ -194,10 +190,10 @@ def test_cancel_countdown_does_not_cancel_running_restore_task(monkeypatch):
     finally:
         set_idle()
 
-    assert calls == ["smartsklad-20260925-030000.dump"]
+    assert calls == []
 
 
-def test_rearming_after_cancel_runs_restore_once(monkeypatch):
+def test_immediate_rearming_after_cancel_preserves_new_countdown(monkeypatch):
     import app.modules.backup.service as service
     from app.modules.backup import maintenance
 
@@ -217,17 +213,21 @@ def test_rearming_after_cancel_runs_restore_once(monkeypatch):
         monkeypatch.setattr(maintenance.asyncio, "sleep", blocked_sleep)
         monkeypatch.setattr(service, "perform_restore", restore)
         first = maintenance.arm_restore("smartsklad-20260925-030000.dump", 3600)
-        assert isinstance(first, asyncio.Task)
         await original_sleep(0)
         cancel_countdown()
-        with pytest.raises(asyncio.CancelledError):
-            await first
-
         second = maintenance.arm_restore("smartsklad-20260925-030000.dump", 3600)
-        assert isinstance(second, asyncio.Task)
-        await original_sleep(0)
-        release.set()
-        await second
+        try:
+            await original_sleep(0)
+            assert maintenance_state()["mode"] == "countdown"
+            assert second.done() is False
+            with pytest.raises(asyncio.CancelledError):
+                await first
+            release.set()
+            await second
+        finally:
+            first.cancel()
+            second.cancel()
+            await asyncio.gather(first, second, return_exceptions=True)
 
     try:
         asyncio.run(scenario())

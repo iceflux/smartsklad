@@ -67,12 +67,11 @@ def test_week_report_is_not_due_on_day_after_and_due_after_seven_days():
 
 
 def test_week_report_handles_aware_last_scheduled_at():
-    last_scheduled = datetime(2026, 9, 24, 9, 0, tzinfo=timezone.utc)
-    local_last = last_scheduled.astimezone().replace(tzinfo=None)
-    assert due_for_report(True, time(9, 0), "week",
-                           local_last + timedelta(days=1), last_scheduled) is False
-    assert due_for_report(True, time(9, 0), "week",
-                           local_last + timedelta(days=7), last_scheduled) is True
+    local_offset = datetime(2026, 9, 24, 9, 0).astimezone().utcoffset()
+    stored_timezone = timezone(local_offset - timedelta(hours=4))
+    last_scheduled = datetime(2026, 9, 24, 9, 0, tzinfo=stored_timezone)
+    assert due_for_report(True, time(3, 0), "week",
+                           datetime(2026, 10, 1, 14, 0), last_scheduled) is True
 
 
 def test_read_interval_is_clamped(db_session):
@@ -158,6 +157,37 @@ def test_run_due_jobs_stops_if_maintenance_starts_after_entry(db_session, monkey
     monkeypatch.setattr(scheduler, "_try_lock", enter_maintenance)
     monkeypatch.setattr(scheduler, "create_backup",
                         lambda *args, **kwargs: pytest.fail("backup must be skipped"))
+    try:
+        result = run_due_jobs(db_session, now=datetime(2026, 9, 25, 3, 30))
+    finally:
+        set_idle()
+
+    assert result == {"backup": None, "report": None}
+
+
+def test_run_due_jobs_stops_report_if_maintenance_starts_before_report(db_session, monkeypatch):
+    import app.modules.backup.scheduler as scheduler
+    from app.modules.backup.maintenance import set_idle, set_running
+
+    row = get_backup_settings(db_session)
+    row.enabled = False
+    db_session.commit()
+    set_setting(db_session, REPORT_ENABLED_KEY, "true")
+    set_setting(db_session, REPORT_PERIOD_KEY, "day")
+    set_setting(db_session, REPORT_TIME_KEY, "02:00")
+    set_setting(db_session, REPORT_RECIPIENTS_KEY, "[]")
+    original_get_setting = scheduler.get_setting
+
+    def start_maintenance_before_report(db, key):
+        value = original_get_setting(db, key)
+        if key == REPORT_TIME_KEY:
+            set_running()
+        return value
+
+    monkeypatch.setattr(scheduler, "get_setting", start_maintenance_before_report)
+    monkeypatch.setitem(__import__("sys").modules, "app.modules.backup.report", type(
+        "M", (), {"send_report": staticmethod(
+            lambda *args, **kwargs: pytest.fail("report must be skipped"))}))
     try:
         result = run_due_jobs(db_session, now=datetime(2026, 9, 25, 3, 30))
     finally:

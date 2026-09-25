@@ -38,7 +38,6 @@ def begin_countdown(seconds: int) -> dict:
 def cancel_countdown() -> None:
     if STATE["mode"] == "countdown":
         task = STATE["restore_task"]
-        STATE["restore_task"] = None
         if task is not None:
             task.cancel()
         set_idle()
@@ -93,7 +92,9 @@ async def _arm_restore(filename: str, delay: int, *, user_id: int | None) -> dic
         try:
             await asyncio.sleep(delay)
         except asyncio.CancelledError:
-            set_idle()
+            if STATE["restore_task"] is asyncio.current_task():
+                set_idle()
+                STATE["restore_task"] = None
             raise
         return await asyncio.to_thread(perform_restore, filename, user_id=user_id)
     finally:
