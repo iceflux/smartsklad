@@ -19,6 +19,15 @@ from app.modules.importer.files import (
     resolve_folder,
 )
 from app.modules.importer.models import ImportMap
+from app.modules.importer.resolve import (
+    SkuFactory,
+    clean_inn,
+    norm,
+    resolve_customers,
+    resolve_products,
+    resolve_service_customer,
+)
+from app.modules.inventory.models import Product
 
 if sys.platform.startswith("win32"):
     import msvcrt
@@ -216,3 +225,131 @@ def test_ignores_unknown_top_level_keys(tmp_path):
     })
     sections = read_payloads(tmp_path, [name])
     assert sections == {"products": [{"id": "p1"}], "customers": [], "orders": []}
+
+
+def _product(db_session, name, sku, unit="шт", rest=0):
+    p = Product(name=name, sku=sku, unit=unit, price=0.0, rest=rest)
+    db_session.add(p)
+    db_session.commit()
+    return p
+
+
+def test_norm_trims_and_lowercases():
+    assert norm("  ГВОЗДЬ  ") == "гвоздь"
+    assert norm(None) == ""
+
+
+def test_clean_inn_rules():
+    assert clean_inn("7700000000") == "7700000000"
+    assert clean_inn("770000000000") == "770000000000"
+    assert clean_inn("123") is None
+    assert clean_inn(None) is None
+
+
+def test_product_matched_by_name_ignoring_case_and_spaces(db_session):
+    _product(db_session, "Гвоздь", "S1")
+    plans, stats = resolve_products(db_session, [{"id": "p1", "name": "  гвоздь ", "unit": "шт"}])
+    assert len(plans) == 1
+    assert plans[0].create is False
+    assert plans[0].existing_id is not None
+    assert stats["matched"] == 1
+    assert stats["created"] == 0
+
+
+def test_product_created_with_generated_sku(db_session):
+    plans, stats = resolve_products(db_session, [{"id": "p1", "name": "Гвоздь", "unit": "шт"}])
+    assert plans[0].create is True
+    assert plans[0].sku == "1C-00001"
+    assert stats["created"] == 1
+
+
+def test_generated_sku_skips_taken_one(db_session):
+    _product(db_session, "Чужой", "1C-00001")
+    plans, _ = resolve_products(db_session, [{"id": "p1", "name": "Гвоздь", "unit": "шт"}])
+    assert plans[0].sku == "1C-00002"
+
+
+def test_sku_factory_is_reusable(db_session):
+    _product(db_session, "Чужой", "1C-00001")
+    factory = SkuFactory(db_session)
+    first = factory()
+    second = factory()
+    assert first == "1C-00002"
+    assert second == "1C-00003"
+
+
+def test_soft_deleted_product_is_not_matched(db_session):
+    p = _product(db_session, "Гвоздь", "S1")
+    p.is_deleted = True
+    db_session.commit()
+    plans, _ = resolve_products(db_session, [{"id": "p1", "name": "Гвоздь", "unit": "шт"}])
+    assert plans[0].create is True
+
+
+def test_import_map_wins_over_name(db_session):
+    first = _product(db_session, "Гвоздь", "S1")
+    other = _product(db_session, "Другое имя", "S2")
+    db_session.add(ImportMap(entity_type="product", source_id="p1", entity_id=other.id))
+    db_session.commit()
+    plans, stats = resolve_products(db_session, [{"id": "p1", "name": "Гвоздь", "unit": "шт"}])
+    assert plans[0].existing_id == other.id
+    assert stats["matched"] == 1
+    assert first.id != other.id
+
+
+def test_row_without_id_is_skipped(db_session):
+    plans, stats = resolve_products(db_session, [{"name": "Гвоздь", "unit": "шт"}])
+    assert plans == []
+    assert stats["skipped"] == 1
+
+
+def test_customer_matched_by_name(db_session):
+    db_session.add(Customer(name="ООО Ромашка"))
+    db_session.commit()
+    plans, stats = resolve_customers(db_session, [{"id": "c1", "name": "ооо ромашка"}])
+    assert plans[0].create is False
+    assert stats["matched"] == 1
+
+
+def test_customer_created_and_bad_inn_dropped(db_session):
+    plans, stats = resolve_customers(db_session, [{"id": "c1", "name": "ИП Иванов", "inn": "123"}])
+    assert plans[0].create is True
+    assert plans[0].inn is None
+    assert stats["inn_dropped"] == 1
+
+
+def test_customer_import_map_wins_over_name(db_session):
+    by_name = Customer(name="ООО Ромашка")
+    other = Customer(name="ООО Одуванчик")
+    db_session.add_all([by_name, other])
+    db_session.commit()
+    db_session.add(ImportMap(entity_type="customer", source_id="c1", entity_id=other.id))
+    db_session.commit()
+    plans, stats = resolve_customers(db_session, [{"id": "c1", "name": "ООО Ромашка"}])
+    assert plans[0].existing_id == other.id
+    assert plans[0].create is False
+    assert stats["matched"] == 1
+    assert stats["created"] == 0
+
+
+def test_soft_deleted_customer_is_not_matched(db_session):
+    db_session.add(Customer(name="ООО Ромашка", is_deleted=True))
+    db_session.commit()
+    plans, _ = resolve_customers(db_session, [{"id": "c1", "name": "ООО Ромашка"}])
+    assert plans[0].create is True
+
+
+def test_service_customer_planned_once(db_session):
+    plan = resolve_service_customer(db_session)
+    assert plan is not None
+    assert plan.name == "Без контрагента (1С)"
+    assert plan.create is True
+
+
+def test_service_customer_matched_when_it_exists(db_session):
+    existing = Customer(name="Без контрагента (1С)")
+    db_session.add(existing)
+    db_session.commit()
+    plan = resolve_service_customer(db_session)
+    assert plan.create is False
+    assert plan.existing_id == existing.id
