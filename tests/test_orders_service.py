@@ -6,11 +6,16 @@ from app.modules.orders.service import (
     copy_order, list_orders, customer_order_stats,
 )
 from app.modules.customers.models import Customer
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
 
 
 @pytest.fixture
 def product(db_session):
-    p = Product(name="Гвозди", sku="NAIL-1", unit="шт", price=100.0, rest=50)
+    p = Product(name="Гвозди", sku="NAIL-1", unit_id=_unit_id(db_session), price=100.0, rest=50)
     db_session.add(p)
     db_session.commit()
     return p
@@ -57,7 +62,7 @@ def test_create_order_invalid_customer(db_session, product):
 
 @pytest.fixture
 def setup(db_session):
-    p = Product(name="Гвозди", sku="NAIL-1", unit="шт", price=100.0, rest=5)
+    p = Product(name="Гвозди", sku="NAIL-1", unit_id=_unit_id(db_session), price=100.0, rest=5)
     c = Customer(name="ООО Строй")
     db_session.add_all([p, c])
     db_session.commit()
@@ -94,8 +99,8 @@ def test_forbidden_transition(setup):
 
 @pytest.fixture
 def env(db_session):
-    p1 = Product(name="A", sku="A-1", unit="шт", price=10.0, rest=100)
-    p2 = Product(name="B", sku="B-1", unit="шт", price=20.0, rest=10)
+    p1 = Product(name="A", sku="A-1", unit_id=_unit_id(db_session), price=10.0, rest=100)
+    p2 = Product(name="B", sku="B-1", unit_id=_unit_id(db_session), price=20.0, rest=10)
     c = Customer(name="Клиент")
     db_session.add_all([p1, p2, c])
     db_session.commit()

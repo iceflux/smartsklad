@@ -38,7 +38,6 @@ PRODUCT = {
     "name": "Молоко",
     "sku": "MILK-1",
     "category_id": None,
-    "unit": "л",
     "price": 80.0,
     "rest": 10,
 }
@@ -282,7 +281,7 @@ def test_product_detail_includes_category_and_price_history(client, db_session):
 def test_create_product_with_min_stock(client, db_session):
     _admin(client, db_session)
     r = client.post("/api/products", json={
-        "name": "Гвозди", "sku": "NAIL-A1", "unit": "шт", "price": 10.0, "min_stock": 9,
+        "name": "Гвозди", "sku": "NAIL-A1", "price": 10.0, "min_stock": 9,
     })
     assert r.status_code == 201
     assert r.json()["min_stock"] == 9

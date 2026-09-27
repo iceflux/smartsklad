@@ -4,6 +4,12 @@ from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order
 from app.modules.orders.service import create_order
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
+
 
 PASSWORD = "password123"
 
@@ -18,7 +24,7 @@ def _admin(client, db_session):
 
 
 def _seed(db_session):
-    p = Product(name="Гвозди", sku="NAIL-1", unit="шт", price=100.0, rest=10)
+    p = Product(name="Гвозди", sku="NAIL-1", unit_id=_unit_id(db_session), price=100.0, rest=10)
     c = Customer(name="ООО Строй", personal_discount=0.0)
     db_session.add_all([p, c])
     db_session.commit()

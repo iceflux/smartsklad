@@ -34,7 +34,8 @@ from app.modules.importer.resolve import (
     resolve_service_customer,
 )
 from app.modules.importer.service import import_path, plan_import, run_import, save_import_path
-from app.modules.inventory.models import Product
+from app.modules.inventory.models import Product, Unit
+from app.modules.inventory.service import create_unit, get_unit_by_name
 from app.modules.orders.models import Order
 from app.modules.orders.service import create_order, next_order_number
 
@@ -42,6 +43,10 @@ if sys.platform.startswith("win32"):
     import msvcrt
 
 PASSWORD = "password123"
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
 
 
 def test_import_permission_exists():
@@ -246,7 +251,7 @@ def test_ignores_unknown_top_level_keys(tmp_path):
 
 
 def _product(db_session, name, sku, unit="шт", rest=0):
-    p = Product(name=name, sku=sku, unit=unit, price=0.0, rest=rest)
+    p = Product(name=name, sku=sku, unit_id=get_unit_by_name(db_session, unit).id, price=0.0, rest=rest)
     db_session.add(p)
     db_session.commit()
     return p
@@ -1308,4 +1313,84 @@ def test_preview_queries_do_not_scale_with_batch(db_engine, tmp_path):
         name="ten.json")
     assert _selects(db_engine, tmp_path, one, False) == _selects(db_engine, tmp_path, ten, False)
     assert _selects(db_engine, tmp_path, one, True) == _selects(db_engine, tmp_path, ten, True)
+
+
+def _export_with_unit(tmp_path, unit):
+    return _write(tmp_path, "export.json", {
+        "products": [{"id": "p1", "name": "Гвоздь", "unit": unit}],
+        "customers": [], "orders": [],
+    })
+
+
+def test_preview_reports_unresolved_unit(db_session, tmp_path):
+    name = _export_with_unit(tmp_path, "килограмм")
+    report = plan_import(db_session, tmp_path, [name])
+    assert report["unresolved_units"] == ["килограмм"]
+
+
+def test_run_refuses_while_unit_unresolved(db_session, tmp_path):
+    name = _export_with_unit(tmp_path, "килограмм")
+    with pytest.raises(ValueError):
+        run_import(db_session, tmp_path, [name])
+    assert db_session.query(Product).count() == 0
+
+
+def test_known_unit_is_not_reported(db_session, tmp_path):
+    name = _export_with_unit(tmp_path, "кг")
+    report = plan_import(db_session, tmp_path, [name])
+    assert report["unresolved_units"] == []
+
+
+def test_unit_map_resolves_to_existing_unit(db_session, tmp_path):
+    target = create_unit(db_session, "Килограмм")
+    name = _export_with_unit(tmp_path, "килограмм")
+    report = run_import(db_session, tmp_path, [name], unit_map={"килограмм": target.id})
+    assert report["unresolved_units"] == []
+    assert db_session.query(Product).one().unit_id == target.id
+    assert db_session.query(Unit).filter(Unit.name == "килограмм").count() == 0
+
+
+def test_unit_map_creates_with_chosen_name(db_session, tmp_path):
+    name = _export_with_unit(tmp_path, "килограмм")
+    run_import(db_session, tmp_path, [name], unit_map={"килограмм": "new:Килограмм-новый"})
+    assert db_session.query(Product).one().unit_rel.name == "Килограмм-новый"
+
+
+def test_partial_unit_map_still_refuses(db_session, tmp_path):
+    target = create_unit(db_session, "Килограмм")
+    _write(tmp_path, "a.json", {"products": [{"id": "p1", "name": "Гвоздь", "unit": "килограмм"}]})
+    _write(tmp_path, "b.json", {"products": [{"id": "p2", "name": "Саморез", "unit": "метр"}]})
+    with pytest.raises(ValueError):
+        run_import(db_session, tmp_path, ["a.json", "b.json"], unit_map={"килограмм": target.id})
+
+
+def test_unit_map_rejects_unknown_id(db_session, tmp_path):
+    name = _export_with_unit(tmp_path, "килограмм")
+    with pytest.raises(ValueError, match="единица не найдена"):
+        run_import(db_session, tmp_path, [name], unit_map={"килограмм": 9999})
+
+
+def test_unit_snapshot_uses_resolved_name(db_session, tmp_path):
+    target = create_unit(db_session, "Килограмм")
+    _write(tmp_path, "export.json", {
+        "products": [{"id": "p1", "name": "Гвоздь", "unit": "килограмм"}],
+        "customers": [{"id": "c1", "name": "ООО Ромашка"}],
+        "orders": [{"id": "o1", "number": "1", "date": "2017-12-02 21:22:39", "customer_id": "c1",
+                    "items": [{"product_id": "p1", "name": "Гвоздь", "unit": "килограмм",
+                               "quantity": 2, "price": 5.0}]}],
+    })
+    run_import(db_session, tmp_path, ["export.json"], unit_map={"килограмм": target.id})
+    item = db_session.query(Order).one().items[0]
+    assert item.unit_snapshot == "Килограмм"
+
+
+def test_preview_creates_no_unit_even_with_a_creation_decision(db_session, tmp_path):
+    name = _export_with_unit(tmp_path, "килограмм")
+    report = plan_import(db_session, tmp_path, [name], unit_map={"килограмм": "new:Килограмм-новый"})
+    assert report["unresolved_units"] == []
+    assert report["unit_map"] == {"килограмм": "Килограмм-новый"}
+    db_session.rollback()
+    assert db_session.query(Unit).filter(Unit.name == "Килограмм-новый").count() == 0
+    assert db_session.query(Unit).filter(Unit.name == "килограмм").count() == 0
+
 

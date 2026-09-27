@@ -4,10 +4,11 @@ from app.db import Base
 from app.modules.auth.models import User
 from app.modules.auth.permissions import Permission
 from app.modules.auth.roles_router import PERMISSION_LABELS
-from app.modules.auth.service import get_role_by_name, hash_password
-from app.modules.inventory.models import Unit
+from app.modules.auth.service import get_role_by_name, hash_password, login
+from app.modules.inventory.models import Product, Unit
 from app.modules.inventory.service import (
     DEFAULT_UNITS,
+    create_product,
     create_unit,
     delete_unit,
     ensure_default_units,
@@ -20,11 +21,23 @@ from app.modules.inventory.service import (
 PASSWORD = "password123"
 
 
+def _ensure_user(db_session):
+    user = db_session.query(User).filter(User.username == "boss").first()
+    if user is None:
+        user = User(username="boss", password_hash=hash_password(PASSWORD),
+                    role_id=get_role_by_name(db_session, "admin").id)
+        db_session.add(user)
+        db_session.commit()
+    return user
+
+
 def _admin(db_session):
-    user = User(username="boss", password_hash=hash_password(PASSWORD),
-                role_id=get_role_by_name(db_session, "admin").id)
-    db_session.add(user)
-    db_session.commit()
+    user = db_session.query(User).filter(User.username == "boss").first()
+    if user is None:
+        user = User(username="boss", password_hash=hash_password(PASSWORD),
+                    role_id=get_role_by_name(db_session, "admin").id)
+        db_session.add(user)
+        db_session.commit()
     return user
 
 
@@ -155,4 +168,45 @@ def test_delete_unit_marks_deleted(db_session):
     unit = create_unit(db_session, "Грамм")
     delete_unit(db_session, unit.id)
     assert db_session.get(Unit, unit.id).is_deleted is True
+
+
+def _product_with_unit(db_session, unit_name="Килограмм-тест"):
+    unit = create_unit(db_session, unit_name)
+    return create_product(db_session, name="Гвоздь", sku=f"S-{unit_name}",
+                          category_id=None, unit_id=unit.id,
+                          price=10.0, characteristic=None, rest=5)
+
+
+def test_product_unit_property_returns_name(db_session):
+    product = _product_with_unit(db_session)
+    db_session.refresh(product)
+    assert product.unit == "Килограмм-тест"
+
+
+def test_product_unit_property_without_loaded_relation(db_session):
+    unit = create_unit(db_session, "Грамм-тест")
+    product = Product(name="Гвоздь", sku="S1", unit_id=unit.id, price=0.0, rest=0)
+    assert product.unit == ""
+
+
+def test_create_product_rejects_unknown_unit_id(db_session):
+    with pytest.raises(ValueError):
+        create_product(db_session, name="Гвоздь", sku="S9", category_id=None, unit_id=9999,
+                       price=0.0, characteristic=None, rest=0)
+
+
+def test_create_product_without_unit_id_falls_back_to_pieces(db_session):
+    product = create_product(db_session, name="Гвоздь", sku="S10", category_id=None, unit_id=None,
+                             price=0.0, characteristic=None, rest=0)
+    db_session.refresh(product)
+    assert product.unit == "шт"
+
+
+def test_product_form_offers_unit_select(client, db_session):
+    _ensure_user(db_session)
+    client.cookies.set("session", login(db_session, "boss", PASSWORD).token)
+    response = client.get("/products/new")
+    assert response.status_code == 200
+    assert 'name="unit_id"' in response.text
+    assert 'name="unit"' not in response.text
 

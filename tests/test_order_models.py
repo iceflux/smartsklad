@@ -1,9 +1,14 @@
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
 
 
 def test_order_models(db_session):
-    product = Product(name="Гвозди", sku="NAIL-1", unit="шт", price=10.0, rest=100)
+    product = Product(name="Гвозди", sku="NAIL-1", unit_id=_unit_id(db_session), price=10.0, rest=100)
     db_session.add(product)
     db_session.commit()
     order = Order(number="00001", customer_id=1, status="new", discount=0.0, total_amount=100.0)

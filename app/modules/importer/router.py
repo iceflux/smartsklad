@@ -19,6 +19,7 @@ PERM = Depends(require_permissions(Permission.import_manage))
 
 class FilesIn(BaseModel):
     filenames: list[str]
+    unit_map: dict[str, str] = {}
 
 
 class PathIn(BaseModel):
@@ -38,7 +39,7 @@ def api_files(db=Depends(get_db), user=PERM):
 @router.post("/import/preview")
 def api_preview(payload: FilesIn, db=Depends(get_db), user=PERM):
     try:
-        return plan_import(db, _folder(db), payload.filenames)
+        return plan_import(db, _folder(db), payload.filenames, unit_map=payload.unit_map)
     except ImportFileError as err:
         raise HTTPException(status_code=422, detail=str(err)) from err
 
@@ -46,7 +47,7 @@ def api_preview(payload: FilesIn, db=Depends(get_db), user=PERM):
 @router.post("/import/run")
 def api_run(payload: FilesIn, db=Depends(get_db), user=PERM):
     try:
-        return run_import(db, _folder(db), payload.filenames, user=user)
+        return run_import(db, _folder(db), payload.filenames, user=user, unit_map=payload.unit_map)
     except ImportFileError as err:
         raise HTTPException(status_code=422, detail=str(err)) from err
     except ValueError as err:

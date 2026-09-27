@@ -16,6 +16,7 @@ DEFAULT_UNITS = (
     "лист", "кат", "дюйм", "фут", "галл",
 )
 UNIT_NAME_MAX = 32
+DEFAULT_UNIT = "шт"
 
 
 def ensure_default_units(db: Session) -> None:
@@ -126,7 +127,7 @@ def create_product(
     name: str,
     sku: str,
     category_id: int | None,
-    unit: str,
+    unit_id: int | None,
     price: float,
     characteristic: dict | None,
     rest: int,
@@ -144,11 +145,14 @@ def create_product(
         raise ValueError("duplicate sku")
     if min_stock is not None and min_stock < 0:
         raise ValueError("min_stock must be >= 0")
+    unit = db.get(Unit, unit_id) if unit_id is not None else get_unit_by_name(db, DEFAULT_UNIT)
+    if unit is None or unit.is_deleted:
+        raise ValueError("unit not found")
     product = Product(
         name=name,
         sku=sku,
         category_id=category_id,
-        unit=unit,
+        unit_id=unit.id,
         price=price,
         characteristic=characteristic,
         rest=rest,
@@ -169,6 +173,10 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
         raise ValueError("product not found")
     if "min_stock" in data and data["min_stock"] is not None and data["min_stock"] < 0:
         raise ValueError("min_stock must be >= 0")
+    if "unit_id" in data and data["unit_id"] is not None:
+        unit = db.get(Unit, data["unit_id"])
+        if unit is None or unit.is_deleted:
+            raise ValueError("unit not found")
     old_dict = _product_dict(product)
     if "sku" in data:
         new_sku = data["sku"].strip()
@@ -188,7 +196,7 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
             changed_by=user.id if user else None,
         ))
         product.price = data["price"]
-    for key in ("category_id", "unit", "characteristic", "rest", "track_rest", "min_stock"):
+    for key in ("category_id", "unit_id", "characteristic", "rest", "track_rest", "min_stock"):
         if key in data:
             setattr(product, key, data[key])
     old_value = json.dumps(old_dict, ensure_ascii=False)

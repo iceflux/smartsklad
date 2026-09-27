@@ -9,6 +9,12 @@ from app.modules.notifications.models import NotificationLog
 from app.modules.notifications.service import message_text, send_document
 from app.modules.orders.service import create_order
 from app.modules.settings.service import set_setting
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
+
 
 PASSWORD = "password123"
 TELEGRAM_TOKEN_KEY = "telegram_bot_token"
@@ -17,7 +23,7 @@ TELEGRAM_CHAT_KEY = "telegram_chat_id"
 
 @pytest.fixture
 def env(db_session):
-    p = Product(name="Гвозди", sku="NAIL-1", unit="шт", price=100.0, rest=50)
+    p = Product(name="Гвозди", sku="NAIL-1", unit_id=_unit_id(db_session), price=100.0, rest=50)
     c = Customer(name="ООО Строй", email="a@b.ru")
     db_session.add_all([p, c])
     db_session.commit()

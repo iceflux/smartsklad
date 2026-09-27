@@ -22,8 +22,13 @@ from app.modules.settings.service import (
     REPORT_TIME_KEY,
     set_setting,
 )
+from app.modules.inventory.service import get_unit_by_name
 
 PASSWORD = "password123"
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
 
 
 @pytest.fixture
@@ -40,7 +45,7 @@ def _user(db_session, username, email):
 
 def _sale(db_session, number):
     c = Customer(name="ООО Строй", personal_discount=0.0)
-    p = Product(name="Гвозди", sku=f"SKU-R-{number}", unit="шт", price=10.0, rest=10)
+    p = Product(name="Гвозди", sku=f"SKU-R-{number}", unit_id=_unit_id(db_session), price=10.0, rest=10)
     db_session.add(c)
     db_session.add(p)
     db_session.commit()

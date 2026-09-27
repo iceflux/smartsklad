@@ -31,7 +31,12 @@
         </div>
         <div>
             <label class="block mb-1">Единица измерения</label>
-            <input name="unit" value="{{ product.unit if product else 'шт' }}" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
+            <select name="unit_id" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
+                <option value="">— выберите —</option>
+                {% for u in units %}
+                <option value="{{ u.id }}" {% if product and product.unit_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+                {% endfor %}
+            </select>
         </div>
         <div>
             <label class="block mb-1">Минимальный запас</label>
@@ -84,7 +89,7 @@
             if (canEdit) {
                 body.name = f.name.value;
                 body.sku = f.sku.value;
-                body.unit = f.unit.value;
+                body.unit_id = f.unit_id.value ? parseInt(f.unit_id.value) : null;
                 body.category_id = f.category_id.value ? parseInt(f.category_id.value) : null;
                 var msRaw = f.min_stock.value.trim();
                 if (msRaw === '') {

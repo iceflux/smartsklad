@@ -2,7 +2,12 @@ from sqlalchemy.orm import Session
 
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
-from app.modules.inventory.service import create_product, update_product, get_product
+from app.modules.inventory.service import (
+    create_product,
+    get_product,
+    get_unit_by_name,
+    update_product,
+)
 from app.modules.settings.service import STOCK_TRACK_DEFAULT_KEY, set_setting
 
 PASSWORD = "password123"
@@ -19,9 +24,13 @@ def _admin(client, db_session):
     client.cookies.set("session", s.token)
 
 
+def _unit_id(db: Session) -> int:
+    return get_unit_by_name(db, "шт").id
+
+
 def _mk(db: Session, **kw):
     return create_product(db, name=kw.get("name", "Тест"), sku=kw.get("sku", "SKU-1"),
-                          category_id=None, unit="шт", price=10.0, characteristic=None,
+                          category_id=None, unit_id=_unit_id(db), price=10.0, characteristic=None,
                           rest=5, **{k: v for k, v in kw.items() if k in ("track_rest",)})
 
 
@@ -61,7 +70,7 @@ def test_update_track_rest(db_session):
 def test_product_out_contains_flag(client, db_session):
     _admin(client, db_session)
     r = client.post("/api/products", json={
-        "name": "T", "sku": "SKU-X", "unit": "шт", "price": 1.0, "rest": 0, "track_rest": False,
+        "name": "T", "sku": "SKU-X", "price": 1.0, "rest": 0, "track_rest": False,
     })
     assert r.status_code < 500
     body = r.json()

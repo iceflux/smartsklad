@@ -79,6 +79,7 @@ from app.modules.inventory.service import (
     get_category_tree,
     get_product,
     list_products,
+    list_units,
     restore_product,
     update_product,
 )
@@ -502,7 +503,7 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.products_edit)
         return templates.TemplateResponse(request, "product_form.html", {
             "title": "Новый товар", "user": user, "product": None, "is_new": True,
-            "tree": get_category_tree(db), "characteristic_json": "",
+            "tree": get_category_tree(db), "units": list_units(db), "characteristic_json": "",
             "can_edit": True, "can_price": True,
             "can_stock": user_has_permission(user, Permission.stock_change),
             "stock_track_default": get_setting(db, STOCK_TRACK_DEFAULT_KEY),
@@ -921,6 +922,7 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "product_form.html", {
             "title": f"Товар {product.name}", "user": user, "product": product, "is_new": False,
             "tree": get_category_tree(db),
+            "units": list_units(db),
             "characteristic_json": json.dumps(product.characteristic, ensure_ascii=False) if product.characteristic else "",
             "can_edit": can_edit, "can_price": can_price, "can_stock": can_stock,
             "min_stock_days_hint": get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),

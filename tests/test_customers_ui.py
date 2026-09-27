@@ -2,6 +2,12 @@ from app.modules.auth.models import Role, User
 from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.inventory.models import Product
 from app.modules.orders.service import create_order
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
+
 
 PASSWORD = "password123"
 
@@ -97,7 +103,7 @@ def test_customer_edit_empty_fields_no_none(client, db_session):
 def test_customer_detail_shows_orders_and_stats(client, db_session):
     _admin(client, db_session)
     c = _make_customer(client)
-    p = Product(name="Гвозди", sku="NAIL-1", unit="шт", price=100.0, rest=10)
+    p = Product(name="Гвозди", sku="NAIL-1", unit_id=_unit_id(db_session), price=100.0, rest=10)
     db_session.add(p)
     db_session.commit()
     create_order(db_session, customer_id=c["id"], discount=10.0,

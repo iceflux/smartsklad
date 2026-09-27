@@ -8,6 +8,11 @@ from app.modules.orders.service import create_order
 from app.modules.printing.service import (
     build_order_context, render_order_html, render_order_pdf,
 )
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
 
 
 def _flate_streams(data: bytes) -> bytes:
@@ -30,7 +35,7 @@ def _flate_streams(data: bytes) -> bytes:
 
 @pytest.fixture
 def env(db_session):
-    p = Product(name="Гвозди", sku="NAIL-1", unit="шт", price=100.0, rest=50)
+    p = Product(name="Гвозди", sku="NAIL-1", unit_id=_unit_id(db_session), price=100.0, rest=50)
     c = Customer(name="ООО Строй", email="a@b.ru")
     db_session.add_all([p, c])
     db_session.commit()

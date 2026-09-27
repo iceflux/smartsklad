@@ -3,6 +3,12 @@ from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.orders.service import create_order
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
+
 
 PASSWORD = "password123"
 
@@ -17,7 +23,7 @@ def _login(client, db_session, username, role):
 
 
 def _mk_order(db_session):
-    p = Product(name="Гвозди", sku="NAIL-1", unit="шт", price=100.0, rest=50)
+    p = Product(name="Гвозди", sku="NAIL-1", unit_id=_unit_id(db_session), price=100.0, rest=50)
     c = Customer(name="ООО Строй")
     db_session.add_all([p, c])
     db_session.commit()

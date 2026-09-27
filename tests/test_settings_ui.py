@@ -54,7 +54,7 @@ def test_new_product_form_shows_checkbox(client, db_session):
 def test_detail_shows_track_rest(client, db_session):
     _admin(client, db_session)
     r = client.post("/api/products", json={
-        "name": "Вирт", "sku": "VIRT-UI", "unit": "шт", "price": 1.0, "rest": 0, "track_rest": False,
+        "name": "Вирт", "sku": "VIRT-UI", "price": 1.0, "rest": 0, "track_rest": False,
     })
     assert r.status_code == 201
     pid = r.json()["id"]

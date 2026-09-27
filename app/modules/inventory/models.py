@@ -39,7 +39,7 @@ class Product(Base):
     name: Mapped[str] = mapped_column(String(256))
     sku: Mapped[str] = mapped_column(String(64), unique=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
-    unit: Mapped[str] = mapped_column(String(32), default="шт")
+    unit_id: Mapped[int] = mapped_column(ForeignKey("units.id"))
     price: Mapped[float] = mapped_column(default=0.0)
     characteristic: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     rest: Mapped[int] = mapped_column(Integer, default=0)
@@ -51,6 +51,11 @@ class Product(Base):
 
     category: Mapped[Category | None] = relationship(back_populates="products")
     price_history_items: Mapped[list["PriceHistory"]] = relationship(back_populates="product", cascade="all, delete-orphan")
+    unit_rel: Mapped["Unit"] = relationship(lazy="joined")
+
+    @property
+    def unit(self) -> str:
+        return self.unit_rel.name if self.unit_rel else ""
 
 
 class PriceHistory(Base):

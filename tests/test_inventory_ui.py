@@ -32,7 +32,6 @@ def _make_product(client, **overrides):
         "name": "Молоко",
         "sku": "MILK-1",
         "category_id": None,
-        "unit": "л",
         "price": 80.0,
         "rest": 10,
     }

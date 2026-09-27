@@ -5,11 +5,16 @@ from app.modules.inventory.models import Product
 from app.modules.orders.service import (
     create_order, change_status,
 )
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
 
 
 @pytest.fixture
 def no_rest_product(db_session):
-    p = Product(name="Виртуальная", sku="VIRT-1", unit="шт", price=100.0, rest=0, track_rest=False)
+    p = Product(name="Виртуальная", sku="VIRT-1", unit_id=_unit_id(db_session), price=100.0, rest=0, track_rest=False)
     db_session.add(p)
     db_session.commit()
     return p
@@ -17,7 +22,7 @@ def no_rest_product(db_session):
 
 @pytest.fixture
 def rest_product(db_session):
-    p = Product(name="Физическая", sku="PHYS-1", unit="шт", price=100.0, rest=1, track_rest=True)
+    p = Product(name="Физическая", sku="PHYS-1", unit_id=_unit_id(db_session), price=100.0, rest=1, track_rest=True)
     db_session.add(p)
     db_session.commit()
     return p

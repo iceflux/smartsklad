@@ -40,7 +40,7 @@ class ProductIn(BaseModel):
     name: str
     sku: str
     category_id: Optional[int] = None
-    unit: str = "шт"
+    unit_id: Optional[int] = None
     price: float = 0.0
     characteristic: Optional[dict] = None
     rest: int = 0
@@ -52,7 +52,7 @@ class ProductPatch(BaseModel):
     name: Optional[str] = None
     sku: Optional[str] = None
     category_id: Optional[int] = None
-    unit: Optional[str] = None
+    unit_id: Optional[int] = None
     price: Optional[float] = None
     characteristic: Optional[dict] = None
     rest: Optional[int] = None
@@ -176,7 +176,7 @@ def api_create_product(payload: ProductIn, user=Depends(get_current_user), db=De
         raise HTTPException(status_code=400, detail="Минимальный запас не может быть отрицательным")
     try:
         product = create_product(db, payload.name, payload.sku, payload.category_id,
-                                 payload.unit, payload.price, payload.characteristic,
+                                 payload.unit_id, payload.price, payload.characteristic,
                                  payload.rest, track_rest=payload.track_rest,
                                  min_stock=payload.min_stock, user=user)
     except ValueError as e:
@@ -256,6 +256,7 @@ def _product_out(product: Product) -> dict:
         "category_id": product.category_id,
         "category": _category_out(category) if category else None,
         "unit": product.unit,
+        "unit_id": product.unit_id,
         "price": product.price,
         "characteristic": product.characteristic,
         "rest": product.rest,

@@ -1,6 +1,12 @@
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.inventory.models import Product
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
+
 
 PASSWORD = "password123"
 WEIRD = "\u00b2"
@@ -65,7 +71,7 @@ def test_bulk_category_survives_malformed_ids(client, db_session):
 
 def test_bulk_stock_survives_malformed_rest(client, db_session):
     _admin(client, db_session)
-    p = Product(name="Гвозди", sku="SKU-PARSE-1", unit="шт", price=10.0, rest=5)
+    p = Product(name="Гвозди", sku="SKU-PARSE-1", unit_id=_unit_id(db_session), price=10.0, rest=5)
     db_session.add(p)
     db_session.commit()
     r = client.post(f"/products/{p.id}/stock", data={"rest": WEIRD}, follow_redirects=False)

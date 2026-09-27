@@ -14,7 +14,11 @@ from app.modules.ai.service import (
 from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
+from app.modules.inventory.service import get_unit_by_name
 
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
 
 
 def test_constants_match_spec():
@@ -89,7 +93,7 @@ def _customer(db_session):
 
 def _product(db_session, sku="SKU-AI", **kwargs):
     kwargs.setdefault("rest", 0)
-    p = Product(name="Гвозди", sku=sku, unit="шт", price=10.0, **kwargs)
+    p = Product(name="Гвозди", sku=sku, unit_id=_unit_id(db_session), price=10.0, **kwargs)
     db_session.add(p)
     db_session.commit()
     return p

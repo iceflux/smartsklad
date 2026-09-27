@@ -5,6 +5,12 @@ from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
+
 
 PASSWORD = "password123"
 
@@ -46,7 +52,7 @@ def _exporter(client, db_session, username="exporter"):
 def _seed(db_session, day=None, amount=100.0, number="00001"):
     day = day or date.today()
     c = Customer(name="ООО Строй", personal_discount=0.0)
-    p = Product(name="Гвозди", sku=f"SKU-API-{number}", unit="шт", price=10.0, rest=3)
+    p = Product(name="Гвозди", sku=f"SKU-API-{number}", unit_id=_unit_id(db_session), price=10.0, rest=3)
     db_session.add(c)
     db_session.add(p)
     db_session.commit()

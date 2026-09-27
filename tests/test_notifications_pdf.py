@@ -14,6 +14,11 @@ from app.modules.notifications.models import NotificationLog
 from app.modules.notifications.telegram import send_telegram_document
 from app.modules.orders.service import create_order
 from app.modules.settings.service import set_setting
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
 
 
 class _CapturingSMTP:
@@ -58,7 +63,7 @@ def test_send_email_without_attachment_has_no_attachment(capture):
 
 @pytest.fixture
 def order_env(db_session):
-    p = Product(name="Гвозди", sku="NAIL-1", unit="шт", price=100.0, rest=50)
+    p = Product(name="Гвозди", sku="NAIL-1", unit_id=_unit_id(db_session), price=100.0, rest=50)
     c = Customer(name="ООО Строй", email="buyer@example.com")
     db_session.add_all([p, c])
     db_session.commit()

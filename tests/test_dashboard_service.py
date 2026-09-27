@@ -13,6 +13,11 @@ from app.modules.dashboard.service import (
 )
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
+from app.modules.inventory.service import get_unit_by_name
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
 
 
 def test_preset_windows_are_rolling_and_end_today():
@@ -129,7 +134,7 @@ def _customer(db_session, name="ООО Строй"):
 
 
 def _product(db_session, name="Гвозди", sku="SKU-D1"):
-    p = Product(name=name, sku=sku, unit="шт", price=10.0, rest=10)
+    p = Product(name=name, sku=sku, unit_id=_unit_id(db_session), price=10.0, rest=10)
     db_session.add(p)
     db_session.commit()
     return p
