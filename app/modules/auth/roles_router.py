@@ -32,6 +32,7 @@ PERMISSION_LABELS = {
     "notifications.send": "Отправка уведомлений и документов",
     "notifications.view": "Просмотр журнала уведомлений",
     "import.manage": "Импорт данных из 1С",
+    "units.manage": "Единицы измерения",
 }
 
 
