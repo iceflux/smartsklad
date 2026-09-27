@@ -21,6 +21,7 @@ from app.modules.importer.files import (
 from app.modules.importer.models import ImportMap
 from app.modules.importer.resolve import (
     SkuFactory,
+    _unit,
     clean_inn,
     norm,
     resolve_customers,
@@ -246,12 +247,30 @@ def test_clean_inn_rules():
     assert clean_inn(None) is None
 
 
+@pytest.mark.parametrize("value, expected", [
+    (None, "шт"),
+    ("", "шт"),
+    ("   ", "шт"),
+    (10, "шт"),
+    ("шт", "шт"),
+    ("  короб ", "короб"),
+])
+def test_unit_normalisation(value, expected):
+    assert _unit(value) == expected
+
+
+def test_product_plan_unit_falls_back_when_blank(db_session):
+    plans, _ = resolve_products(db_session, [{"id": "p1", "name": "Гвоздь", "unit": "   "}])
+    assert plans[0].unit == "шт"
+
+
 def test_product_matched_by_name_ignoring_case_and_spaces(db_session):
-    _product(db_session, "Гвоздь", "S1")
+    existing = _product(db_session, "Гвоздь", "S1")
+    _product(db_session, "Другое имя", "S2")
     plans, stats = resolve_products(db_session, [{"id": "p1", "name": "  гвоздь ", "unit": "шт"}])
     assert len(plans) == 1
     assert plans[0].create is False
-    assert plans[0].existing_id is not None
+    assert plans[0].existing_id == existing.id
     assert stats["matched"] == 1
     assert stats["created"] == 0
 
@@ -265,6 +284,14 @@ def test_product_created_with_generated_sku(db_session):
 
 def test_generated_sku_skips_taken_one(db_session):
     _product(db_session, "Чужой", "1C-00001")
+    plans, _ = resolve_products(db_session, [{"id": "p1", "name": "Гвоздь", "unit": "шт"}])
+    assert plans[0].sku == "1C-00002"
+
+
+def test_generated_sku_skips_soft_deleted_product(db_session):
+    p = _product(db_session, "Чужой", "1C-00001")
+    p.is_deleted = True
+    db_session.commit()
     plans, _ = resolve_products(db_session, [{"id": "p1", "name": "Гвоздь", "unit": "шт"}])
     assert plans[0].sku == "1C-00002"
 
@@ -287,20 +314,38 @@ def test_soft_deleted_product_is_not_matched(db_session):
 
 
 def test_import_map_wins_over_name(db_session):
-    first = _product(db_session, "Гвоздь", "S1")
-    other = _product(db_session, "Другое имя", "S2")
-    db_session.add(ImportMap(entity_type="product", source_id="p1", entity_id=other.id))
+    by_name = _product(db_session, "Гвоздь", "S1")
+    mapped = _product(db_session, "Другое имя", "S2")
+    db_session.add(ImportMap(entity_type="product", source_id="p1", entity_id=mapped.id))
     db_session.commit()
     plans, stats = resolve_products(db_session, [{"id": "p1", "name": "Гвоздь", "unit": "шт"}])
-    assert plans[0].existing_id == other.id
+    assert plans[0].existing_id == mapped.id
+    assert plans[0].existing_id != by_name.id
     assert stats["matched"] == 1
-    assert first.id != other.id
+    assert stats["created"] == 0
 
 
-def test_row_without_id_is_skipped(db_session):
-    plans, stats = resolve_products(db_session, [{"name": "Гвоздь", "unit": "шт"}])
+@pytest.mark.parametrize("row", [
+    {"name": "Гвоздь", "unit": "шт"},
+    {"id": "p1", "unit": "шт"},
+    {"id": "   ", "name": "Гвоздь", "unit": "шт"},
+    {"id": "p1", "name": "   ", "unit": "шт"},
+])
+def test_row_without_id_or_name_is_skipped(db_session, row):
+    plans, stats = resolve_products(db_session, [row])
     assert plans == []
     assert stats["skipped"] == 1
+
+
+def test_same_name_in_one_file_creates_both(db_session):
+    rows = [{"id": "p1", "name": "Гвоздь", "unit": "шт"},
+            {"id": "p2", "name": "  гвоздь ", "unit": "шт"}]
+    plans, stats = resolve_products(db_session, rows)
+    assert [p.source_id for p in plans] == ["p1", "p2"]
+    assert [p.create for p in plans] == [True, True]
+    assert [p.sku for p in plans] == ["1C-00001", "1C-00002"]
+    assert stats["created"] == 2
+    assert stats["matched"] == 0
 
 
 def test_customer_matched_by_name(db_session):
@@ -330,6 +375,17 @@ def test_customer_import_map_wins_over_name(db_session):
     assert plans[0].create is False
     assert stats["matched"] == 1
     assert stats["created"] == 0
+
+
+def test_product_map_does_not_cover_customer_source_id(db_session):
+    product = _product(db_session, "Гвоздь", "S1")
+    db_session.add(ImportMap(entity_type="product", source_id="c1", entity_id=product.id))
+    db_session.commit()
+    plans, stats = resolve_customers(db_session, [{"id": "c1", "name": "ООО Ромашка"}])
+    assert plans[0].create is True
+    assert plans[0].existing_id is None
+    assert stats["created"] == 1
+    assert stats["matched"] == 0
 
 
 def test_soft_deleted_customer_is_not_matched(db_session):
