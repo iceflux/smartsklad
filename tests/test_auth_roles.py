@@ -6,7 +6,7 @@ from app.modules.auth.dependencies import user_has_permission
 def test_permission_codes():
     codes = [p.value for p in Permission]
     assert "products.view" in codes and "audit.view" in codes and "users.manage" in codes
-    assert len(codes) == 19
+    assert len(codes) == 20
 
 
 def test_ensure_default_roles_creates_four(db_session):

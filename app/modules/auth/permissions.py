@@ -21,3 +21,4 @@ class Permission(str, enum.Enum):
     settings_change = "settings.change"
     notifications_send = "notifications.send"
     notifications_view = "notifications.view"
+    import_manage = "import.manage"

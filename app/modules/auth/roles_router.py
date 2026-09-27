@@ -31,6 +31,7 @@ PERMISSION_LABELS = {
     "settings.change": "Изменение настроек",
     "notifications.send": "Отправка уведомлений и документов",
     "notifications.view": "Просмотр журнала уведомлений",
+    "import.manage": "Импорт данных из 1С",
 }
 
 
