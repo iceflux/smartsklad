@@ -74,6 +74,7 @@ from app.modules.orders.router import router as orders_router
 from app.modules.inventory.service import (
     change_bulk_category,
     delete_product,
+    ensure_default_units,
     export_products_csv,
     get_category_tree,
     get_product,
@@ -202,6 +203,7 @@ def create_app() -> FastAPI:
         if not app.state.skip_seed_admin:
             create_admin_if_empty(SessionLocal())
             ensure_default_settings(SessionLocal())  # seed глобалки дефолт; в тестах skip_seed_admin=True → не триггерим реальный PG
+            ensure_default_units(SessionLocal())
         task = None
         if not app.state.skip_seed_admin:
             task = asyncio.create_task(scheduler_loop())

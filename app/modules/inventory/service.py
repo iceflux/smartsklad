@@ -6,8 +6,24 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import log_action
-from app.modules.inventory.models import Category, PriceHistory, Product
+from app.modules.inventory.models import Category, PriceHistory, Product, Unit
 from app.modules.settings.service import STOCK_TRACK_DEFAULT_KEY, get_setting
+
+DEFAULT_UNITS = (
+    "шт", "кг", "г", "т", "л", "мл", "м", "м2", "м3", "см", "мм",
+    "упак", "ящ", "короб", "пач", "пакет", "бут", "бан", "вед", "пал",
+    "пара", "компл", "набор", "рул", "ед", "ч", "мин", "сут", "дюжина",
+    "лист", "кат", "дюйм", "фут", "галл",
+)
+UNIT_NAME_MAX = 32
+
+
+def ensure_default_units(db: Session) -> None:
+    existing = {row.name for row in db.query(Unit.name).all()}
+    for name in DEFAULT_UNITS:
+        if name not in existing:
+            db.add(Unit(name=name))
+    db.commit()
 
 
 def create_category(db: Session, name: str, parent_id: int | None = None, user=None) -> Category:

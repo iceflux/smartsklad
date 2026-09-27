@@ -24,6 +24,7 @@ import app.modules.backup.models  # noqa: F401
 import app.modules.importer.models  # noqa: F401
 from app.modules.auth.service import ensure_default_roles
 from app.modules.settings.service import ensure_default_settings
+from app.modules.inventory.service import ensure_default_units
 
 
 @pytest.fixture
@@ -41,6 +42,7 @@ def db_engine():
     with Session() as s:
         ensure_default_roles(s)
         ensure_default_settings(s)
+        ensure_default_units(s)
     yield engine
     Base.metadata.drop_all(engine)
 
