@@ -58,6 +58,9 @@
                 {% if can_manage_backups|default(false) %}
                     <a href="/backups" class="mr-4">Резервные копии</a>
                 {% endif %}
+                {% if can_manage_import|default(false) %}
+                    <a href="/import" class="mr-4">Импорт</a>
+                {% endif %}
                 {% if can_view_roles|default(false) %}
                     <a href="/roles" class="mr-4">Роли</a>
                     <a href="/users" class="mr-4">Пользователи</a>

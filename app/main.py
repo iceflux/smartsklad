@@ -65,7 +65,9 @@ from app.modules.backup.scheduler import next_backup_time, next_report_time, sch
 from app.modules.inventory.models import Category, PriceHistory
 from app.modules.customers.models import Customer
 from app.modules.customers.router import router as customers_router
+from app.modules.importer.files import list_payload_files, resolve_folder
 from app.modules.importer.router import router as importer_router
+from app.modules.importer.service import import_path, plan_import, run_import, save_import_path
 from app.modules.inventory.router import router as inventory_router
 from app.modules.orders.router import router as orders_router
 from app.modules.inventory.service import (
@@ -182,6 +184,15 @@ def _category_label(category: Category | None) -> str:
     if category.parent is not None:
         return f"{category.parent.name} → {category.name}"
     return category.name
+
+
+def _import_page_context(user: User, folder: Path, *, report: dict | None = None,
+                         selected: list[str] | None = None, msg: str | None = None) -> dict:
+    return {
+        "title": "Импорт из 1С", "user": user, "folder": str(folder),
+        "files": list_payload_files(folder), "report": report,
+        "selected": selected or [], "msg": msg, **_page_context(user),
+    }
 
 
 def create_app() -> FastAPI:
@@ -756,6 +767,78 @@ def create_app() -> FastAPI:
         if not path.is_file():
             raise HTTPException(status_code=404, detail="архив не найден")
         return FileResponse(path, filename=filename, media_type="application/octet-stream")
+
+    @app.get("/import")
+    def import_page(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.import_manage)
+        folder = resolve_folder(import_path(db))
+        return templates.TemplateResponse(
+            request, "import.html",
+            _import_page_context(user, folder, msg=request.query_params.get("msg")))
+
+    @app.post("/import/path")
+    async def import_path_post(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.import_manage)
+        form = parse_qs((await request.body()).decode())
+        try:
+            save_import_path(db, (form.get("path") or [""])[0], user=user)
+            key = "Папка сохранена"
+        except ValueError as err:
+            key = f"Ошибка: {err}"
+        return RedirectResponse("/import?" + urlencode({"msg": key}), status_code=303)
+
+    @app.post("/import/preview")
+    async def import_preview_post(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.import_manage)
+        form = parse_qs((await request.body()).decode())
+        filenames = form.get("filenames") or []
+        folder = resolve_folder(import_path(db))
+        try:
+            report = plan_import(db, folder, filenames)
+        except ValueError as err:
+            return RedirectResponse("/import?" + urlencode({"msg": f"Ошибка: {err}"}),
+                                    status_code=303)
+        return templates.TemplateResponse(
+            request, "import.html",
+            _import_page_context(user, folder, report=report, selected=filenames))
+
+    @app.post("/import/run")
+    async def import_run_post(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.import_manage)
+        form = parse_qs((await request.body()).decode())
+        filenames = form.get("filenames") or []
+        try:
+            report = run_import(db, resolve_folder(import_path(db)), filenames, user=user)
+            key = (f"Импорт завершён: товаров {report['products']['created']}, "
+                   f"клиентов {report['customers']['created']}, "
+                   f"заказов {report['orders']['created']}")
+        except ValueError as err:
+            key = f"Ошибка: {err}"
+        return RedirectResponse("/import?" + urlencode({"msg": key}), status_code=303)
 
     @app.get("/forecast")
     def forecast_page(
