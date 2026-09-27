@@ -203,6 +203,49 @@ def test_two_files_are_all_imported(client, db_session, tmp_path, monkeypatch):
     assert db_session.query(Order).count() == 1
 
 
+def test_run_post_does_not_block_the_event_loop(client, db_session, tmp_path, monkeypatch):
+    import asyncio
+    import time
+
+    import httpx
+
+    import app.main as main
+
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export(tmp_path)
+    finished = asyncio.Event()
+    real_run = main.run_import
+
+    def slow_run(*args, **kwargs):
+        time.sleep(0.5)
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(main, "run_import", slow_run)
+
+    async def scenario():
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while not finished.is_set():
+                await asyncio.sleep(0.01)
+                ticks += 1
+
+        transport = httpx.ASGITransport(app=client.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test",
+                                     cookies={"session": client.cookies["session"]}) as ac:
+            watch = asyncio.create_task(ticker())
+            try:
+                await ac.post("/import/run", content=b"filenames=export.json", headers=FORM)
+            finally:
+                finished.set()
+                await watch
+        return ticks
+
+    assert asyncio.run(scenario()) > 20
+
+
 def test_navigation_contains_import(client, db_session):
     _admin(client, db_session)
     text = client.get("/products").text

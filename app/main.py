@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.db import SessionLocal, get_db
 from app.modules.audit.router import router as audit_router
@@ -812,7 +813,7 @@ def create_app() -> FastAPI:
         filenames = form.get("filenames") or []
         folder = resolve_folder(import_path(db))
         try:
-            report = plan_import(db, folder, filenames)
+            report = await run_in_threadpool(plan_import, db, folder, filenames)
         except ValueError as err:
             return RedirectResponse("/import?" + urlencode({"msg": f"Ошибка: {err}"}),
                                     status_code=303)
@@ -832,7 +833,8 @@ def create_app() -> FastAPI:
         form = parse_qs((await request.body()).decode())
         filenames = form.get("filenames") or []
         try:
-            report = run_import(db, resolve_folder(import_path(db)), filenames, user=user)
+            report = await run_in_threadpool(run_import, db, resolve_folder(import_path(db)),
+                                             filenames, user=user)
             key = (f"Импорт завершён: товаров {report['products']['created']}, "
                    f"клиентов {report['customers']['created']}, "
                    f"заказов {report['orders']['created']}, "
