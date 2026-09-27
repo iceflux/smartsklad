@@ -54,12 +54,26 @@ def test_files_lists_json(client, db_session, tmp_path, monkeypatch):
 
 
 def test_preview_reports_counts(client, db_session, tmp_path, monkeypatch):
+    from app.modules.customers.models import Customer
+    from app.modules.inventory.models import Product
+    from app.modules.orders.models import Order
     _admin(client, db_session)
     _use_folder(monkeypatch, tmp_path)
-    _export(tmp_path)
+    _export(tmp_path, {
+        "products": [{"id": "p1", "name": "Гвоздь", "unit": "шт"}],
+        "customers": [{"id": "c1", "name": "ООО Ромашка"}],
+        "orders": [{"id": "o1", "date": "2026-01-15 10:00:00", "customer_id": "c1",
+                    "items": [{"product_id": "p1", "quantity": 2, "price": 10.0}]}],
+    })
     response = client.post("/api/import/preview", json={"filenames": ["export.json"]})
     assert response.status_code == 200
-    assert response.json()["products"]["created"] == 1
+    body = response.json()
+    assert body["products"]["created"] == 1
+    assert body["customers"]["created"] == 1
+    assert body["orders"]["created"] == 1
+    assert db_session.query(Product).count() == 0
+    assert db_session.query(Customer).count() == 0
+    assert db_session.query(Order).count() == 0
 
 
 def test_preview_rejects_traversal(client, db_session, tmp_path, monkeypatch):
