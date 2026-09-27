@@ -3,7 +3,9 @@ import os
 import sys
 
 import pytest
+from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
 from app.modules.auth.models import User
@@ -19,6 +21,7 @@ from app.modules.importer.files import (
     resolve_folder,
 )
 from app.modules.importer.models import ImportMap
+from app.modules.importer.orders import parse_order_date, resolve_orders
 from app.modules.importer.resolve import (
     SkuFactory,
     _unit,
@@ -29,6 +32,7 @@ from app.modules.importer.resolve import (
     resolve_service_customer,
 )
 from app.modules.inventory.models import Product
+from app.modules.orders.service import create_order, next_order_number
 
 if sys.platform.startswith("win32"):
     import msvcrt
@@ -409,3 +413,305 @@ def test_service_customer_matched_when_it_exists(db_session):
     plan = resolve_service_customer(db_session)
     assert plan.create is False
     assert plan.existing_id == existing.id
+
+
+DATE = "2017-12-02 21:22:39"
+
+
+def _customer(db_session, name="ООО Ромашка"):
+    c = Customer(name=name)
+    db_session.add(c)
+    db_session.commit()
+    return c
+
+
+def _order(source_id="o1", number="1", date=DATE, customer_id="c1", items=()):
+    return {"id": source_id, "number": number, "date": date,
+            "customer_id": customer_id, "items": list(items)}
+
+
+def _line(name="Гвоздь", product_id="p1", quantity=1, price=10.0, unit="шт"):
+    return {"product_id": product_id, "name": name, "unit": unit,
+            "quantity": quantity, "price": price}
+
+
+def test_parse_both_date_formats():
+    a = parse_order_date("2017-12-02 21:22:39")
+    b = parse_order_date("2017-12-02T21:22:39")
+    assert a == b
+    assert a.tzinfo is not None
+
+
+def test_order_uses_app_numbering_and_done_status(db_session):
+    customer = _customer(db_session)
+    _product(db_session, "Гвоздь", "S1", rest=100)
+    order = {"id": "o1", "number": "0000-000001", "date": "2017-12-02 21:22:39",
+             "customer_id": None, "customer_name": None,
+             "items": [{"product_id": None, "name": "Гвоздь", "unit": "шт",
+                        "quantity": 2, "price": 10.0}]}
+    plans, stats = resolve_orders(db_session, [order], {}, {})
+    assert len(plans) == 1
+    assert stats["created"] == 1
+    assert plans[0].status == "done"
+    assert plans[0].number == next_order_number(db_session)
+    assert plans[0].source_number == "0000-000001"
+    assert plans[0].customer_id is None
+    assert stats["service_customer_planned"] == 1
+
+
+def test_order_discount_taken_from_customer(db_session):
+    customer = _customer(db_session)
+    customer.personal_discount = 10.0
+    db_session.commit()
+    _product(db_session, "Гвоздь", "S1", rest=100)
+    order = {"id": "o1", "number": "1", "date": "2017-12-02 21:22:39", "customer_id": "c1",
+             "items": [{"product_id": "p1", "name": "Гвоздь", "unit": "шт",
+                        "quantity": 3, "price": 10.0}]}
+    plans, _ = resolve_orders(db_session, [order], {"p1": 1}, {"c1": customer.id})
+    assert plans[0].discount == 10.0
+    assert plans[0].items[0].product_name == "Гвоздь"
+
+
+def test_duplicate_product_lines_are_merged(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session, "Гвоздь", "S1", rest=100)
+    order = {"id": "o1", "number": "1", "date": "2017-12-02 21:22:39", "customer_id": "c1",
+             "items": [
+                 {"product_id": "p1", "name": "Гвоздь", "unit": "шт", "quantity": 2, "price": 10.0},
+                 {"product_id": "p1", "name": "Гвоздь", "unit": "шт", "quantity": 3, "price": 10.0}]}
+    plans, stats = resolve_orders(db_session, [order], {"p1": product.id}, {"c1": customer.id})
+    assert len(plans[0].items) == 1
+    assert plans[0].items[0].quantity == 5
+    assert stats["items_merged"] == 1
+
+
+def test_empty_order_is_kept_and_counted(db_session):
+    customer = _customer(db_session)
+    order = {"id": "o1", "number": "1", "date": "2017-12-02 21:22:39",
+             "customer_id": "c1", "items": []}
+    plans, stats = resolve_orders(db_session, [order], {}, {"c1": customer.id})
+    assert plans[0].items == []
+    assert stats["empty_orders"] == 1
+
+
+def test_unresolvable_item_skips_order(db_session):
+    customer = _customer(db_session)
+    order = {"id": "o1", "number": "1", "date": "2017-12-02 21:22:39", "customer_id": "c1",
+             "items": [{"product_id": "zzz", "name": "", "unit": "шт",
+                        "quantity": 1, "price": 1.0}]}
+    plans, stats = resolve_orders(db_session, [order], {}, {"c1": customer.id})
+    assert plans == []
+    assert stats["skipped"] == 1
+    assert stats["created"] == 0
+    assert any("позиция" in w for w in stats["warnings"])
+
+
+def test_item_without_product_id_uses_name(db_session):
+    customer = _customer(db_session)
+    order = {"id": "o1", "number": "1", "date": "2017-12-02 21:22:39", "customer_id": "c1",
+             "items": [{"product_id": "unknown-1", "name": "Саморез", "unit": "шт",
+                        "quantity": 4, "price": 5.0}]}
+    plans, stats = resolve_orders(db_session, [order], {}, {"c1": customer.id})
+    assert plans[0].items[0].name == "Саморез"
+    assert plans[0].items[0].product_id is None
+    assert stats["products_from_items"] == 1
+
+
+def test_repeated_source_id_is_skipped(db_session):
+    customer = _customer(db_session)
+    order = {"id": "o1", "number": "1", "date": "2017-12-02 21:22:39",
+             "customer_id": "c1", "items": []}
+    plans, stats = resolve_orders(db_session, [order, dict(order)], {}, {"c1": customer.id})
+    assert len(plans) == 1
+    assert stats["skipped"] == 1
+
+
+@pytest.mark.parametrize("bad, shown", [
+    (None, ""), ("", ""), ("   ", ""),
+    ("02.12.2017", "02.12.2017"), ("2017-12-02", "2017-12-02"),
+])
+def test_unparseable_date_skips_order(db_session, bad, shown):
+    customer = _customer(db_session)
+    plans, stats = resolve_orders(db_session, [_order(date=bad)], {}, {"c1": customer.id})
+    assert plans == []
+    assert stats["skipped"] == 1
+    assert stats["warnings"] == [f"не удалось разобрать дату заказа: {shown!r}"]
+
+
+def test_row_without_id_is_skipped(db_session):
+    plans, stats = resolve_orders(db_session, [{"number": "1", "date": DATE, "items": []}], {}, {})
+    assert plans == []
+    assert stats["skipped"] == 1
+
+
+def test_order_keeps_file_date(db_session):
+    customer = _customer(db_session)
+    plans, _ = resolve_orders(db_session, [_order(date="2017-12-02T21:22:39")], {},
+                              {"c1": customer.id})
+    assert plans[0].created_at == parse_order_date("2017-12-02T21:22:39")
+
+
+def test_orders_get_consecutive_numbers(db_session):
+    customer = _customer(db_session)
+    rows = [_order(source_id="o1"), _order(source_id="o2", number="2")]
+    plans, _ = resolve_orders(db_session, rows, {}, {"c1": customer.id})
+    assert [p.number for p in plans] == ["00001", "00002"]
+
+
+def test_numbering_continues_after_existing_orders(db_session):
+    customer = _customer(db_session)
+    create_order(db_session, customer_id=customer.id, items=[])
+    plans, _ = resolve_orders(db_session, [_order()], {}, {"c1": customer.id})
+    assert plans[0].number == "00002"
+
+
+def test_snapshots_come_from_database_product_not_file(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session, "Гвоздь 50мм", "S1", unit="короб")
+    plans, _ = resolve_orders(db_session, [_order(items=[_line(name="  гвоздь ", unit="шт")])],
+                              {"p1": product.id}, {"c1": customer.id})
+    item = plans[0].items[0]
+    assert item.product_name == "Гвоздь 50мм"
+    assert item.product_unit == "короб"
+    assert item.name == "гвоздь"
+    assert item.unit == "шт"
+    assert item.price == 10.0
+
+
+def test_unmapped_line_resolves_product_by_name(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session, "Гвоздь 50мм", "S1", unit="короб")
+    plans, stats = resolve_orders(
+        db_session, [_order(items=[_line(name="  ГВОЗДЬ 50ММ ", product_id="missing-1")])],
+        {}, {"c1": customer.id})
+    item = plans[0].items[0]
+    assert item.product_id == product.id
+    assert item.product_name == "Гвоздь 50мм"
+    assert item.product_unit == "короб"
+    assert stats["products_from_items"] == 0
+
+
+def test_soft_deleted_product_is_not_matched_by_name(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session, "Гвоздь", "S1")
+    product.is_deleted = True
+    db_session.commit()
+    plans, stats = resolve_orders(
+        db_session, [_order(items=[_line(name="Гвоздь", product_id="missing-1")])],
+        {}, {"c1": customer.id})
+    assert plans[0].items[0].product_id is None
+    assert stats["products_from_items"] == 1
+
+
+def test_line_order_follows_file(db_session):
+    customer = _customer(db_session)
+    first = _product(db_session, "Гвоздь", "S1")
+    second = _product(db_session, "Саморез", "S2")
+    plans, _ = resolve_orders(
+        db_session,
+        [_order(items=[_line(name="Саморез", product_id="p2"),
+                       _line(name="Гвоздь", product_id="p1")])],
+        {"p1": first.id, "p2": second.id}, {"c1": customer.id})
+    assert [i.product_id for i in plans[0].items] == [second.id, first.id]
+
+
+def test_repeated_unknown_product_lines_are_merged(db_session):
+    customer = _customer(db_session)
+    plans, stats = resolve_orders(
+        db_session,
+        [_order(items=[_line(name="Саморез", product_id="unknown-1", quantity=3, price=5.0),
+                       _line(name="  саморез  ", product_id="unknown-2", quantity=4, price=5.0)])],
+        {}, {"c1": customer.id})
+    assert len(plans[0].items) == 1
+    assert plans[0].items[0].quantity == 7
+    assert plans[0].items[0].name == "Саморез"
+    assert plans[0].items[0].product_id is None
+    assert stats["items_merged"] == 1
+    assert stats["products_from_items"] == 2
+
+
+def test_new_product_line_without_unit_falls_back_to_default(db_session):
+    customer = _customer(db_session)
+    plans, _ = resolve_orders(
+        db_session, [_order(items=[_line(name="Саморез", product_id="unknown-1", unit="   ")])],
+        {}, {"c1": customer.id})
+    assert plans[0].items[0].unit == "шт"
+
+
+def test_line_with_broken_quantity_is_skipped_with_warning(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session, "Гвоздь", "S1")
+    plans, stats = resolve_orders(
+        db_session,
+        [_order(items=[_line(product_id="p1", quantity=0),
+                       _line(product_id="p1", quantity=2)])],
+        {"p1": product.id}, {"c1": customer.id})
+    assert [i.quantity for i in plans[0].items] == [2]
+    assert stats["empty_orders"] == 0
+    assert stats["items_merged"] == 0
+    assert any("количеством меньше 1" in w for w in stats["warnings"])
+
+
+def test_known_customer_id_used_and_unknown_one_falls_to_service(db_session):
+    customer = _customer(db_session)
+    plans, stats = resolve_orders(
+        db_session, [_order(customer_id="c1"), _order(source_id="o2", customer_id="nope")],
+        {}, {"c1": customer.id})
+    assert [p.customer_id for p in plans] == [customer.id, None]
+    assert [p.discount for p in plans] == [0.0, 0.0]
+    assert stats["service_customer_planned"] == 1
+
+
+@pytest.mark.parametrize("quantity", [0, -3, "abc", None, "2.5"])
+def test_line_with_unusable_quantity_is_skipped_with_warning(db_session, quantity):
+    customer = _customer(db_session)
+    product = _product(db_session, "Гвоздь", "S1")
+    line = _line(product_id="p1", quantity=2)
+    line["quantity"] = quantity
+    plans, stats = resolve_orders(db_session, [_order(items=[line])],
+                                  {"p1": product.id}, {"c1": customer.id})
+    assert plans[0].items == []
+    assert stats["empty_orders"] == 1
+    assert any("количеством меньше 1" in w for w in stats["warnings"])
+
+
+def test_line_with_unusable_price_falls_back_to_zero(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session, "Гвоздь", "S1")
+    line = _line(product_id="p1")
+    line["price"] = "не цена"
+    plans, _ = resolve_orders(db_session, [_order(items=[line])],
+                              {"p1": product.id}, {"c1": customer.id})
+    assert plans[0].items[0].price == 0.0
+
+
+def _query_count(db_engine, rows, product_map, customer_map):
+    counted = {"n": 0}
+
+    def count(conn, cursor, statement, parameters, context, executemany):
+        counted["n"] += 1
+
+    session = sessionmaker(bind=db_engine, autoflush=False)()
+    event.listen(db_engine, "before_cursor_execute", count)
+    try:
+        resolve_orders(session, rows, product_map, customer_map)
+    finally:
+        event.remove(db_engine, "before_cursor_execute", count)
+        session.close()
+    return counted["n"]
+
+
+def test_lookups_do_not_scale_with_batch(db_session, db_engine):
+    customer = _customer(db_session)
+    products = [_product(db_session, f"Товар {i}", f"S{i}") for i in range(10)]
+    product_map = {f"p{i}": p.id for i, p in enumerate(products)}
+    customer_map = {"c1": customer.id}
+    one = _query_count(db_engine, [_order(items=[_line(name="Товар 0", product_id="p0")])],
+                       product_map, customer_map)
+    ten = _query_count(
+        db_engine,
+        [_order(source_id=f"o{i}", items=[_line(name=f"Товар {i % 10}", product_id=f"p{i % 10}")])
+         for i in range(10)],
+        product_map, customer_map)
+    assert one == ten
+

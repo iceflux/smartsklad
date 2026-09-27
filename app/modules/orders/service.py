@@ -31,13 +31,13 @@ def _get_customer(db: Session, customer_id: int) -> Customer:
     return customer
 
 
-def _next_number(db: Session) -> str:
+def next_order_number(db: Session) -> str:
     last = db.query(Order).order_by(Order.id.desc()).first()
     num = int(last.number) + 1 if last else 1
     return f"{num:05d}"
 
 
-def _recalc_total(order: Order) -> float:
+def recalc_total(order: Order) -> float:
     total = 0.0
     for it in order.items:
         total += it.quantity * it.product_price_snapshot * (1 - it.discount_snapshot / 100.0)
@@ -70,7 +70,7 @@ def create_order(
 ) -> Order:
     customer = _get_customer(db, customer_id)
     order = Order(
-        number=_next_number(db),
+        number=next_order_number(db),
         customer_id=customer.id,
         status="new",
         discount=_validate_discount(customer.personal_discount if discount is None else discount),
@@ -87,7 +87,7 @@ def create_order(
             quantity=int(spec["quantity"]),
             unit_snapshot=product.unit,
         ))
-    _recalc_total(order)
+    recalc_total(order)
     db.commit()
     log_action(db, action="order.create", entity_type="order", entity_id=order.id,
                new_value=json.dumps(_order_dict(order), ensure_ascii=False),
@@ -186,7 +186,7 @@ def update_order(db, order_id, *, customer_id=None, discount=None, items=None, u
                 quantity=int(spec["quantity"]),
                 unit_snapshot=product.unit,
             ))
-    _recalc_total(order)
+    recalc_total(order)
     db.commit()
     new_value = json.dumps(_order_dict(order), ensure_ascii=False)
     log_action(db, action="order.update", entity_type="order", entity_id=order.id,
