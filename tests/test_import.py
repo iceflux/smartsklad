@@ -1117,6 +1117,16 @@ def test_failure_after_the_audit_write_rolls_everything_back(db_session, tmp_pat
     assert db_session.query(AuditLog).count() == 0
 
 
+def test_audit_row_keeps_every_warning_beyond_fifty(db_session, tmp_path):
+    _export(tmp_path, customers=[{"id": "c1", "name": "ООО Ромашка"}],
+             orders=[_order(source_id=f"o{i}", number=str(i + 1), date="не дата")
+                     for i in range(60)])
+    run_import(db_session, tmp_path, ["export.json"])
+    stored = json.loads(db_session.query(AuditLog).one().new_value)
+    assert len(stored["orders"]["warnings"]) == 60
+    assert len(stored["warnings"]) == 50
+
+
 def test_run_import_writes_single_audit_entry(db_session, tmp_path):
     user = _admin(db_session)
     _export(tmp_path,
