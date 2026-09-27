@@ -355,6 +355,50 @@ def test_same_name_in_one_file_creates_both(db_session):
     assert stats["matched"] == 0
 
 
+def test_repeated_product_source_id_is_skipped(db_session, tmp_path):
+    row = {"id": "p1", "name": "Гвоздь", "unit": "шт"}
+    plans, stats = resolve_products(db_session, [row, dict(row)])
+    assert [p.source_id for p in plans] == ["p1"]
+    assert stats["created"] == 1
+    assert stats["skipped"] == 1
+
+
+def test_repeated_customer_source_id_is_skipped(db_session):
+    row = {"id": "c1", "name": "ООО Ромашка"}
+    plans, stats = resolve_customers(db_session, [row, dict(row)])
+    assert [p.source_id for p in plans] == ["c1"]
+    assert stats["created"] == 1
+    assert stats["skipped"] == 1
+
+
+def test_duplicate_product_id_does_not_roll_the_batch_back(db_session, tmp_path):
+    _export(
+        tmp_path,
+        products=[{"id": "p1", "name": "Гвоздь", "unit": "шт"},
+                  {"id": "p1", "name": "Саморез", "unit": "шт"}],
+        customers=[{"id": "c1", "name": "ООО Ромашка"}],
+        orders=[_order(items=[_line()])],
+    )
+    report = run_import(db_session, tmp_path, ["export.json"])
+    assert report["products"]["created"] == 1
+    assert db_session.query(Product).one().name == "Гвоздь"
+    assert db_session.query(Order).count() == 1
+    assert db_session.query(ImportMap).count() == 3
+
+
+def test_duplicate_customer_id_does_not_roll_the_batch_back(db_session, tmp_path):
+    _export(
+        tmp_path,
+        customers=[{"id": "c1", "name": "ООО Ромашка"},
+                   {"id": "c1", "name": "ООО Одуванчик"}],
+        orders=[_order()],
+    )
+    report = run_import(db_session, tmp_path, ["export.json"])
+    assert report["customers"]["created"] == 1
+    assert db_session.query(Customer).one().name == "ООО Ромашка"
+    assert db_session.query(Order).count() == 1
+
+
 def test_customer_matched_by_name(db_session):
     db_session.add(Customer(name="ООО Ромашка"))
     db_session.commit()

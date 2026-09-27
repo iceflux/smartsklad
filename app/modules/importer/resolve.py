@@ -76,13 +76,15 @@ def resolve_products(db: Session, rows: list[dict]) -> tuple[list[ProductPlan], 
     by_name = _name_index(db, Product)
     next_sku = SkuFactory(db)
     plans: list[ProductPlan] = []
+    seen: set[str] = set()
     stats = {"created": 0, "matched": 0, "skipped": 0}
     for row in rows:
         source_id = (row.get("id") or "").strip()
         name = (row.get("name") or "").strip()
-        if not source_id or not name:
+        if not source_id or not name or source_id in seen:
             stats["skipped"] += 1
             continue
+        seen.add(source_id)
         unit = _unit(row.get("unit"))
         if source_id in by_source:
             plans.append(ProductPlan(source_id, name, unit, by_source[source_id], False))
@@ -102,13 +104,15 @@ def resolve_customers(db: Session, rows: list[dict]) -> tuple[list[CustomerPlan]
     by_source = _map_index(db, ENTITY_CUSTOMER)
     by_name = _name_index(db, Customer)
     plans: list[CustomerPlan] = []
+    seen: set[str] = set()
     stats = {"created": 0, "matched": 0, "inn_dropped": 0, "skipped": 0}
     for row in rows:
         source_id = (row.get("id") or "").strip()
         name = (row.get("name") or "").strip()
-        if not source_id or not name:
+        if not source_id or not name or source_id in seen:
             stats["skipped"] += 1
             continue
+        seen.add(source_id)
         raw_inn = row.get("inn")
         inn = clean_inn(raw_inn)
         if inn is None and raw_inn is not None and str(raw_inn).strip():
