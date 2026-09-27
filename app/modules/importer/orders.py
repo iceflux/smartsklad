@@ -112,6 +112,7 @@ def resolve_orders(
         customer_id = customer_map.get(customer_source) if customer_source else None
         items: dict = {}
         merged = 0
+        from_items = 0
         broken = False
         for raw in row.get("items") or []:
             quantity = _quantity(raw.get("quantity"))
@@ -161,7 +162,7 @@ def resolve_orders(
                 else:
                     key = NEW_PRODUCT_PREFIX + norm(line_name)
                     if key not in items:
-                        stats["products_from_items"] += 1
+                        from_items += 1
                     item = ItemPlan(
                         product_id=None, name=line_name, unit=unit,
                         quantity=quantity, price=price)
@@ -187,6 +188,7 @@ def resolve_orders(
         next_number += 1
         stats["created"] += 1
         stats["items_merged"] += merged
+        stats["products_from_items"] += from_items
         if not items:
             stats["empty_orders"] += 1
         if customer_id is None and customer_source_id is None:

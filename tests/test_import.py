@@ -573,6 +573,18 @@ def test_item_without_product_id_uses_name(db_session):
     assert stats["products_from_items"] == 1
 
 
+def test_skipped_order_does_not_count_a_product_it_never_creates(db_session):
+    customer = _customer(db_session)
+    plans, stats = resolve_orders(
+        db_session,
+        [_order(items=[_line(name="Саморез", product_id="unknown-1"),
+                       _line(name="Гвоздь", product_id="p1")])],
+        {"p1": 999}, {"c1": customer.id})
+    assert plans == []
+    assert stats["skipped"] == 1
+    assert stats["products_from_items"] == 0
+
+
 def test_repeated_source_id_is_skipped(db_session):
     customer = _customer(db_session)
     order = {"id": "o1", "number": "1", "date": "2017-12-02 21:22:39",
