@@ -15,6 +15,7 @@ import app.modules.orders.models  # noqa: F401
 import app.modules.settings.models  # noqa: F401
 import app.modules.notifications.models  # noqa: F401
 import app.modules.backup.models  # noqa: F401
+import app.modules.importer.models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
