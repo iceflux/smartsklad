@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +19,9 @@ from app.modules.importer.files import (
     resolve_folder,
 )
 from app.modules.importer.models import ImportMap
+
+if sys.platform.startswith("win32"):
+    import msvcrt
 
 PASSWORD = "password123"
 
@@ -131,9 +136,11 @@ def test_rejects_section_that_is_not_list(tmp_path):
         read_payloads(tmp_path, [name])
 
 
-def test_rejects_path_traversal(tmp_path):
-    with pytest.raises(ImportFileError):
-        read_payloads(tmp_path, ["../secret.json"])
+def test_rejects_section_of_non_dict_rows(tmp_path):
+    name = _write(tmp_path, "rows.json", {"products": [1, 2]})
+    with pytest.raises(ImportFileError) as err:
+        read_payloads(tmp_path, [name])
+    assert "products" in str(err.value)
 
 
 def test_missing_file_is_reported(tmp_path):
@@ -165,8 +172,35 @@ def test_traversal_cannot_reach_existing_file_outside_folder(tmp_path, name):
     (tmp_path / "secret.json").write_bytes(b'{"products": [{"id": "leak"}]}')
     folder = tmp_path / "folder"
     folder.mkdir()
-    with pytest.raises(ImportFileError):
+    with pytest.raises(ImportFileError) as err:
         read_payloads(folder, [name])
+    assert "не должно содержать путь" in str(err.value)
+
+
+def test_rejects_symlink_pointing_outside_folder(tmp_path):
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    secret = _write(tmp_path, "secret.json", {"products": [{"id": "leak"}]})
+    try:
+        os.symlink(tmp_path / secret, folder / "link.json")
+    except OSError as err:
+        pytest.skip(f"symlinks unavailable: {err}")
+    with pytest.raises(ImportFileError) as err:
+        read_payloads(folder, ["link.json"])
+    assert "за пределами папки импорта" in str(err.value)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("win32"), reason="msvcrt locking is Windows-only")
+def test_reports_locked_file_instead_of_crashing(tmp_path):
+    name = _write(tmp_path, "locked.json", {"products": []})
+    with open(tmp_path / name, "r+b") as handle:
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        try:
+            with pytest.raises(ImportFileError) as err:
+                read_payloads(tmp_path, [name])
+            assert name in str(err.value)
+        finally:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 def test_rejects_directory_instead_of_file(tmp_path):

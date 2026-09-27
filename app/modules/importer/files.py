@@ -36,6 +36,8 @@ def _checked_path(folder: Path, name: str) -> Path:
     path = folder / name
     if not path.is_file():
         raise ImportFileError(f"файл не найден: {name}")
+    if not path.resolve().is_relative_to(folder.resolve()):
+        raise ImportFileError(f"{name}: файл за пределами папки импорта")
     return path
 
 
@@ -48,8 +50,8 @@ def read_payloads(folder: str | Path, filenames: list[str]) -> dict[str, list[di
         path = _checked_path(root, name)
         try:
             payload = json.loads(path.read_bytes().decode("utf-8-sig"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as err:
-            raise ImportFileError(f"{name}: не удалось прочитать JSON ({err})") from err
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
+            raise ImportFileError(f"{name}: не удалось прочитать файл ({err})") from err
         if not isinstance(payload, dict):
             raise ImportFileError(f"{name}: ожидался объект с разделами")
         for section, rows in payload.items():
