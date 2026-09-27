@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from datetime import date
 
 import pytest
 from sqlalchemy import event
@@ -496,6 +497,18 @@ def test_parse_both_date_formats():
     b = parse_order_date("2017-12-02T21:22:39")
     assert a == b
     assert a.tzinfo is not None
+
+
+def test_parse_keeps_1c_wall_clock_in_the_host_timezone():
+    parsed = parse_order_date("2017-12-02 21:22:39")
+    local = parsed.astimezone()
+    assert (local.year, local.month, local.day) == (2017, 12, 2)
+    assert (local.hour, local.minute, local.second) == (21, 22, 39)
+
+
+def test_parse_keeps_the_day_bucket_of_late_evening_orders():
+    parsed = parse_order_date("2017-12-02 23:30:00")
+    assert parsed.astimezone().date() == date(2017, 12, 2)
 
 
 def test_order_uses_app_numbering_and_done_status(db_session):
