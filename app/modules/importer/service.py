@@ -76,11 +76,11 @@ def _resolve_units(db: Session, sections: dict, unit_map: dict | None) -> tuple[
     return resolved, unresolved
 
 
-def _resolved_unit_id(units: dict, name: str) -> int:
+def _resolved_unit(units: dict, name: str) -> Unit:
     unit = units.get(name)
     if unit is None:
         raise ValueError(f"единица не разрешена: {name}")
-    return unit.id
+    return unit
 
 
 def _resolved_unit_name(units: dict, name: str) -> str:
@@ -140,7 +140,7 @@ def _write_products(db: Session, plans, units: dict) -> dict:
     for plan in plans:
         if not plan.create:
             continue
-        product = Product(name=plan.name, sku=plan.sku, unit_id=_resolved_unit_id(units, plan.unit),
+        product = Product(name=plan.name, sku=plan.sku, unit_id=_resolved_unit(units, plan.unit).id,
                           price=0.0, rest=0, track_rest=True)
         db.add(product)
         db.flush()
@@ -168,8 +168,8 @@ def _item_product(db: Session, item, product_ids: dict, next_sku, units: dict) -
         product_id = product_ids.get(item.product_source_id)
     if product_id is not None:
         return product_id, item.product_name or item.name, item.product_unit or item.unit
-    unit = units.get(item.unit)
-    product = Product(name=item.name, sku=next_sku(), unit_id=_resolved_unit_id(units, item.unit),
+    unit = _resolved_unit(units, item.unit)
+    product = Product(name=item.name, sku=next_sku(), unit_id=unit.id,
                       price=0.0, rest=0, track_rest=True)
     db.add(product)
     db.flush()
