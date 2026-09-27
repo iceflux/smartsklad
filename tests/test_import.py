@@ -1096,6 +1096,9 @@ def test_preview_reports_what_the_import_does(db_session, tmp_path):
     assert report["customers"] == preview["customers"]
     assert report["orders"] == preview["orders"]
     assert report["files"] == preview["files"] == ["export.json"]
+    assert db_session.query(Product).count() == preview["products"]["created"]
+    assert db_session.query(Customer).count() == preview["customers"]["created"]
+    assert db_session.query(Order).count() == preview["orders"]["created"]
 
 
 def test_second_preview_after_import_counts_matched_orders(db_session, tmp_path):
