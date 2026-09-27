@@ -59,5 +59,13 @@ def read_payloads(folder: str | Path, filenames: list[str]) -> dict[str, list[di
                 continue
             if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
                 raise ImportFileError(f"{name}: раздел {section} должен быть списком объектов")
+            if section == "orders":
+                for row in rows:
+                    lines = row.get("items")
+                    if lines is None:
+                        continue
+                    if not isinstance(lines, list) or not all(isinstance(i, dict) for i in lines):
+                        raise ImportFileError(
+                            f"{name}: позиции заказа должны быть списком объектов")
             sections[section].extend(rows)
     return sections

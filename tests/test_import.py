@@ -160,6 +160,15 @@ def test_rejects_section_of_non_dict_rows(tmp_path):
     assert "products" in str(err.value)
 
 
+def test_rejects_order_line_that_is_not_an_object(tmp_path):
+    name = _write(tmp_path, "lines.json",
+                  {"orders": [{"id": "o1", "date": "2017-12-02 21:22:39",
+                               "items": ["Гвоздь 2 шт"]}]})
+    with pytest.raises(ImportFileError) as err:
+        read_payloads(tmp_path, [name])
+    assert "позиции заказа" in str(err.value)
+
+
 def test_missing_file_is_reported(tmp_path):
     with pytest.raises(ImportFileError):
         read_payloads(tmp_path, ["nope.json"])
