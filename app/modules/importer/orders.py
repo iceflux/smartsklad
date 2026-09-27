@@ -60,9 +60,12 @@ def _price(value) -> float:
         return 0.0
 
 
-def _add(items: dict, key, item: ItemPlan, quantity: int) -> int:
+def _add(items: dict, key, item: ItemPlan) -> int:
     if key in items:
-        items[key].quantity += quantity
+        existing = items[key]
+        total = existing.quantity * existing.price + item.quantity * item.price
+        existing.quantity += item.quantity
+        existing.price = total / existing.quantity
         return 1
     items[key] = item
     return 0
@@ -116,11 +119,11 @@ def resolve_orders(
                 if found is not None:
                     product_id = found.id
                 else:
-                    stats["products_from_items"] += 1
                     key = NEW_PRODUCT_PREFIX + norm(name)
+                    if key not in items:
+                        stats["products_from_items"] += 1
                     merged += _add(items, key, ItemPlan(
-                        None, name, _unit(raw.get("unit")), quantity, _price(raw.get("price"))),
-                        quantity)
+                        None, name, _unit(raw.get("unit")), quantity, _price(raw.get("price"))))
                     continue
             product = by_id.get(product_id)
             merged += _add(items, product_id, ItemPlan(
@@ -131,7 +134,7 @@ def resolve_orders(
                 price=_price(raw.get("price")),
                 product_name=product.name if product else None,
                 product_unit=product.unit if product else "шт",
-            ), quantity)
+            ))
         if broken:
             stats["skipped"] += 1
             continue

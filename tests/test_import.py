@@ -627,7 +627,49 @@ def test_repeated_unknown_product_lines_are_merged(db_session):
     assert plans[0].items[0].name == "Саморез"
     assert plans[0].items[0].product_id is None
     assert stats["items_merged"] == 1
-    assert stats["products_from_items"] == 2
+    assert stats["products_from_items"] == 1
+
+
+def test_merged_lines_at_different_prices_keep_order_total(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session, "Гвоздь", "S1")
+    first, second = _line(product_id="p1", quantity=2, price=10.0), _line(
+        product_id="p1", quantity=3, price=20.0)
+    plans, stats = resolve_orders(db_session, [_order(items=[first, second])],
+                                  {"p1": product.id}, {"c1": customer.id})
+    item = plans[0].items[0]
+    assert item.quantity == 5
+    assert item.price == pytest.approx(16.0)
+    assert item.quantity * item.price == pytest.approx(
+        first["quantity"] * first["price"] + second["quantity"] * second["price"])
+    assert stats["items_merged"] == 1
+
+
+def test_merged_new_product_lines_at_different_prices_keep_order_total(db_session):
+    customer = _customer(db_session)
+    first = _line(name="Саморез", product_id="unknown-1", quantity=2, price=10.0)
+    second = _line(name="Саморез", product_id="unknown-2", quantity=3, price=20.0)
+    plans, stats = resolve_orders(db_session, [_order(items=[first, second])],
+                                  {}, {"c1": customer.id})
+    item = plans[0].items[0]
+    assert item.quantity == 5
+    assert item.price == pytest.approx(16.0)
+    assert item.quantity * item.price == pytest.approx(
+        first["quantity"] * first["price"] + second["quantity"] * second["price"])
+    assert stats["products_from_items"] == 1
+
+
+def test_three_merged_lines_keep_order_total(db_session):
+    customer = _customer(db_session)
+    product = _product(db_session, "Гвоздь", "S1")
+    lines = [_line(product_id="p1", quantity=q, price=p) for q, p in
+             ((1, 100.0), (2, 30.5), (3, 7.25))]
+    plans, _ = resolve_orders(db_session, [_order(items=lines)],
+                              {"p1": product.id}, {"c1": customer.id})
+    item = plans[0].items[0]
+    assert item.quantity == 6
+    assert item.quantity * item.price == pytest.approx(
+        sum(line["quantity"] * line["price"] for line in lines))
 
 
 def test_new_product_line_without_unit_falls_back_to_default(db_session):
@@ -714,4 +756,5 @@ def test_lookups_do_not_scale_with_batch(db_session, db_engine):
          for i in range(10)],
         product_map, customer_map)
     assert one == ten
+    assert (one, ten) == (4, 4)
 
