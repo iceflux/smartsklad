@@ -65,6 +65,7 @@ from app.modules.backup.scheduler import next_backup_time, next_report_time, sch
 from app.modules.inventory.models import Category, PriceHistory
 from app.modules.customers.models import Customer
 from app.modules.customers.router import router as customers_router
+from app.modules.importer.router import router as importer_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.orders.router import router as orders_router
 from app.modules.inventory.service import (
@@ -219,6 +220,7 @@ def create_app() -> FastAPI:
     app.include_router(ai_router, prefix="/api")
     app.include_router(dashboard_router, prefix="/api")
     app.include_router(backup_router, prefix="/api")
+    app.include_router(importer_router, prefix="/api")
     app.include_router(audit_router)
 
     @app.get("/")
