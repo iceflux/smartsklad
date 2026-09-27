@@ -20,8 +20,8 @@ def _validate_inn(inn: str | None) -> str | None:
     inn = inn.strip()
     if not inn:
         return None
-    if not (inn.isdigit() and len(inn) == 10):
-        raise ValueError("inn must be 10 digits")
+    if not (inn.isdigit() and len(inn) in (10, 12)):
+        raise ValueError("inn must be 10 or 12 digits")
     return inn
 
 

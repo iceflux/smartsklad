@@ -44,7 +44,7 @@ def test_create_customer_empty_name(db_session, name):
 
 @pytest.mark.parametrize("inn,ok", [
     ("7701234567", True),      # 10
-    ("770123456789", False),   # 12 — ИНН физлица, не храним
+    ("770123456789", True),   # 12
     ("770123456", False),      # 9
     ("7701234567890", False),  # 13
     ("770123456a", False),     # не цифры
