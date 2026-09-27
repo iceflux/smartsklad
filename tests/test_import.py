@@ -904,6 +904,22 @@ def test_order_from_1c_number_is_kept_in_map(db_session, tmp_path):
     assert row.entity_id == db_session.query(Order).one().id
 
 
+def test_long_name_survives_and_map_rows_hold_no_name(db_session, tmp_path):
+    long_name = "Гвоздь оцинкованный, " * 5 + "плата"
+    assert len(long_name) > 64
+    _export(
+        tmp_path,
+        products=[{"id": "p1", "name": long_name, "unit": "шт"}],
+        customers=[{"id": "c1", "name": long_name}],
+    )
+    report = run_import(db_session, tmp_path, ["export.json"])
+    assert report["products"]["created"] == 1
+    assert report["customers"]["created"] == 1
+    assert db_session.query(Product).one().name == long_name
+    labels = {row.entity_type: row.source_label for row in db_session.query(ImportMap).all()}
+    assert labels == {"product": None, "customer": None}
+
+
 def test_import_does_not_change_stock(db_session, tmp_path):
     _export(
         tmp_path,

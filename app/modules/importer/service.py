@@ -92,7 +92,7 @@ def _write_products(db: Session, plans) -> dict:
         db.add(product)
         db.flush()
         created[plan.source_id] = product.id
-        _save_map(db, ENTITY_PRODUCT, plan.source_id, product.id, plan.name)
+        _save_map(db, ENTITY_PRODUCT, plan.source_id, product.id)
     return created
 
 
@@ -105,7 +105,7 @@ def _write_customers(db: Session, plans) -> dict:
         db.add(customer)
         db.flush()
         created[plan.source_id] = customer.id
-        _save_map(db, ENTITY_CUSTOMER, plan.source_id, customer.id, plan.name)
+        _save_map(db, ENTITY_CUSTOMER, plan.source_id, customer.id)
     return created
 
 
