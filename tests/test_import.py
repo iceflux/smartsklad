@@ -1093,6 +1093,30 @@ def test_failure_rolls_everything_back(db_session, tmp_path, monkeypatch):
     assert db_session.query(ImportMap).count() == 0
 
 
+def test_failure_after_the_audit_write_rolls_everything_back(db_session, tmp_path, monkeypatch):
+    import app.modules.importer.service as service
+    real_log_action = service.log_action
+    _export(
+        tmp_path,
+        products=[{"id": "p1", "name": "Гвоздь", "unit": "шт"}],
+        customers=[{"id": "c1", "name": "ООО Ромашка"}],
+        orders=[_order(items=[_line()])],
+    )
+
+    def boom(*args, **kwargs):
+        real_log_action(*args, **kwargs)
+        raise RuntimeError("сбой после записи в аудит")
+
+    monkeypatch.setattr(service, "log_action", boom)
+    with pytest.raises(RuntimeError):
+        run_import(db_session, tmp_path, ["export.json"])
+    assert db_session.query(Product).count() == 0
+    assert db_session.query(Customer).count() == 0
+    assert db_session.query(Order).count() == 0
+    assert db_session.query(ImportMap).count() == 0
+    assert db_session.query(AuditLog).count() == 0
+
+
 def test_run_import_writes_single_audit_entry(db_session, tmp_path):
     user = _admin(db_session)
     _export(tmp_path,

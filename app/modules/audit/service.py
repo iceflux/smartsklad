@@ -15,6 +15,7 @@ def log_action(
     new_value: str | None = None,
     user_id: int | None = None,
     ip: str | None = None,
+    commit: bool = True,
 ) -> None:
     entry = AuditLog(
         action=action,
@@ -26,7 +27,8 @@ def log_action(
         ip=ip,
     )
     db.add(entry)
-    db.commit()
+    if commit:
+        db.commit()
 
 
 def list_audit_logs(

@@ -175,7 +175,7 @@ def run_import(db: Session, folder, filenames, *, user=None) -> dict:
         report["service_customer_created"] = bool(service_id) and built["service"].create
         log_action(db, action="import.run", entity_type="import", entity_id=None,
                    new_value=json.dumps(report, ensure_ascii=False),
-                   user_id=user.id if user else None)
+                   user_id=user.id if user else None, commit=False)
         db.commit()
     except Exception:
         db.rollback()
