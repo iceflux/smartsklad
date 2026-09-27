@@ -2,7 +2,7 @@ import csv
 import io
 import json
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import log_action
@@ -322,3 +322,79 @@ def _product_dict(product: Product) -> dict:
         "min_stock": product.min_stock,
         "track_rest": product.track_rest,
     }
+
+
+def _clean_unit_name(name) -> str:
+    return name.strip() if isinstance(name, str) else ""
+
+
+def list_units(db: Session) -> list[Unit]:
+    return (
+        db.query(Unit)
+        .filter(Unit.is_deleted.is_(False))
+        .order_by(Unit.name)
+        .all()
+    )
+
+
+def get_unit_by_name(db: Session, name) -> Unit | None:
+    return (
+        db.query(Unit)
+        .filter(Unit.is_deleted.is_(False))
+        .filter(func.lower(Unit.name) == _clean_unit_name(name).lower())
+        .first()
+    )
+
+
+def _require_free_unit_name(db: Session, name: str) -> str:
+    text = _clean_unit_name(name)
+    if not text:
+        raise ValueError("название единицы обязательно")
+    if len(text) > UNIT_NAME_MAX:
+        raise ValueError(f"название длиннее {UNIT_NAME_MAX} символов")
+    if get_unit_by_name(db, text) is not None:
+        raise ValueError("единица с таким названием уже есть")
+    return text
+
+
+def create_unit(db: Session, name, *, user=None, commit: bool = True) -> Unit:
+    unit = Unit(name=_require_free_unit_name(db, name))
+    db.add(unit)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    log_action(db, action="unit.create", entity_type="unit", entity_id=unit.id,
+               new_value=unit.name, user_id=user.id if user else None, commit=commit)
+    return unit
+
+
+def ensure_unit(db: Session, name, *, user=None) -> Unit:
+    found = get_unit_by_name(db, name)
+    return found if found is not None else create_unit(db, name, user=user)
+
+
+def update_unit(db: Session, unit_id: int, name, *, user=None) -> Unit:
+    unit = db.get(Unit, unit_id)
+    if unit is None or unit.is_deleted:
+        raise ValueError("unit not found")
+    new_name = _require_free_unit_name(db, name)
+    old_name = unit.name
+    unit.name = new_name
+    db.commit()
+    log_action(db, action="unit.update", entity_type="unit", entity_id=unit.id,
+               old_value=old_name, new_value=new_name, user_id=user.id if user else None)
+    return unit
+
+
+def delete_unit(db: Session, unit_id: int, *, user=None) -> None:
+    unit = db.get(Unit, unit_id)
+    if unit is None or unit.is_deleted:
+        raise ValueError("unit not found")
+    in_use = db.query(Product.id).filter(Product.unit_id == unit.id).first() is not None
+    if in_use:
+        raise ValueError("единица используется товарами")
+    unit.is_deleted = True
+    db.commit()
+    log_action(db, action="unit.delete", entity_type="unit", entity_id=unit.id,
+               new_value=unit.name, user_id=user.id if user else None)
