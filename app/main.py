@@ -835,7 +835,9 @@ def create_app() -> FastAPI:
             report = run_import(db, resolve_folder(import_path(db)), filenames, user=user)
             key = (f"Импорт завершён: товаров {report['products']['created']}, "
                    f"клиентов {report['customers']['created']}, "
-                   f"заказов {report['orders']['created']}")
+                   f"заказов {report['orders']['created']}, "
+                   f"пропущено заказов {report['orders']['skipped']}, "
+                   f"предупреждений {len(report['warnings'])}")
         except ValueError as err:
             key = f"Ошибка: {err}"
         return RedirectResponse("/import?" + urlencode({"msg": key}), status_code=303)

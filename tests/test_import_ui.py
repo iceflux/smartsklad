@@ -1,5 +1,5 @@
 import json
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
@@ -26,15 +26,23 @@ def _seller(client, db_session):
     return _user(client, db_session, "sel", "seller")
 
 
-def _export(tmp_path, payload=None):
-    body = payload or {"products": [{"id": "p1", "name": "Гвоздь", "unit": "шт"}],
-                       "customers": [], "orders": []}
-    (tmp_path / "export.json").write_bytes(
+def _write(tmp_path, name, body):
+    (tmp_path / name).write_bytes(
         b"\xef\xbb\xbf" + json.dumps(body, ensure_ascii=False).encode("utf-8"))
+
+
+def _export(tmp_path, payload=None):
+    _write(tmp_path, "export.json",
+           payload or {"products": [{"id": "p1", "name": "Гвоздь", "unit": "шт"}],
+                       "customers": [], "orders": []})
 
 
 def _use_folder(monkeypatch, tmp_path):
     monkeypatch.setattr("app.main.import_path", lambda db: str(tmp_path))
+
+
+def _msg(response):
+    return parse_qs(urlparse(response.headers["location"]).query).get("msg", [""])[0]
 
 
 def test_page_redirects_anonymous(client):
@@ -114,12 +122,85 @@ def test_run_post_redirects_with_message(client, db_session, tmp_path, monkeypat
 
 
 def test_run_post_reports_bad_file(client, db_session, tmp_path, monkeypatch):
+    from app.modules.inventory.models import Product
     _admin(client, db_session)
     _use_folder(monkeypatch, tmp_path)
     response = client.post("/import/run", content=b"filenames=nope.json", headers=FORM,
                            follow_redirects=False)
     assert response.status_code == 303
     assert "%D0%9E%D1%88%D0%B8%D0%B1%D0%BA%D0%B0" in response.headers["location"]
+    assert db_session.query(Product).count() == 0
+
+
+def test_run_post_reports_skipped_orders_and_warnings(client, db_session, tmp_path, monkeypatch):
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export(tmp_path, {
+        "products": [{"id": "p1", "name": "Гвоздь", "unit": "шт"}],
+        "customers": [{"id": "c1", "name": "Ромашка"}],
+        "orders": [
+            {"id": "o1", "number": "1", "date": "2026-01-05 10:00:00", "customer_id": "c1",
+             "items": [{"product_id": "p1", "name": "Гвоздь", "unit": "шт",
+                        "quantity": 2, "price": 10}]},
+            {"id": "o2", "number": "2", "date": "не дата", "customer_id": "c1", "items": []},
+        ],
+    })
+    response = client.post("/import/run", content=b"filenames=export.json", headers=FORM,
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert _msg(response) == ("Импорт завершён: товаров 1, клиентов 1, заказов 1, "
+                              "пропущено заказов 1, предупреждений 1")
+
+
+def test_preview_post_rejects_empty_selection(client, db_session, tmp_path, monkeypatch):
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export(tmp_path)
+    response = client.post("/import/preview", content=b"", headers=FORM,
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert "не выбрано ни одного файла" in _msg(response)
+
+
+def test_run_post_rejects_empty_selection(client, db_session, tmp_path, monkeypatch):
+    from app.modules.inventory.models import Product
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export(tmp_path)
+    response = client.post("/import/run", content=b"", headers=FORM, follow_redirects=False)
+    assert response.status_code == 303
+    assert "не выбрано ни одного файла" in _msg(response)
+    assert db_session.query(Product).count() == 0
+
+
+def test_two_files_are_all_imported(client, db_session, tmp_path, monkeypatch):
+    from app.modules.customers.models import Customer
+    from app.modules.inventory.models import Product
+    from app.modules.orders.models import Order
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _write(tmp_path, "export.json",
+           {"products": [{"id": "p1", "name": "Гвоздь", "unit": "шт"}],
+            "customers": [], "orders": []})
+    _write(tmp_path, "more.json",
+           {"products": [], "customers": [{"id": "c1", "name": "Ромашка"}],
+            "orders": [{"id": "o1", "number": "1", "date": "2026-01-05 10:00:00",
+                        "customer_id": "c1",
+                        "items": [{"product_id": "p1", "name": "Гвоздь", "unit": "шт",
+                                   "quantity": 2, "price": 10}]}]})
+    body = urlencode([("filenames", "export.json"), ("filenames", "more.json")]).encode()
+    preview = client.post("/import/preview", content=body, headers=FORM)
+    assert preview.status_code == 200
+    assert "Товаров создать</dt><dd>1</dd>" in preview.text
+    assert "Клиентов создать</dt><dd>1</dd>" in preview.text
+    assert "Заказов создать</dt><dd>1</dd>" in preview.text
+    response = client.post("/import/run", content=body, headers=FORM, follow_redirects=False)
+    assert response.status_code == 303
+    assert _msg(response) == ("Импорт завершён: товаров 1, клиентов 1, заказов 1, "
+                              "пропущено заказов 0, предупреждений 0")
+    assert db_session.query(Product).count() == 1
+    assert db_session.query(Customer).count() == 1
+    assert db_session.query(Order).count() == 1
 
 
 def test_navigation_contains_import(client, db_session):
@@ -127,3 +208,8 @@ def test_navigation_contains_import(client, db_session):
     text = client.get("/products").text
     assert 'href="/import"' in text
     assert ">Импорт</a>" in text
+
+
+def test_navigation_hides_import_for_seller(client, db_session):
+    _seller(client, db_session)
+    assert 'href="/import"' not in client.get("/products").text
