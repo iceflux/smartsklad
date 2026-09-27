@@ -139,11 +139,11 @@ def resolve_orders(
                     product_name=product.name, product_unit=product.unit)
             elif item_source and item_source in planned_products:
                 key = NEW_PRODUCT_PREFIX + item_source
-                planned_name = planned_products[item_source]
+                planned_name, planned_unit = planned_products[item_source]
                 item = ItemPlan(
                     product_id=None, name=line_name or planned_name, unit=unit,
                     quantity=quantity, price=price,
-                    product_name=planned_name, product_unit=unit,
+                    product_name=planned_name, product_unit=planned_unit,
                     product_source_id=item_source)
             elif not line_name:
                 stats["warnings"].append(

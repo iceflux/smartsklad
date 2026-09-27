@@ -46,7 +46,7 @@ def _build(db: Session, folder, filenames) -> dict:
     order_plans, order_stats = resolve_orders(
         db, sections["orders"],
         _existing(product_plans), _existing(customer_plans),
-        planned_products={p.source_id: p.name for p in product_plans if p.create},
+        planned_products={p.source_id: (p.name, p.unit) for p in product_plans if p.create},
         planned_customers={p.source_id for p in customer_plans if p.create},
         imported_orders=set(_map_index(db, ENTITY_ORDER)),
     )

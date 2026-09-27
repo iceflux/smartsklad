@@ -750,7 +750,7 @@ def test_line_of_product_planned_for_creation_is_not_created_again(db_session):
     customer = _customer(db_session)
     plans, stats = resolve_orders(
         db_session, [_order(items=[_line(product_id="p1", name="Гвоздь")])],
-        {}, {"c1": customer.id}, planned_products={"p1": "Гвоздь 50мм"})
+        {}, {"c1": customer.id}, planned_products={"p1": ("Гвоздь 50мм", "шт")})
     item = plans[0].items[0]
     assert item.product_id is None
     assert item.product_source_id == "p1"
@@ -764,7 +764,7 @@ def test_two_lines_of_one_planned_product_are_merged(db_session):
         db_session,
         [_order(items=[_line(product_id="p1", name="Гвоздь", quantity=2, price=10.0),
                        _line(product_id="p1", name="Гвоздь", quantity=3, price=20.0)])],
-        {}, {"c1": customer.id}, planned_products={"p1": "Гвоздь 50мм"})
+        {}, {"c1": customer.id}, planned_products={"p1": ("Гвоздь 50мм", "шт")})
     assert len(plans[0].items) == 1
     item = plans[0].items[0]
     assert item.product_source_id == "p1"
@@ -774,14 +774,15 @@ def test_two_lines_of_one_planned_product_are_merged(db_session):
     assert stats["products_from_items"] == 0
 
 
-def test_planned_product_line_takes_unit_from_the_line(db_session):
+def test_planned_product_line_takes_unit_from_the_planned_product(db_session):
     customer = _customer(db_session)
     plans, _ = resolve_orders(
-        db_session, [_order(items=[_line(product_id="p1", name="Гвоздь", unit="короб")])],
-        {}, {"c1": customer.id}, planned_products={"p1": "Гвоздь 50мм"})
+        db_session, [_order(items=[_line(product_id="p1", name="Гвоздь", unit="шт")])],
+        {}, {"c1": customer.id}, planned_products={"p1": ("Гвоздь 50мм", "короб")})
     item = plans[0].items[0]
-    assert item.unit == "короб"
     assert item.product_unit == "короб"
+    assert item.product_name == "Гвоздь 50мм"
+    assert item.unit == "шт"
 
 
 def test_planned_product_wins_over_product_with_the_same_name_in_base(db_session):
@@ -789,7 +790,7 @@ def test_planned_product_wins_over_product_with_the_same_name_in_base(db_session
     _product(db_session, "Гвоздь 50мм", "S1")
     plans, stats = resolve_orders(
         db_session, [_order(items=[_line(product_id="p1", name="Гвоздь")])],
-        {}, {"c1": customer.id}, planned_products={"p1": "Гвоздь 50мм"})
+        {}, {"c1": customer.id}, planned_products={"p1": ("Гвоздь 50мм", "шт")})
     assert plans[0].items[0].product_id is None
     assert plans[0].items[0].product_source_id == "p1"
     assert stats["products_from_items"] == 0
@@ -948,6 +949,26 @@ def test_repeat_import_creates_nothing(db_session, tmp_path):
     assert db_session.query(Product).count() == 1
 
 
+def test_order_number_comes_from_the_app_not_from_1c(db_session, tmp_path):
+    _export(
+        tmp_path,
+        products=[{"id": "p1", "name": "Гвоздь", "unit": "короб"}],
+        customers=[{"id": "c1", "name": "ООО Ромашка"}],
+        orders=[{"id": "o1", "number": "0000-000001", "date": "2017-12-02 21:22:39",
+                 "customer_id": "c1",
+                 "items": [{"product_id": "p1", "name": "Гвоздь", "unit": "шт",
+                            "quantity": 2, "price": 10.0}]}],
+    )
+    expected = next_order_number(db_session)
+    run_import(db_session, tmp_path, ["export.json"])
+    order = db_session.query(Order).one()
+    label = db_session.query(ImportMap).filter(ImportMap.entity_type == "order").one()
+    assert order.number == expected == "00001"
+    assert order.number != label.source_label
+    assert label.source_label == "0000-000001"
+    assert order.items[0].unit_snapshot == "короб"
+
+
 def test_order_without_customer_uses_service_one(db_session, tmp_path):
     _export(tmp_path, orders=[{"id": "o1", "number": "1",
                                "date": "2017-12-02 21:22:39",
@@ -989,6 +1010,7 @@ def test_run_import_writes_single_audit_entry(db_session, tmp_path):
     entries = db_session.query(AuditLog).filter(AuditLog.action == "import.run").all()
     assert len(entries) == 1
     assert "products" in entries[0].new_value
+    assert db_session.query(AuditLog).count() == 1
 
 
 def test_orders_reach_their_own_1c_customers(db_session, tmp_path):
