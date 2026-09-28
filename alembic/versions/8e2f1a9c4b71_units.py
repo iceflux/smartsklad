@@ -58,7 +58,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.add_column('products', sa.Column('unit', sa.String(length=32), nullable=True))
+    op.add_column('products', sa.Column('unit', sa.String(length=32), server_default='шт', nullable=False))
     bind = op.get_bind()
     bind.execute(text("""
         UPDATE products SET unit = units.name FROM units WHERE products.unit_id = units.id
