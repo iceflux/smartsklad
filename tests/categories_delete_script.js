@@ -5,9 +5,12 @@ const vm = require('vm');
 const template = fs.readFileSync(process.argv[2], 'utf8');
 const cases = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
 const blocks = [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
-assert.ok(blocks.length > 0, 'no plain <script> block in the template');
-const block = blocks[blocks.length - 1];
+assert.strictEqual(blocks.length, 1, 'expected exactly one bare <script> block, got ' + blocks.length);
+const block = blocks[0];
 assert.ok(!/onclick\s*=/.test(template), 'the markup carries an inline handler');
+const dataElement = template.match(/<script id="([^"]+)" type="application\/json">/);
+assert.ok(dataElement, 'the page renders no category data element');
+const dataId = dataElement[1];
 
 function run(options) {
     const calls = {deletes: [], alerts: [], prompts: [], confirms: []};
@@ -17,7 +20,10 @@ function run(options) {
     };
     const sandbox = {
         document: {
-            getElementById: () => ({textContent: JSON.stringify(options.alone ? cases.tree_alone : cases.tree)}),
+            getElementById: (id) => {
+                assert.strictEqual(id, dataId, 'the script looks up ' + id + ', the page renders ' + dataId);
+                return {textContent: JSON.stringify(options.alone ? cases.tree_alone : cases.tree)};
+            },
             querySelectorAll: () => [button],
         },
         window: {location: {}},
