@@ -7,6 +7,7 @@ from app.modules.inventory.models import Product
 from app.modules.orders.models import Order
 from app.modules.orders.service import create_order
 from app.modules.inventory.service import get_unit_by_name
+from app.main import _client_options, _product_options
 
 
 def _unit_id(db_session):
@@ -81,6 +82,22 @@ def _option(body, select, value):
     return found[0]
 
 
+def _posted_lines(body):
+    parser = _parse_form(body)
+    product_ids = []
+    for select in parser.selects:
+        if select["name"] != "product_id":
+            continue
+        chosen = next((o for o in select["options"] if "selected" in o["attrs"]), None)
+        if chosen is None or "disabled" in chosen["attrs"]:
+            continue
+        product_ids.append(chosen["attrs"].get("value"))
+    quantities, discounts = [], []
+    for attrs in parser.inputs:
+        (quantities if attrs["name"] == "quantity" else discounts).append(attrs.get("value", ""))
+    return product_ids, quantities, discounts
+
+
 def _pad_products(client, count):
     for i in range(count):
         r = client.post("/api/products", json={
@@ -98,6 +115,7 @@ def test_edit_form_shows_the_current_product_past_the_first_page(client, db_sess
     _admin(client, db_session)
     p, c, order = _seed(db_session)
     _pad_products(client, 30)
+    assert p.id not in [o["id"] for o in _product_options(db_session)]
     option = _option(client.get(f"/orders/{order.id}/edit").text, "product_id", p.id)
     assert "selected" in option["attrs"]
     assert "disabled" not in option["attrs"]
@@ -107,6 +125,7 @@ def test_edit_form_shows_the_current_customer_past_the_first_page(client, db_ses
     _admin(client, db_session)
     p, c, order = _seed(db_session)
     _pad_customers(db_session, 26)
+    assert c.id not in [o["id"] for o in _client_options(db_session)]
     option = _option(client.get(f"/orders/{order.id}/edit").text, "customer_id", c.id)
     assert "selected" in option["attrs"]
     assert "disabled" not in option["attrs"]
@@ -116,10 +135,45 @@ def test_edit_form_marks_the_deleted_product_option(client, db_session):
     _admin(client, db_session)
     p, c, order = _seed(db_session)
     assert client.delete(f"/api/products/{p.id}").status_code == 204
+    assert p.id not in [o["id"] for o in _product_options(db_session)]
     option = _option(client.get(f"/orders/{order.id}/edit").text, "product_id", p.id)
     assert "selected" in option["attrs"]
     assert "удалён" in option["text"]
     assert "disabled" not in option["attrs"]
+
+
+def test_edit_form_marks_the_deleted_customer_option(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    assert client.delete(f"/api/customers/{c.id}").status_code == 204
+    assert c.id not in [o["id"] for o in _client_options(db_session)]
+    option = _option(client.get(f"/orders/{order.id}/edit").text, "customer_id", c.id)
+    assert "selected" in option["attrs"]
+    assert "удалён" in option["text"]
+    assert "disabled" not in option["attrs"]
+
+
+def test_edit_form_saves_a_soft_deleted_line_beside_a_live_one(client, db_session):
+    _admin(client, db_session)
+    p, c, seed_order = _seed(db_session)
+    live = Product(name="Доска", sku="BOARD-1", unit_id=_unit_id(db_session), price=50.0, rest=10)
+    db_session.add(live)
+    db_session.commit()
+    order = create_order(db_session, customer_id=c.id, discount=0,
+                         items=[{"product_id": p.id, "quantity": 2, "discount": 0},
+                                {"product_id": live.id, "quantity": 5, "discount": 0}])
+    order_id = order.id
+    assert client.delete(f"/api/products/{p.id}").status_code == 204
+    body = client.get(f"/orders/{order_id}/edit").text
+    product_ids, quantities, discounts = _posted_lines(body)
+    r = client.post(f"/orders/{order_id}/edit", data={
+        "customer_id": str(c.id), "discount": "0",
+        "product_id": product_ids, "quantity": quantities, "line_discount": discounts,
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    db_session.expire_all()
+    saved = db_session.get(Order, order_id)
+    assert [(i.product_id, i.quantity) for i in saved.items] == [(p.id, 2), (live.id, 5)]
 
 
 def test_orders_page_redirects_anonymous(client):
