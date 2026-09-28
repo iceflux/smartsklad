@@ -12,7 +12,6 @@ from app.modules.inventory.service import (
     create_unit,
     delete_unit,
     ensure_default_units,
-    ensure_unit,
     get_unit_by_name,
     list_units,
     update_unit,
@@ -126,12 +125,6 @@ def test_create_unit_accepts_name_at_limit_and_rejects_longer(db_session):
     assert create_unit(db_session, at_limit).name == at_limit
     with pytest.raises(ValueError):
         create_unit(db_session, "я" * 33)
-
-
-def test_ensure_unit_creates_once(db_session):
-    first = ensure_unit(db_session, "ящик-тест")
-    second = ensure_unit(db_session, "Ящик-Тест ")
-    assert first.id == second.id
 
 
 def test_update_unit_renames(db_session):

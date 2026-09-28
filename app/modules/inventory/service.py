@@ -378,11 +378,6 @@ def create_unit(db: Session, name, *, user=None, commit: bool = True) -> Unit:
     return unit
 
 
-def ensure_unit(db: Session, name, *, user=None) -> Unit:
-    found = get_unit_by_name(db, name)
-    return found if found is not None else create_unit(db, name, user=user)
-
-
 def update_unit(db: Session, unit_id: int, name, *, user=None) -> Unit:
     unit = db.get(Unit, unit_id)
     if unit is None or unit.is_deleted:
