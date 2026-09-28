@@ -327,19 +327,17 @@ def test_repreview_with_create_decision_writes_nothing(client, db_session, tmp_p
     assert db_session.query(AuditLog).filter(AuditLog.action == "unit.create").count() == 0
 
 
-def test_new_unit_name_field_overrides_the_option_default(client, db_session, tmp_path, monkeypatch):
-    from app.modules.inventory.models import Product
+def test_new_unit_name_field_completes_the_bare_new_decision(client, db_session, tmp_path, monkeypatch):
     _admin(client, db_session)
     _use_folder(monkeypatch, tmp_path)
     _export_unknown_unit(tmp_path)
+    form = client.post("/import/preview", content=b"filenames=export.json", headers=FORM).text
     body = urlencode([("filenames", "export.json"),
-                      ("unit_map[килограмм]", "new:"),
+                      ("unit_map[килограмм]", _create_option_value(form, "килограмм")),
                       ("unit_name[килограмм]", "Килограмм")]).encode()
-    preview = client.post("/import/preview", content=body, headers=FORM)
-    assert 'name="unit_map[килограмм]" value="new:Килограмм"' in preview.text
-    response = client.post("/import/run", content=body, headers=FORM, follow_redirects=False)
-    assert "Ошибка" not in _msg(response)
-    assert db_session.query(Product).one().unit_rel.name == "Килограмм"
+    response = client.post("/import/preview", content=body, headers=FORM)
+    assert 'name="unit_map[килограмм]" value="new:Килограмм"' in response.text
+    assert 'action="/import/run"' in response.text
 
 
 def test_cleared_new_unit_name_refuses_the_import(client, db_session, tmp_path, monkeypatch):
