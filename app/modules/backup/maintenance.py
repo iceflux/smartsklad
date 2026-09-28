@@ -4,25 +4,31 @@ from datetime import datetime
 
 from fastapi.responses import HTMLResponse, JSONResponse
 
-STATE = {"mode": "idle", "starts_at": None, "restore_task": None}
+STATE = {"mode": "idle", "starts_at": None, "restore_task": None, "started_at": None}
 
 MIN_COUNTDOWN_SECONDS = 10
 MAX_COUNTDOWN_SECONDS = 3600
 ALLOWED_WHILE_RUNNING = ("/static", "/api/backup/status", "/backups/restore/cancel")
+RUNNING_REFRESH_SECONDS = 5
 
 
 def maintenance_state() -> dict:
     starts_at_text = (datetime.fromtimestamp(STATE["starts_at"]).strftime("%H:%M:%S")
                       if STATE["mode"] == "countdown" and STATE["starts_at"] is not None else None)
+    seconds_running = (max(0, int(clock.time() - STATE["started_at"]))
+                       if STATE["mode"] == "running" and STATE["started_at"] is not None else 0)
     if STATE["mode"] != "countdown":
         return {"mode": STATE["mode"], "starts_at": STATE["starts_at"],
-                "starts_at_text": starts_at_text, "seconds_left": 0}
+                "starts_at_text": starts_at_text, "seconds_left": 0,
+                "started_at": STATE["started_at"], "seconds_running": seconds_running}
     left = int(STATE["starts_at"] - clock.time())
     if left <= 0:
         return {"mode": "countdown", "starts_at": STATE["starts_at"],
-                "starts_at_text": starts_at_text, "seconds_left": 0}
+                "starts_at_text": starts_at_text, "seconds_left": 0,
+                "started_at": STATE["started_at"], "seconds_running": 0}
     return {"mode": "countdown", "starts_at": STATE["starts_at"],
-            "starts_at_text": starts_at_text, "seconds_left": left}
+            "starts_at_text": starts_at_text, "seconds_left": left,
+            "started_at": STATE["started_at"], "seconds_running": 0}
 
 
 def begin_countdown(seconds: int) -> dict:
@@ -46,11 +52,13 @@ def cancel_countdown() -> None:
 def set_running() -> None:
     STATE["mode"] = "running"
     STATE["starts_at"] = None
+    STATE["started_at"] = clock.time()
 
 
 def set_idle() -> None:
     STATE["mode"] = "idle"
     STATE["starts_at"] = None
+    STATE["started_at"] = None
 
 
 def _allowed(path: str) -> bool:
@@ -58,11 +66,13 @@ def _allowed(path: str) -> bool:
 
 
 def _page() -> HTMLResponse:
+    elapsed = maintenance_state()["seconds_running"]
     return HTMLResponse(
         "<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\">"
+        f"<meta http-equiv=\"refresh\" content=\"{RUNNING_REFRESH_SECONDS}\">"
         "<title>Обслуживание</title></head><body>"
         "<h1>Идёт восстановление из резервной копии</h1>"
-        "<p>Приложение вернётся в работу автоматически. Не закрывайте эту страницу.</p>"
+        f"<p>Прошло: {elapsed} с. Страница обновится сама через {RUNNING_REFRESH_SECONDS} с.</p>"
         "</body></html>",
         status_code=503,
     )

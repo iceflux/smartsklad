@@ -28,6 +28,40 @@ def _admin(client, db_session):
     return u
 
 
+def test_running_page_reloads_itself(client, db_session):
+    _admin(client, db_session)
+    set_running()
+    try:
+        response = client.get("/products")
+        assert response.status_code == 503
+        assert 'http-equiv="refresh"' in response.text
+    finally:
+        set_idle()
+
+
+def test_running_page_reports_elapsed_seconds(client, db_session):
+    _admin(client, db_session)
+    set_running()
+    try:
+        response = client.get("/products")
+        assert response.status_code == 503
+        assert "Прошло" in response.text
+        assert str(maintenance_state()["seconds_running"]) in response.text
+    finally:
+        set_idle()
+
+
+def test_state_reports_seconds_running_only_while_running():
+    set_idle()
+    assert maintenance_state()["seconds_running"] == 0
+    set_running()
+    try:
+        assert maintenance_state()["seconds_running"] >= 0
+    finally:
+        set_idle()
+    assert maintenance_state()["seconds_running"] == 0
+
+
 def test_starts_idle():
     assert maintenance_state()["mode"] == "idle"
 
