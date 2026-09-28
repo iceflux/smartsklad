@@ -87,12 +87,11 @@ def test_default_units_contain_pieces_and_kilograms():
 
 
 def test_unit_is_soft_deletable(db_session):
-    u = Unit(name="ящик личный")
-    db_session.add(u)
-    db_session.commit()
-    u.is_deleted = True
-    db_session.commit()
-    assert db_session.query(Unit).filter(Unit.id == u.id).count() == 1
+    unit = create_unit(db_session, "ящик личный")
+    delete_unit(db_session, unit.id)
+    db_session.refresh(unit)
+    assert unit.is_deleted is True
+    assert db_session.query(Unit).filter(Unit.id == unit.id).count() == 1
     assert db_session.query(Unit).count() == len(DEFAULT_UNITS) + 1
 
 

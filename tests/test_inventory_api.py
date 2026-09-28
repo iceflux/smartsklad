@@ -346,3 +346,27 @@ def test_patch_product_rejects_unknown_unit_id(client, db_session):
     r = client.patch(f"/api/products/{pid}", json={"unit_id": 9999})
     assert r.status_code == 409
     assert db_session.get(Product, pid).unit_id is not None
+
+
+def test_patch_product_without_unit_id_keeps_the_unit(client, db_session):
+    from app.modules.inventory.models import Unit
+    _admin(client, db_session)
+    kg = db_session.query(Unit).filter(Unit.name == "кг").one()
+    pid = client.post("/api/products", json={"name": "Гвозди", "sku": "NAIL-U4",
+                                             "unit_id": kg.id}).json()["id"]
+    r = client.patch(f"/api/products/{pid}", json={"min_stock": 1})
+    assert r.status_code == 200
+    assert r.json()["unit"] == "кг"
+    assert db_session.get(Product, pid).unit_id == kg.id
+
+
+def test_unknown_unit_id_refusal_names_the_unit(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/api/products", json={"name": "Гвозди", "sku": "NAIL-U5", "unit_id": 9999})
+    assert r.status_code == 409
+    assert r.json()["detail"] == "единица не найдена"
+    assert db_session.query(Product).filter_by(sku="NAIL-U5").first() is None
+    pid = client.post("/api/products", json={"name": "Шуруп", "sku": "NAIL-U6"}).json()["id"]
+    r = client.patch(f"/api/products/{pid}", json={"unit_id": 9999})
+    assert r.status_code == 409
+    assert r.json()["detail"] == "единица не найдена"
