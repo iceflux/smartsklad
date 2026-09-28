@@ -8,12 +8,7 @@ from app.config import settings as app_settings
 from app.modules.audit.service import log_action
 from app.modules.auth.models import User
 from app.modules.backup.service import EMAIL_RE, get_backup_settings
-from app.modules.dashboard.service import (
-    dashboard_metrics,
-    dashboard_sales_csv,
-    earliest_order_date,
-    resolve_period,
-)
+from app.modules.dashboard.service import dashboard_metrics, dashboard_sales_csv, resolve_period
 from app.modules.notifications.email import send_email
 from app.modules.notifications.models import NotificationLog
 from app.modules.settings.service import (
@@ -101,7 +96,7 @@ def send_report(db: Session, *, now: datetime | None = None,
                 user_id: int | None = None) -> dict:
     now = now or datetime.now()
     settings_row = read_report_settings(db)
-    start, end = resolve_period(settings_row["period"], earliest=earliest_order_date(db))
+    start, end = resolve_period(settings_row["period"])
     metrics = dashboard_metrics(db, start, end)
     csv_bytes = dashboard_sales_csv(metrics["daily"])
     label = PERIOD_LABELS[settings_row["period"]]

@@ -201,13 +201,20 @@ def test_dashboard_csv_all_preset_matches_the_api_period(client, db_session):
 
 def test_dashboard_csv_quarter_preset_exports_the_calendar_quarter(client, db_session):
     _admin(client, db_session)
-    quarter_start = date(date.today().year, ((date.today().month - 1) // 3) * 3 + 1, 1)
+    today = date.today()
+    quarter_start = date(today.year, ((today.month - 1) // 3) * 3 + 1, 1)
     _seed(db_session, day=quarter_start, amount=70.0, number="00001")
+    api = client.get("/api/dashboard/sales?preset=quarter").json()
+    assert api["date_from"] == quarter_start.isoformat()
+    assert api["date_to"] == today.isoformat()
+    assert api["orders_count"] == 1
     r = client.get("/dashboard/export.csv?preset=quarter")
     assert r.status_code == 200
     lines = r.text.replace("\ufeff", "", 1).splitlines()
     assert lines[1] == f"{quarter_start.isoformat()};1;70.0"
-    assert lines[-1] == f"{date.today().isoformat()};0;0.0"
+    assert len(lines) - 1 == len(api["daily"])
+    tail = api["daily"][-1]
+    assert lines[-1] == f"{tail['date']};{tail['orders']};{tail['amount']}"
 
 
 def test_dashboard_empty_preset_matches_default_across_layers(client, db_session):
