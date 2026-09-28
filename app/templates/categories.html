@@ -79,35 +79,38 @@
             btn.addEventListener('click', function () {
                 var id = btn.dataset.id;
                 var base = '/api/categories/' + id;
-                fetch(base + '/contents').then(function (r) { return r.json(); })
-                  .then(function (c) {
-                      var url = base + '?resolve=true';
-                      if (!c.products && !c.children) {
-                          if (confirm('Удалить категорию?')) { removeCategory(url); }
-                          return;
-                      }
-                      var parts = [];
-                      if (c.products) { parts.push(c.products + ' ' + plural(c.products, 'товар', 'товара', 'товаров')); }
-                      if (c.children) { parts.push(c.children + ' ' + plural(c.children, 'подкатегория', 'подкатегории', 'подкатегорий')); }
-                      var targets = moveTargetsFor(id);
-                      var answer;
-                      if (targets.length) {
-                          var lines = ['В категории: ' + parts.join(' и ') + '.', 'Куда перенести? Введите номер:'];
-                          targets.forEach(function (t, i) { lines.push('  ' + (i + 1) + ' — ' + t.name); });
-                          lines.push('Пусто — снять категорию с товаров и подкатегорий.');
-                          answer = prompt(lines.join('\n'), '');
-                          if (answer === null) { return; }
-                      } else if (!confirm('В категории: ' + parts.join(' и ') + '.'
-                          + '\nДругой категории нет — снять категорию с товаров и подкатегорий?')) {
-                          return;
-                      }
-                      if (answer && answer.trim() !== '') {
-                          var pick = targets[Number(answer.trim()) - 1];
-                          if (!pick) { alert('Нет категории с таким номером'); return; }
-                          url += '&reassign_to=' + pick.id;
-                      }
-                      removeCategory(url);
-                  });
+                fetch(base + '/contents').then(function (r) {
+                    if (!r.ok) { alert('Не удалось прочитать содержимое категории'); return null; }
+                    return r.json();
+                }).then(function (c) {
+                    if (!c) { return; }
+                    var url = base + '?resolve=true';
+                    if (!c.products && !c.children) {
+                        if (confirm('Удалить категорию?')) { removeCategory(url); }
+                        return;
+                    }
+                    var parts = [];
+                    if (c.products) { parts.push(c.products + ' ' + plural(c.products, 'товар', 'товара', 'товаров')); }
+                    if (c.children) { parts.push(c.children + ' ' + plural(c.children, 'подкатегория', 'подкатегории', 'подкатегорий')); }
+                    var targets = moveTargetsFor(id);
+                    var answer;
+                    if (targets.length) {
+                        var lines = ['В категории: ' + parts.join(' и ') + '.', 'Куда перенести? Введите номер:'];
+                        targets.forEach(function (t, i) { lines.push('  ' + (i + 1) + ' — ' + t.name); });
+                        lines.push('Пусто — снять категорию с товаров и подкатегорий.');
+                        answer = prompt(lines.join('\n'), '');
+                        if (answer === null) { return; }
+                    } else if (!confirm('В категории: ' + parts.join(' и ') + '.'
+                        + '\nДругой категории нет — снять категорию с товаров и подкатегорий?')) {
+                        return;
+                    }
+                    if (answer && answer.trim() !== '') {
+                        var pick = targets[Number(answer.trim()) - 1];
+                        if (!pick) { alert('Нет категории с таким номером'); return; }
+                        url += '&reassign_to=' + pick.id;
+                    }
+                    removeCategory(url);
+                });
             });
         });
     </script>
