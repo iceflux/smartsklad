@@ -62,6 +62,17 @@
             {% for w in report.warnings %}<li>{{ w }}</li>{% endfor %}
         </ul>
         {% endif %}
+        {% if unit_map_decisions and not report.unresolved_units %}
+        <div class="mt-3">
+            <h3 class="text-lg font-bold mb-2">Применённые единицы измерения</h3>
+            <ul class="text-sm mb-2">
+                {% for raw, resolved in report.unit_map.items() %}
+                <li class="mb-1">1С: {{ raw }} → <span class="font-semibold">{{ resolved }}</span></li>
+                {% endfor %}
+            </ul>
+            <p class="text-sm text-gray-500">Чтобы изменить выбор, нажмите «Разобрать» в блоке файлов выше: решения сбросятся, и неизвестные единицы будут предложены заново.</p>
+        </div>
+        {% endif %}
         {% if not report.unresolved_units %}
         <form method="post" action="/import/run" class="mt-3">
             {% for name in selected %}<input type="hidden" name="filenames" value="{{ name }}">{% endfor %}

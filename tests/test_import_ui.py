@@ -1,4 +1,5 @@
 import json
+import re
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from app.modules.auth.models import User
@@ -43,6 +44,11 @@ def _use_folder(monkeypatch, tmp_path):
 
 def _msg(response):
     return parse_qs(urlparse(response.headers["location"]).query).get("msg", [""])[0]
+
+
+def _substitute_ids(html, raw_unit):
+    block = html.split(f'name="unit_map[{raw_unit}]"')[1].split("</select>")[0]
+    return re.findall(r'<option value="(\d+)">', block)
 
 
 def test_page_redirects_anonymous(client):
@@ -373,6 +379,43 @@ def test_tricky_unit_names_survive_the_round_trip(client, db_session, tmp_path, 
     assert "Ошибка" not in _msg(response)
     units = {p.name: p.unit_rel.name for p in db_session.query(Product).all()}
     assert units == {"Гвоздь": "1 000 шт", "Доска": "м3"}
+
+
+def test_applied_decisions_are_listed_for_the_owner(client, db_session, tmp_path, monkeypatch):
+    from app.modules.inventory.service import get_unit_by_name
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export(tmp_path, {"products": [{"id": "p1", "name": "Гвоздь", "unit": "килограмм"},
+                                     {"id": "p2", "name": "Саморез", "unit": "шт"}],
+                       "customers": [], "orders": []})
+    before = client.post("/import/preview", content=b"filenames=export.json", headers=FORM)
+    assert "Применённые единицы измерения" not in before.text
+    body = urlencode([("filenames", "export.json"),
+                      ("unit_map[килограмм]", str(get_unit_by_name(db_session, "кг").id))]).encode()
+    response = client.post("/import/preview", content=body, headers=FORM)
+    assert "Применённые единицы измерения" in response.text
+    assert '1С: килограмм → <span class="font-semibold">кг</span>' in response.text
+    assert '1С: шт → <span class="font-semibold">шт</span>' in response.text
+    assert "Чтобы изменить выбор" in response.text
+    assert response.text.index('1С: килограмм') < response.text.index('action="/import/run"')
+
+
+def test_substitute_dropdown_offers_the_catalogue(client, db_session, tmp_path, monkeypatch):
+    from app.modules.inventory.models import Product, Unit
+    from app.modules.inventory.service import get_unit_by_name
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export_unknown_unit(tmp_path)
+    html = client.post("/import/preview", content=b"filenames=export.json", headers=FORM).text
+    offered = _substitute_ids(html, "килограмм")
+    catalogue = db_session.query(Unit).filter(Unit.is_deleted.is_(False)).count()
+    assert len(offered) == catalogue
+    assert str(get_unit_by_name(db_session, "м3").id) in offered
+    body = urlencode([("filenames", "export.json"),
+                      ("unit_map[килограмм]", offered[0])]).encode()
+    response = client.post("/import/run", content=body, headers=FORM, follow_redirects=False)
+    assert "Ошибка" not in _msg(response)
+    assert db_session.query(Product).one().unit_rel.name == db_session.get(Unit, int(offered[0])).name
 
 
 def test_navigation_contains_import(client, db_session):
