@@ -175,16 +175,22 @@ def update_order(db, order_id, *, customer_id=None, discount=None, items=None, u
         if not items:
             raise ValueError("items required")
         _validate_items(db, items)
+        previous: dict[int, list[tuple[float, str]]] = {}
+        for old in order.items:
+            previous.setdefault(old.product_id, []).append(
+                (old.product_price_snapshot, old.unit_snapshot))
         order.items.clear()
         for spec in items:
             product = db.get(Product, spec["product_id"])
+            bucket = previous.get(product.id)
+            price, unit = bucket.pop(0) if bucket else (product.price, product.unit)
             order.items.append(OrderItem(
                 product_id=product.id,
                 product_name_snapshot=product.name,
-                product_price_snapshot=product.price,
+                product_price_snapshot=price,
                 discount_snapshot=_validate_discount(spec["discount"], "item discount"),
                 quantity=int(spec["quantity"]),
-                unit_snapshot=product.unit,
+                unit_snapshot=unit,
             ))
     recalc_total(order)
     db.commit()

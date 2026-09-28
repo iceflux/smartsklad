@@ -7,6 +7,7 @@ from app.modules.orders.service import (
 )
 from app.modules.customers.models import Customer
 from app.modules.inventory.service import get_unit_by_name
+from app.modules.orders.models import Order, OrderItem
 
 
 def _unit_id(db_session):
@@ -24,6 +25,14 @@ def product(db_session):
 @pytest.fixture
 def customer(db_session):
     c = Customer(name="ООО Строй", personal_discount=10.0)
+    db_session.add(c)
+    db_session.commit()
+    return c
+
+
+@pytest.fixture
+def plain_customer(db_session):
+    c = Customer(name="ИП Петров")
     db_session.add(c)
     db_session.commit()
     return c
@@ -166,3 +175,110 @@ def test_create_order_rejects_over_stock(db_session, product, customer):
         create_order(db_session, customer_id=customer.id,
                      items=[{"product_id": product.id, "quantity": 51, "discount": 0.0}])
     assert product.rest == 50  # не тронули
+
+
+def _imported_product(db_session, name, sku, unit_name="шт"):
+    p = Product(name=name, sku=sku, price=0.0, rest=50,
+                unit_id=get_unit_by_name(db_session, unit_name).id)
+    db_session.add(p)
+    db_session.flush()
+    return p
+
+
+def _imported_order(db_session, customer, lines):
+    order = create_order(db_session, customer_id=customer.id,
+                         items=[{"product_id": p.id, "quantity": 1, "discount": 0.0}
+                                for p, _price, _unit in lines])
+    for item, (_p, price, unit) in zip(order.items, lines):
+        item.product_price_snapshot = price
+        item.unit_snapshot = unit
+    db_session.flush()
+    return order
+
+
+def test_saving_an_order_keeps_the_price_snapshot_when_the_product_is_unchanged(
+    db_session, plain_customer,
+):
+    product = _imported_product(db_session, "Гвозди", "NAIL-1")
+    order = _imported_order(db_session, plain_customer, [(product, 100.0, "кг")])
+
+    update_order(db_session, order.id, items=[
+        {"product_id": product.id, "quantity": 3, "discount": 0.0},
+    ])
+
+    saved = db_session.get(Order, order.id)
+    assert saved.items[0].product_price_snapshot == 100.0
+    assert saved.items[0].unit_snapshot == "кг"
+    assert saved.total_amount == 300.0
+
+
+def test_saving_an_order_takes_the_snapshot_from_the_new_product_card(
+    db_session, plain_customer,
+):
+    old_product = _imported_product(db_session, "Гвозди", "NAIL-1")
+    new_product = _imported_product(db_session, "Шурупы", "SHUR-1")
+    new_product.price = 7.5
+    db_session.flush()
+    assert new_product.id != old_product.id
+    order = _imported_order(db_session, plain_customer, [(old_product, 100.0, "кг")])
+
+    update_order(db_session, order.id, items=[
+        {"product_id": new_product.id, "quantity": 2, "discount": 0.0},
+    ])
+
+    saved = db_session.get(Order, order.id)
+    assert saved.items[0].product_id == new_product.id
+    assert saved.items[0].product_name_snapshot == "Шурупы"
+    assert saved.items[0].product_price_snapshot == 7.5
+    assert saved.items[0].unit_snapshot == "шт"
+    assert saved.total_amount == 15.0
+
+
+def test_removing_a_middle_line_does_not_shift_snapshots_to_another_product(
+    db_session, plain_customer,
+):
+    p1 = _imported_product(db_session, "Гвозди", "NAIL-1")
+    p2 = _imported_product(db_session, "Шурупы", "SHUR-1")
+    p3 = _imported_product(db_session, "Гайки", "GAYK-1")
+    order = _imported_order(db_session, plain_customer, [
+        (p1, 100.0, "шт"),
+        (p2, 200.0, "кг"),
+        (p3, 300.0, "т"),
+    ])
+
+    update_order(db_session, order.id, items=[
+        {"product_id": p1.id, "quantity": 1, "discount": 0.0},
+        {"product_id": p3.id, "quantity": 1, "discount": 0.0},
+    ])
+
+    saved = db_session.get(Order, order.id)
+    assert [(it.product_id, it.product_price_snapshot, it.unit_snapshot)
+            for it in saved.items] == [
+        (p1.id, 100.0, "шт"),
+        (p3.id, 300.0, "т"),
+    ]
+    assert saved.total_amount == 400.0
+
+
+def test_repeated_product_takes_the_first_free_snapshot(db_session, plain_customer):
+    product = _imported_product(db_session, "Гвозди", "NAIL-1")
+    order = _imported_order(db_session, plain_customer, [(product, 100.0, "кг")])
+    order.items.append(OrderItem(
+        product_id=product.id,
+        product_name_snapshot="Гвозди",
+        product_price_snapshot=300.0,
+        discount_snapshot=0.0,
+        quantity=1,
+        unit_snapshot="т",
+    ))
+    db_session.flush()
+    assert len(order.items) == 2
+
+    update_order(db_session, order.id, items=[
+        {"product_id": product.id, "quantity": 1, "discount": 0.0},
+    ])
+
+    saved = db_session.get(Order, order.id)
+    assert len(saved.items) == 1
+    assert saved.items[0].product_price_snapshot == 100.0
+    assert saved.items[0].unit_snapshot == "кг"
