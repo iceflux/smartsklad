@@ -18,7 +18,7 @@ from app.modules.importer.resolve import (
     resolve_service_customer,
 )
 from app.modules.inventory.models import Product, Unit
-from app.modules.inventory.service import create_unit, get_unit_by_name
+from app.modules.inventory.service import UNIT_NAME_MAX, create_unit, get_unit_by_name
 from app.modules.orders.models import Order, OrderItem
 from app.modules.orders.service import recalc_total
 from app.modules.settings.service import get_setting, set_setting
@@ -220,7 +220,11 @@ def _ensure_service_customer(db: Session, service) -> int | None:
 def run_import(db: Session, folder, filenames, *, user=None, unit_map=None) -> dict:
     built = _build(db, folder, filenames, unit_map)
     if built["unresolved_units"]:
-        raise ValueError("не заданы единицы: " + ", ".join(built["unresolved_units"]))
+        message = "не заданы единицы: " + ", ".join(built["unresolved_units"])
+        if any(len(name) > UNIT_NAME_MAX for name in built["unresolved_units"]):
+            message += (f" — название длиннее {UNIT_NAME_MAX} символов завести нельзя, "
+                        "сократите его в форме решения")
+        raise ValueError(message)
     try:
         service_id = _ensure_service_customer(db, built["service"])
         product_ids = _write_products(db, built["products"], built["units"])

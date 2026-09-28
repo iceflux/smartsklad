@@ -1341,6 +1341,19 @@ def test_known_unit_is_not_reported(db_session, tmp_path):
     assert report["unresolved_units"] == []
 
 
+def test_refusal_names_the_length_limit_for_a_long_unit(db_session, tmp_path):
+    long_name = "я" * 33
+    name = _export_with_unit(tmp_path, long_name)
+    with pytest.raises(ValueError, match="32 символов"):
+        run_import(db_session, tmp_path, [name])
+    with pytest.raises(ValueError, match="32 символов"):
+        run_import(db_session, tmp_path, [name], unit_map={long_name: "new:" + long_name})
+    with pytest.raises(ValueError) as short:
+        name = _export_with_unit(tmp_path, "килограмм")
+        run_import(db_session, tmp_path, [name])
+    assert "32 символов" not in str(short.value)
+
+
 def test_unit_map_resolves_to_existing_unit(db_session, tmp_path):
     target = create_unit(db_session, "Килограмм")
     name = _export_with_unit(tmp_path, "килограмм")
