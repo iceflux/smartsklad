@@ -122,6 +122,13 @@ def test_create_unit_rejects_duplicate_and_empty(db_session):
         create_unit(db_session, "   ")
 
 
+def test_create_unit_accepts_name_at_limit_and_rejects_longer(db_session):
+    at_limit = "я" * 32
+    assert create_unit(db_session, at_limit).name == at_limit
+    with pytest.raises(ValueError):
+        create_unit(db_session, "я" * 33)
+
+
 def test_ensure_unit_creates_once(db_session):
     first = ensure_unit(db_session, "ящик-тест")
     second = ensure_unit(db_session, "Ящик-Тест ")
@@ -132,6 +139,16 @@ def test_update_unit_renames(db_session):
     unit = create_unit(db_session, "Килограмм")
     update_unit(db_session, unit.id, "кг2")
     assert db_session.get(Unit, unit.id).name == "кг2"
+
+
+def test_update_unit_accepts_name_at_limit_and_rejects_longer(db_session):
+    unit = create_unit(db_session, "Килограмм-длина")
+    at_limit = "ф" * 32
+    update_unit(db_session, unit.id, at_limit)
+    assert db_session.get(Unit, unit.id).name == at_limit
+    with pytest.raises(ValueError):
+        update_unit(db_session, unit.id, "ф" * 33)
+    assert db_session.get(Unit, unit.id).name == at_limit
 
 
 def test_rename_allows_reusing_a_freed_name(db_session):
