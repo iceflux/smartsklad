@@ -3,12 +3,14 @@ from datetime import date, datetime, time, timedelta
 import pytest
 
 from app.modules.customers.models import Customer
+from app.modules.dashboard import service as dashboard_service
 from app.modules.dashboard.service import (
     DEFAULT_PRESET,
     PRESET_DAYS,
     chart_bars,
     dashboard_metrics,
     dashboard_sales_csv,
+    earliest_order_date,
     resolve_period,
 )
 from app.modules.inventory.models import Product
@@ -74,6 +76,65 @@ def test_future_date_from_raises_even_without_date_to():
 
 def test_date_objects_are_accepted():
     assert resolve_period("month", date(2026, 3, 1), date(2026, 3, 2)) == (date(2026, 3, 1), date(2026, 3, 2))
+
+
+def _frozen_date(day):
+    class _Frozen(date):
+        @classmethod
+        def today(cls):
+            return day
+    return _Frozen
+
+
+@pytest.mark.parametrize("today,preset,expected", [
+    (date(2026, 5, 17), "quarter", (date(2026, 4, 1), date(2026, 5, 17))),
+    (date(2026, 5, 17), "prev_quarter", (date(2026, 1, 1), date(2026, 3, 31))),
+    (date(2026, 1, 3), "prev_quarter", (date(2025, 10, 1), date(2025, 12, 31))),
+    (date(2026, 12, 31), "quarter", (date(2026, 10, 1), date(2026, 12, 31))),
+    (date(2026, 5, 17), "cal_year", (date(2026, 1, 1), date(2026, 5, 17))),
+    (date(2026, 5, 17), "year", (date(2025, 5, 18), date(2026, 5, 17))),
+])
+def test_calendar_presets(monkeypatch, today, preset, expected):
+    monkeypatch.setattr(dashboard_service, "date", _frozen_date(today))
+    assert dashboard_service.resolve_period(preset) == expected
+
+
+def test_quarter_and_previous_quarter_are_adjacent(monkeypatch):
+    monkeypatch.setattr(dashboard_service, "date", _frozen_date(date(2026, 5, 17)))
+    start, end = dashboard_service.resolve_period("quarter")
+    prev_start, prev_end = dashboard_service.resolve_period("prev_quarter")
+    assert prev_end + timedelta(days=1) == start
+
+
+def test_explicit_dates_still_win_over_a_calendar_preset(monkeypatch):
+    monkeypatch.setattr(dashboard_service, "date", _frozen_date(date(2026, 5, 17)))
+    assert dashboard_service.resolve_period("all", "2026-02-01", "2026-02-05") == (
+        date(2026, 2, 1), date(2026, 2, 5),
+    )
+
+
+def test_all_period_starts_at_the_earliest_order(db_session):
+    customer = _customer(db_session)
+    nails = _product(db_session)
+    _order(db_session, customer, nails, number="00001", day=date(2026, 3, 10), amount=100.0)
+    _order(db_session, customer, nails, number="00002", day=date(2024, 3, 1), amount=50.0)
+    earliest = earliest_order_date(db_session)
+    assert earliest == date(2024, 3, 1)
+    assert resolve_period("all", earliest=earliest)[0] == date(2024, 3, 1)
+
+
+def test_all_period_without_orders_is_today_only(db_session):
+    assert earliest_order_date(db_session) is None
+    today = date.today()
+    assert resolve_period("all", earliest=None) == (today, today)
+
+
+def test_earliest_order_date_uses_the_time_part_of_created_at(db_session):
+    customer = _customer(db_session)
+    nails = _product(db_session)
+    _order(db_session, customer, nails, number="00001", day=date(2026, 3, 10),
+           amount=100.0, hour=23, minute=59)
+    assert earliest_order_date(db_session) == date(2026, 3, 10)
 
 
 def _daily(amounts):

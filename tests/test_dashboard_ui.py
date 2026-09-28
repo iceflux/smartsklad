@@ -26,14 +26,14 @@ def _admin(client, db_session):
     return u
 
 
-def _seed(db_session, amount=100.0, number="00001"):
+def _seed(db_session, amount=100.0, number="00001", day=None):
     c = Customer(name="ООО Строй", personal_discount=0.0)
     p = Product(name="Гвозди", sku=f"SKU-UI-{number}", unit_id=_unit_id(db_session), price=10.0, rest=3)
     db_session.add(c)
     db_session.add(p)
     db_session.commit()
     o = Order(number=number, customer_id=c.id, status="done", discount=0.0, total_amount=amount,
-              created_at=datetime.combine(date.today(), time(12, 0)))
+              created_at=datetime.combine(day or date.today(), time(12, 0)))
     db_session.add(o)
     db_session.commit()
     o.items.append(OrderItem(product_id=p.id, product_name_snapshot="Гвозди",
@@ -110,6 +110,45 @@ def test_dashboard_page_preset_changes_period_and_keeps_dates_empty(client, db_s
     assert (today - timedelta(days=364)).strftime("%d.%m.%Y") in r.text
     assert _input_value(r.text, "date_from") == ""
     assert _input_value(r.text, "date_to") == ""
+
+
+def test_dashboard_page_offers_the_calendar_presets(client, db_session):
+    _admin(client, db_session)
+    r = client.get("/dashboard")
+    assert r.status_code == 200
+    for value, label in (
+        ("quarter", "Текущий квартал"),
+        ("prev_quarter", "Предыдущий квартал"),
+        ("cal_year", "Год"),
+        ("all", "Весь период"),
+    ):
+        assert f'value="{value}"' in r.text
+        assert label in r.text
+    assert 'value="year"' in r.text
+    assert "365 дней" in r.text
+
+
+def test_dashboard_page_all_preset_starts_at_the_first_order(client, db_session):
+    _admin(client, db_session)
+    _seed(db_session, number="00001", day=date(2025, 3, 1), amount=50.0)
+    _seed(db_session, number="00002", amount=100.0)
+    r = client.get("/dashboard?preset=all")
+    assert r.status_code == 200
+    assert date(2025, 3, 1).strftime("%d.%m.%Y") in r.text
+    assert date.today().strftime("%d.%m.%Y") in r.text
+    assert 'value="all" selected' in r.text
+    assert "Заказов" in r.text
+
+
+def test_dashboard_page_quarter_preset_starts_at_the_quarter_start(client, db_session):
+    _admin(client, db_session)
+    today = date.today()
+    quarter_start = date(today.year, ((today.month - 1) // 3) * 3 + 1, 1)
+    _seed(db_session, number="00001", day=quarter_start, amount=70.0)
+    r = client.get("/dashboard?preset=quarter")
+    assert r.status_code == 200
+    assert quarter_start.strftime("%d.%m.%Y") in r.text
+    assert 'value="quarter" selected' in r.text
 
 
 def test_dashboard_page_hides_csv_link_without_export_permission(client, db_session):

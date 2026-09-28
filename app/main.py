@@ -26,6 +26,7 @@ from app.modules.dashboard.service import (
     chart_bars,
     dashboard_metrics,
     dashboard_sales_csv,
+    earliest_order_date,
     resolve_period,
 )
 from app.modules.auth.dependencies import (
@@ -572,6 +573,7 @@ def create_app() -> FastAPI:
                 request.query_params.get("preset"),
                 request.query_params.get("date_from"),
                 request.query_params.get("date_to"),
+                earliest=earliest_order_date(db),
             )
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
@@ -597,6 +599,7 @@ def create_app() -> FastAPI:
                 preset,
                 request.query_params.get("date_from"),
                 request.query_params.get("date_to"),
+                earliest=earliest_order_date(db),
             )
         except ValueError as e:
             return RedirectResponse(

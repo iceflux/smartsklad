@@ -3,6 +3,9 @@ import io
 import math
 from datetime import date, datetime, time, timedelta
 
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
 from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
@@ -27,7 +30,19 @@ def _parse_iso(value) -> date | None:
         return None
 
 
-def resolve_period(preset=None, date_from=None, date_to=None) -> tuple[date, date]:
+def _quarter_bounds(day: date) -> tuple[date, date]:
+    first_month = ((day.month - 1) // 3) * 3 + 1
+    last_month = first_month + 2
+    next_first = date(day.year + (1 if last_month == 12 else 0), (last_month % 12) + 1, 1)
+    return date(day.year, first_month, 1), next_first - timedelta(days=1)
+
+
+def earliest_order_date(db: Session) -> date | None:
+    value = db.query(func.min(Order.created_at)).scalar()
+    return value.date() if value else None
+
+
+def resolve_period(preset=None, date_from=None, date_to=None, *, earliest: date | None = None) -> tuple[date, date]:
     today = date.today()
     start = _parse_iso(date_from)
     end = _parse_iso(date_to)
@@ -40,9 +55,20 @@ def resolve_period(preset=None, date_from=None, date_to=None) -> tuple[date, dat
         resolved_end = end
     else:
         key = preset or DEFAULT_PRESET
-        days = PRESET_DAYS.get(key, PRESET_DAYS["day"])
-        resolved_start = today - timedelta(days=days - 1)
-        resolved_end = today
+        if key == "quarter":
+            resolved_start, _ = _quarter_bounds(today)
+            resolved_end = today
+        elif key == "prev_quarter":
+            quarter_start, _ = _quarter_bounds(today)
+            resolved_start, resolved_end = _quarter_bounds(quarter_start - timedelta(days=1))
+        elif key == "cal_year":
+            resolved_start, resolved_end = date(today.year, 1, 1), today
+        elif key == "all":
+            resolved_start, resolved_end = earliest or today, today
+        else:
+            days = PRESET_DAYS.get(key, PRESET_DAYS["day"])
+            resolved_start = today - timedelta(days=days - 1)
+            resolved_end = today
     if resolved_start > resolved_end:
         raise ValueError("период: начало позже конца")
     return resolved_start, resolved_end

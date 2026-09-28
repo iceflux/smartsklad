@@ -166,6 +166,50 @@ def test_dashboard_csv_exports_resolved_period_and_rows(client, db_session):
     assert len(lines) == 6
 
 
+def test_dashboard_api_all_preset_starts_at_the_first_order(client, db_session):
+    _admin(client, db_session)
+    _seed(db_session, day=date(2024, 3, 1), amount=50.0, number="00001")
+    _seed(db_session, day=date.today(), amount=100.0, number="00002")
+    r = client.get("/api/dashboard/sales?preset=all")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["date_from"] == date(2024, 3, 1).isoformat()
+    assert body["date_to"] == date.today().isoformat()
+    assert body["orders_count"] == 2
+    assert body["total_sum"] == 150.0
+
+
+def test_dashboard_api_all_preset_without_orders_is_today(client, db_session):
+    _admin(client, db_session)
+    r = client.get("/api/dashboard/sales?preset=all")
+    assert r.status_code == 200
+    assert r.json()["date_from"] == date.today().isoformat()
+    assert r.json()["orders_count"] == 0
+
+
+def test_dashboard_csv_all_preset_matches_the_api_period(client, db_session):
+    _admin(client, db_session)
+    _seed(db_session, day=date(2024, 3, 1), amount=50.0, number="00001")
+    api = client.get("/api/dashboard/sales?preset=all").json()
+    r = client.get("/dashboard/export.csv?preset=all")
+    assert r.status_code == 200
+    lines = r.text.replace("\ufeff", "", 1).splitlines()
+    assert lines[1] == f"{api['date_from']};1;50.0"
+    assert lines[-1] == f"{api['date_to']};0;0.0"
+    assert len(lines) - 1 == len(api["daily"])
+
+
+def test_dashboard_csv_quarter_preset_exports_the_calendar_quarter(client, db_session):
+    _admin(client, db_session)
+    quarter_start = date(date.today().year, ((date.today().month - 1) // 3) * 3 + 1, 1)
+    _seed(db_session, day=quarter_start, amount=70.0, number="00001")
+    r = client.get("/dashboard/export.csv?preset=quarter")
+    assert r.status_code == 200
+    lines = r.text.replace("\ufeff", "", 1).splitlines()
+    assert lines[1] == f"{quarter_start.isoformat()};1;70.0"
+    assert lines[-1] == f"{date.today().isoformat()};0;0.0"
+
+
 def test_dashboard_empty_preset_matches_default_across_layers(client, db_session):
     _admin(client, db_session)
     default = client.get("/api/dashboard/sales").json()

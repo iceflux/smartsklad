@@ -16,6 +16,10 @@
                 <option value="week" {% if preset == "week" %}selected{% endif %}>7 дней</option>
                 <option value="month" {% if preset == "month" %}selected{% endif %}>30 дней</option>
                 <option value="year" {% if preset == "year" %}selected{% endif %}>365 дней</option>
+                <option value="quarter" {% if preset == "quarter" %}selected{% endif %}>Текущий квартал</option>
+                <option value="prev_quarter" {% if preset == "prev_quarter" %}selected{% endif %}>Предыдущий квартал</option>
+                <option value="cal_year" {% if preset == "cal_year" %}selected{% endif %}>Год</option>
+                <option value="all" {% if preset == "all" %}selected{% endif %}>Весь период</option>
             </select>
         </div>
         <div>
