@@ -1,3 +1,5 @@
+from html.parser import HTMLParser
+
 from app.modules.auth.models import Role, User
 from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.customers.models import Customer
@@ -31,6 +33,68 @@ def _seed(db_session):
     order = create_order(db_session, customer_id=c.id, discount=0,
                          items=[{"product_id": p.id, "quantity": 2, "discount": 0}])
     return p, c, order
+
+
+class _OptionsParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.select = None
+        self.options = {}
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "select":
+            self.select = attrs.get("name")
+        elif tag == "option" and self.select:
+            self.options.setdefault(self.select, []).append(attrs)
+
+
+def _option(body, select, value):
+    parser = _OptionsParser()
+    parser.feed(body)
+    found = [o for o in parser.options.get(select, []) if o.get("value") == str(value)]
+    assert found, f"в селекте {select} нет опции {value}"
+    return found[0]
+
+
+def _pad_products(client, count):
+    for i in range(count):
+        r = client.post("/api/products", json={
+            "name": f"{i:03d} заготовка", "sku": f"FILLER-{i:03d}",
+            "price": 10.0, "rest": 100})
+        assert r.status_code == 201, r.text
+
+
+def _pad_customers(db_session, count):
+    db_session.add_all([Customer(name=f"{i:03d} заготовка") for i in range(count)])
+    db_session.commit()
+
+
+def test_edit_form_shows_the_current_product_past_the_first_page(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    _pad_products(client, 30)
+    option = _option(client.get(f"/orders/{order.id}/edit").text, "product_id", p.id)
+    assert "selected" in option
+    assert "disabled" not in option
+
+
+def test_edit_form_shows_the_current_customer_past_the_first_page(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    _pad_customers(db_session, 26)
+    option = _option(client.get(f"/orders/{order.id}/edit").text, "customer_id", c.id)
+    assert "selected" in option
+    assert "disabled" not in option
+
+
+def test_edit_form_marks_the_deleted_product_option(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    assert client.delete(f"/api/products/{p.id}").status_code == 204
+    option = _option(client.get(f"/orders/{order.id}/edit").text, "product_id", p.id)
+    assert "selected" in option
+    assert "disabled" in option
 
 
 def test_orders_page_redirects_anonymous(client):

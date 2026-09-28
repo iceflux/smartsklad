@@ -63,7 +63,7 @@ from app.modules.backup.service import (
     update_backup_settings,
 )
 from app.modules.backup.scheduler import next_backup_time, next_report_time, scheduler_loop
-from app.modules.inventory.models import Category, PriceHistory
+from app.modules.inventory.models import Category, PriceHistory, Product
 from app.modules.customers.models import Customer
 from app.modules.customers.router import router as customers_router
 from app.modules.importer.files import list_payload_files, resolve_folder
@@ -144,14 +144,35 @@ def _parse_date(value: str | None) -> date | None:
         return None
 
 
-def _client_options(db: Session, include_deleted: bool = False) -> list[dict]:
+def _client_options(db: Session, include_deleted: bool = False, order=None) -> list[dict]:
     items, _ = list_customers(db, include_deleted=include_deleted)
-    return [{"id": c.id, "name": c.name} for c in items]
+    options = [{"id": c.id, "name": c.name, "is_current": False, "deleted": False}
+               for c in items]
+    if order is not None and order.customer_id is not None:
+        current = db.get(Customer, order.customer_id)
+        if current is not None and current.id not in {o["id"] for o in options}:
+            options.append({"id": current.id, "name": current.name,
+                            "is_current": True, "deleted": bool(current.is_deleted)})
+    return sorted(options, key=lambda o: o["name"])
 
 
-def _product_options(db: Session) -> list[dict]:
+def _product_options(db: Session, order=None) -> list[dict]:
     items, _ = list_products(db, include_deleted=False)
-    return [{"id": p.id, "name": p.name, "price": p.price, "rest": p.rest} for p in items]
+    options = [{"id": p.id, "name": p.name, "price": p.price, "rest": p.rest,
+                "is_current": False, "deleted": False} for p in items]
+    if order is not None:
+        known = {o["id"] for o in options}
+        for item in order.items:
+            if item.product_id in known:
+                continue
+            known.add(item.product_id)
+            product = db.get(Product, item.product_id)
+            if product is None:
+                continue
+            options.append({"id": product.id, "name": product.name, "price": product.price,
+                            "rest": product.rest, "is_current": True,
+                            "deleted": bool(product.is_deleted)})
+    return sorted(options, key=lambda o: o["name"])
 
 
 def _order_form_items(form: dict) -> list[dict]:
@@ -1397,8 +1418,8 @@ def create_app() -> FastAPI:
             return RedirectResponse(
                 f"/orders/{order_id}?" + urlencode({"msg": "Нельзя редактировать выполненный заказ"}),
                 status_code=303)
-        clients = _client_options(db)
-        products = _product_options(db)
+        clients = _client_options(db, order=order)
+        products = _product_options(db, order)
         return templates.TemplateResponse(request, "order_form.html", {
             "title": f"Заказ {order.number}", "user": user, "order": order, "is_new": False,
             "clients": clients, "products": products, "msg": request.query_params.get("msg"),

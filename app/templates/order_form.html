@@ -2,7 +2,7 @@
 {% macro product_options(selected_id) -%}
     <option value="">— выбрать —</option>
     {% for pr in products %}
-        <option value="{{ pr.id }}" {% if pr.id == selected_id %}selected{% endif %}>{{ pr.name }} ({{ pr.price }} ₽, ост. {{ pr.rest }})</option>
+        <option value="{{ pr.id }}" {% if pr.id == selected_id %}selected{% endif %}{% if pr.deleted %} disabled{% endif %}>{{ pr.name }} ({{ pr.price }} ₽, ост. {{ pr.rest }})</option>
     {% endfor %}
 {%- endmacro %}
 {% block content %}
@@ -17,7 +17,7 @@
             <select name="customer_id" required class="w-full border p-2">
                 <option value="">— выбрать клиента —</option>
                 {% for c in clients %}
-                    <option value="{{ c.id }}" {% if order and order.customer_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                    <option value="{{ c.id }}" {% if order and order.customer_id == c.id %}selected{% endif %}{% if c.deleted %} disabled{% endif %}>{{ c.name }}</option>
                 {% endfor %}
             </select>
         </div>
