@@ -1,3 +1,6 @@
+import json
+import re
+
 from app.modules.auth.models import Role, User
 from app.modules.auth.service import get_role_by_name, hash_password, login
 
@@ -150,10 +153,25 @@ def test_product_edit_page_renders_zero_min_stock(client, db_session):
 
 def test_categories_page_offers_where_to_move_the_contents(client, db_session):
     _admin(client, db_session)
-    client.post("/api/categories", json={"name": "Продукты", "parent_id": None})
+    root = client.post("/api/categories", json={"name": "Продукты", "parent_id": None}).json()
+    child = client.post(
+        "/api/categories", json={"name": "Молочное", "parent_id": root["id"]}
+    ).json()
     r = client.get("/categories")
     assert r.status_code == 200
-    assert 'id="categories-data"' in r.text
     assert "resolve=true" in r.text
     assert "reassign_to=" in r.text
     assert "onclick" not in r.text
+    blob = re.search(
+        r'<script id="categories-data" type="application/json">(.*?)</script>', r.text, re.S
+    )
+    assert blob is not None
+    tree = json.loads(blob.group(1))
+    assert tree == [
+        {
+            "children": [{"id": child["id"], "name": "Молочное"}],
+            "id": root["id"],
+            "name": "Продукты",
+            "parent_id": None,
+        }
+    ]
