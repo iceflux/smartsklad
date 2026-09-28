@@ -109,6 +109,21 @@ def test_delete_in_use_is_rejected(client, db_session):
     assert FRESH in _names(client)
 
 
+def test_missing_unit_says_not_found_in_russian(client, db_session):
+    _admin(client, db_session)
+    assert client.patch("/api/units/9999", json={"name": FRESH}).json()["detail"] == "единица не найдена"
+    assert client.delete("/api/units/9999").json()["detail"] == "единица не найдена"
+
+
+def test_soft_deleted_unit_says_not_found_in_russian(client, db_session):
+    _admin(client, db_session)
+    unit_id = client.post("/api/units", json={"name": FRESH}).json()["id"]
+    assert client.delete(f"/api/units/{unit_id}").status_code == 200
+    assert client.delete(f"/api/units/{unit_id}").json()["detail"] == "единица не найдена"
+    assert client.patch(f"/api/units/{unit_id}", json={"name": FRESH}).json()["detail"] \
+        == "единица не найдена"
+
+
 def test_rename_leaves_order_history_untouched(client, db_session):
     _admin(client, db_session)
     unit_id = client.post("/api/units", json={"name": FRESH}).json()["id"]

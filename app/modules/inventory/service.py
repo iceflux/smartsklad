@@ -147,7 +147,7 @@ def create_product(
         raise ValueError("min_stock must be >= 0")
     unit = db.get(Unit, unit_id) if unit_id is not None else get_unit_by_name(db, DEFAULT_UNIT)
     if unit is None or unit.is_deleted:
-        raise ValueError("unit not found")
+        raise ValueError("единица не найдена")
     product = Product(
         name=name,
         sku=sku,
@@ -176,7 +176,7 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
     if "unit_id" in data:
         unit = db.get(Unit, data["unit_id"]) if data["unit_id"] is not None else get_unit_by_name(db, DEFAULT_UNIT)
         if unit is None or unit.is_deleted:
-            raise ValueError("unit not found")
+            raise ValueError("единица не найдена")
         data = {**data, "unit_id": unit.id}
     old_dict = _product_dict(product)
     if "sku" in data:
@@ -386,7 +386,7 @@ def ensure_unit(db: Session, name, *, user=None) -> Unit:
 def update_unit(db: Session, unit_id: int, name, *, user=None) -> Unit:
     unit = db.get(Unit, unit_id)
     if unit is None or unit.is_deleted:
-        raise ValueError("unit not found")
+        raise ValueError("единица не найдена")
     new_name = _require_free_unit_name(db, name)
     old_name = unit.name
     unit.name = new_name
@@ -399,7 +399,7 @@ def update_unit(db: Session, unit_id: int, name, *, user=None) -> Unit:
 def delete_unit(db: Session, unit_id: int, *, user=None) -> None:
     unit = db.get(Unit, unit_id)
     if unit is None or unit.is_deleted:
-        raise ValueError("unit not found")
+        raise ValueError("единица не найдена")
     in_use = db.query(Product.id).filter(Product.unit_id == unit.id).first() is not None
     if in_use:
         raise ValueError("единица используется товарами")
