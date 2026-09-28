@@ -309,3 +309,40 @@ def test_patch_product_negative_min_stock_returns_400(client, db_session):
     pid = client.post("/api/products", json={"name": "Гвозди", "sku": "NAIL-A3"}).json()["id"]
     r = client.patch(f"/api/products/{pid}", json={"min_stock": -5})
     assert r.status_code == 400
+
+
+def test_patch_product_null_unit_falls_back_to_pieces(client, db_session):
+    from app.modules.inventory.models import Unit
+    _admin(client, db_session)
+    pieces = db_session.query(Unit).filter(Unit.name == "шт").one()
+    kg = db_session.query(Unit).filter(Unit.name == "кг").one()
+    pid = client.post("/api/products", json={"name": "Гвозди", "sku": "NAIL-U1",
+                                             "unit_id": kg.id}).json()["id"]
+    assert client.get(f"/api/products/{pid}").json()["unit"] == "кг"
+    r = client.patch(f"/api/products/{pid}", json={"unit_id": None})
+    assert r.status_code == 200
+    assert r.json()["unit"] == "шт"
+    assert r.json()["unit_id"] == pieces.id
+    stored = db_session.get(Product, pid)
+    assert stored.unit_id == pieces.id
+
+
+def test_patch_product_keeps_a_chosen_unit(client, db_session):
+    from app.modules.inventory.models import Unit
+    _admin(client, db_session)
+    kg = db_session.query(Unit).filter(Unit.name == "кг").one()
+    l = db_session.query(Unit).filter(Unit.name == "л").one()
+    pid = client.post("/api/products", json={"name": "Гвозди", "sku": "NAIL-U2"}).json()["id"]
+    r = client.patch(f"/api/products/{pid}", json={"unit_id": l.id})
+    assert r.status_code == 200
+    assert r.json()["unit"] == "л"
+    assert db_session.get(Product, pid).unit_id == l.id
+    assert kg.id != l.id
+
+
+def test_patch_product_rejects_unknown_unit_id(client, db_session):
+    _admin(client, db_session)
+    pid = client.post("/api/products", json={"name": "Гвозди", "sku": "NAIL-U3"}).json()["id"]
+    r = client.patch(f"/api/products/{pid}", json={"unit_id": 9999})
+    assert r.status_code == 409
+    assert db_session.get(Product, pid).unit_id is not None

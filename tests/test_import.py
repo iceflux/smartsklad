@@ -1389,8 +1389,23 @@ def test_preview_creates_no_unit_even_with_a_creation_decision(db_session, tmp_p
     report = plan_import(db_session, tmp_path, [name], unit_map={"килограмм": "new:Килограмм-новый"})
     assert report["unresolved_units"] == []
     assert report["unit_map"] == {"килограмм": "Килограмм-новый"}
+    assert db_session.query(Unit).filter(Unit.name == "Килограмм-новый").count() == 1
+    db_session.flush()
+    assert db_session.query(AuditLog).filter_by(action="unit.create").count() == 1
     db_session.rollback()
     assert db_session.query(Unit).filter(Unit.name == "Килограмм-новый").count() == 0
     assert db_session.query(Unit).filter(Unit.name == "килограмм").count() == 0
+    assert db_session.query(AuditLog).count() == 0
+
+
+def test_preview_of_known_units_writes_no_audit_row(db_session, tmp_path):
+    name = _export_with_unit(tmp_path, "кг")
+    report = plan_import(db_session, tmp_path, [name])
+    assert report["unresolved_units"] == []
+    assert report["unit_map"] == {"кг": "кг"}
+    db_session.flush()
+    db_session.rollback()
+    assert db_session.query(Unit).filter(Unit.name == "кг").count() == 1
+    assert db_session.query(AuditLog).count() == 0
 
 

@@ -173,10 +173,11 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
         raise ValueError("product not found")
     if "min_stock" in data and data["min_stock"] is not None and data["min_stock"] < 0:
         raise ValueError("min_stock must be >= 0")
-    if "unit_id" in data and data["unit_id"] is not None:
-        unit = db.get(Unit, data["unit_id"])
+    if "unit_id" in data:
+        unit = db.get(Unit, data["unit_id"]) if data["unit_id"] is not None else get_unit_by_name(db, DEFAULT_UNIT)
         if unit is None or unit.is_deleted:
             raise ValueError("unit not found")
+        data = {**data, "unit_id": unit.id}
     old_dict = _product_dict(product)
     if "sku" in data:
         new_sku = data["sku"].strip()

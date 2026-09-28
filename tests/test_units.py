@@ -97,14 +97,12 @@ def test_unit_is_soft_deletable(db_session):
 
 
 def test_list_units_excludes_soft_deleted(db_session):
-    keep = get_unit_by_name(db_session, "кг")
     dropped = create_unit(db_session, "Килограмм")
     db_session.get(Unit, dropped.id).is_deleted = True
     db_session.commit()
     names = [u.name for u in list_units(db_session)]
     assert "Килограмм" not in names
     assert "кг" in names
-    assert keep.id is not None
 
 
 def test_get_unit_by_name_is_case_and_space_insensitive(db_session):
@@ -162,6 +160,7 @@ def test_delete_unit_refuses_for_soft_deleted_product(db_session):
     db_session.commit()
     with pytest.raises(ValueError):
         delete_unit(db_session, unit.id)
+    assert db_session.get(Unit, unit.id).is_deleted is False
 
 
 def test_delete_unit_marks_deleted(db_session):
