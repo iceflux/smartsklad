@@ -236,6 +236,25 @@ def test_resolving_clears_the_category_from_products_and_children(db_session):
     ).count() == 0
 
 
+def test_clearing_leaves_soft_deleted_rows_pointing_at_the_deleted_category(db_session):
+    root = _category(db_session, "Корень")
+    live = _product(db_session, root.id, "Живой")
+    gone = _product(db_session, root.id, "Удалённый")
+    delete_product(db_session, gone.id)
+    live_child = _category(db_session, "Ветка", parent_id=root.id)
+    gone_child = _category(db_session, "Ушедшая", parent_id=root.id)
+    delete_category(db_session, gone_child.id)
+
+    delete_category(db_session, root.id, resolve=True, reassign_to=None)
+
+    db_session.expire_all()
+    assert db_session.get(Category, root.id).is_deleted is True
+    assert db_session.get(Product, live.id).category_id is None
+    assert db_session.get(Product, gone.id).category_id == root.id
+    assert db_session.get(Category, live_child.id).parent_id is None
+    assert db_session.get(Category, gone_child.id).parent_id == root.id
+
+
 def test_reassign_to_alone_does_not_release_the_block(db_session):
     root = _category(db_session, "Корень")
     target = _category(db_session, "Целевая")

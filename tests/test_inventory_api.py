@@ -280,6 +280,23 @@ def test_delete_category_rejects_an_unknown_reassign_target(client, db_session):
     assert db_session.get(Category, root["id"]).is_deleted is False
 
 
+def test_delete_category_reassign_to_without_resolve_stays_refused(client, db_session):
+    _admin(client, db_session)
+    root = _make_category(client, name="Кровля")
+    target = _make_category(client, name="Целевая")
+    p = _make_product(client, category_id=root["id"])
+    assert root["id"] != target["id"]
+    r = client.delete(f"/api/categories/{root['id']}?reassign_to={target['id']}")
+    assert r.status_code == 409
+    assert r.json()["detail"] == (
+        "нельзя удалить категорию: в ней 1 товар. "
+        "Перенесите или удалите содержимое."
+    )
+    db_session.expire_all()
+    assert db_session.get(Category, root["id"]).is_deleted is False
+    assert db_session.get(Product, p["id"]).category_id == root["id"]
+
+
 def test_delete_category_reassigns_into_a_descendant_is_refused(client, db_session):
     _admin(client, db_session)
     root = _make_category(client, name="Кровля")
