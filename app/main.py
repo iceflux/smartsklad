@@ -1,4 +1,5 @@
 import asyncio
+import bisect
 import json
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, time, timedelta
@@ -146,33 +147,29 @@ def _parse_date(value: str | None) -> date | None:
 
 def _client_options(db: Session, include_deleted: bool = False, order=None) -> list[dict]:
     items, _ = list_customers(db, include_deleted=include_deleted)
-    options = [{"id": c.id, "name": c.name, "is_current": False, "deleted": False}
-               for c in items]
-    if order is not None and order.customer_id is not None:
+    options = [{"id": c.id, "name": c.name, "deleted": False} for c in items]
+    if order is not None and order.customer_id not in {o["id"] for o in options}:
         current = db.get(Customer, order.customer_id)
-        if current is not None and current.id not in {o["id"] for o in options}:
-            options.append({"id": current.id, "name": current.name,
-                            "is_current": True, "deleted": bool(current.is_deleted)})
-    return sorted(options, key=lambda o: o["name"])
+        bisect.insort(options, {"id": current.id, "name": current.name,
+                                "deleted": bool(current.is_deleted)},
+                      key=lambda o: o["name"])
+    return options
 
 
 def _product_options(db: Session, order=None) -> list[dict]:
     items, _ = list_products(db, include_deleted=False)
     options = [{"id": p.id, "name": p.name, "price": p.price, "rest": p.rest,
-                "is_current": False, "deleted": False} for p in items]
+                "deleted": False} for p in items]
     if order is not None:
-        known = {o["id"] for o in options}
         for item in order.items:
-            if item.product_id in known:
+            if item.product_id in {o["id"] for o in options}:
                 continue
-            known.add(item.product_id)
             product = db.get(Product, item.product_id)
-            if product is None:
-                continue
-            options.append({"id": product.id, "name": product.name, "price": product.price,
-                            "rest": product.rest, "is_current": True,
-                            "deleted": bool(product.is_deleted)})
-    return sorted(options, key=lambda o: o["name"])
+            bisect.insort(options, {"id": product.id, "name": product.name,
+                                    "price": product.price, "rest": product.rest,
+                                    "deleted": bool(product.is_deleted)},
+                          key=lambda o: o["name"])
+    return options
 
 
 def _order_form_items(form: dict) -> list[dict]:
