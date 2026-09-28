@@ -75,14 +75,42 @@ def update_category(db: Session, category_id: int, name: str, parent_id: int | N
     return cat
 
 
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
+def category_contents(db: Session, category_id: int) -> dict:
+    return {
+        "products": db.query(Product).filter(
+            Product.category_id == category_id, Product.is_deleted.is_(False)
+        ).count(),
+        "children": db.query(Category).filter(
+            Category.parent_id == category_id, Category.is_deleted.is_(False)
+        ).count(),
+    }
+
+
 def delete_category(db: Session, category_id: int, user=None) -> None:
     cat = db.get(Category, category_id)
     if cat is None:
         raise ValueError("category not found")
-    has_children = db.query(Category).filter(Category.parent_id == cat.id).first() is not None
-    has_products = db.query(Product).filter(Product.category_id == cat.id).first() is not None
-    if has_children or has_products:
-        raise ValueError("category not empty")
+    counts = category_contents(db, cat.id)
+    parts = []
+    if counts["products"]:
+        n = counts["products"]
+        parts.append(f"{n} {_plural(n, 'товар', 'товара', 'товаров')}")
+    if counts["children"]:
+        n = counts["children"]
+        parts.append(f"{n} {_plural(n, 'подкатегория', 'подкатегории', 'подкатегорий')}")
+    if parts:
+        raise ValueError(
+            "нельзя удалить категорию: в ней " + " и ".join(parts)
+            + ". Сначала перенесите их в другую категорию или снимите с них категорию."
+        )
     cat.is_deleted = True
     db.commit()
     log_action(db, action="category.delete", entity_type="category", entity_id=cat.id,

@@ -172,6 +172,80 @@ def test_category_name_reusable_after_delete(client, db_session):
     assert r.status_code == 201
 
 
+def test_delete_category_conflict_names_the_subcategory(client, db_session):
+    _admin(client, db_session)
+    cat = _make_category(client, name="Кровля")
+    _make_category(client, name="Черепица", parent_id=cat["id"])
+    r = client.delete(f"/api/categories/{cat['id']}")
+    assert r.status_code == 409
+    assert r.json()["detail"] == (
+        "нельзя удалить категорию: в ней 1 подкатегория. "
+        "Сначала перенесите их в другую категорию или снимите с них категорию."
+    )
+
+
+def test_delete_category_conflict_names_the_products(client, db_session):
+    _admin(client, db_session)
+    cat = _make_category(client, name="Кровля")
+    _make_product(client, category_id=cat["id"])
+    r = client.delete(f"/api/categories/{cat['id']}")
+    assert r.status_code == 409
+    assert r.json()["detail"] == (
+        "нельзя удалить категорию: в ней 1 товар. "
+        "Сначала перенесите их в другую категорию или снимите с них категорию."
+    )
+
+
+def test_delete_category_conflict_names_both_with_counts(client, db_session):
+    _admin(client, db_session)
+    cat = _make_category(client, name="Кровля")
+    _make_category(client, name="Черепица", parent_id=cat["id"])
+    _make_category(client, name="Ондулин", parent_id=cat["id"])
+    _make_product(client, category_id=cat["id"])
+    _make_product(client, sku="MILK-2", category_id=cat["id"])
+    r = client.delete(f"/api/categories/{cat['id']}")
+    assert r.status_code == 409
+    assert r.json()["detail"] == (
+        "нельзя удалить категорию: в ней 2 товара и 2 подкатегории. "
+        "Сначала перенесите их в другую категорию или снимите с них категорию."
+    )
+
+
+def test_delete_category_ignores_a_soft_deleted_product(client, db_session):
+    _admin(client, db_session)
+    cat = _make_category(client, name="Кровля")
+    p = _make_product(client, category_id=cat["id"])
+    assert client.delete(f"/api/products/{p['id']}").status_code == 204
+    r = client.delete(f"/api/categories/{cat['id']}")
+    assert r.status_code == 204
+    assert client.get("/api/categories").json() == []
+
+
+def test_category_contents_counts_only_live_rows(client, db_session):
+    _admin(client, db_session)
+    cat = _make_category(client, name="Кровля")
+    _make_category(client, name="Черепица", parent_id=cat["id"])
+    gone = _make_category(client, name="Ондулин", parent_id=cat["id"])
+    assert client.delete(f"/api/categories/{gone['id']}").status_code == 204
+    _make_product(client, category_id=cat["id"])
+    p = _make_product(client, sku="MILK-2", category_id=cat["id"])
+    assert client.delete(f"/api/products/{p['id']}").status_code == 204
+    r = client.get(f"/api/categories/{cat['id']}/contents")
+    assert r.status_code == 200
+    assert r.json() == {"products": 1, "children": 1}
+    assert client.get("/api/categories/9999/contents").status_code == 404
+
+
+def test_category_contents_requires_products_view(client, db_session):
+    _admin(client, db_session)
+    cat = _make_category(client, name="Кровля")
+    role = Role(name="noaccess", is_system=False, is_super=False, permissions=["categories.manage"])
+    db_session.add(role)
+    db_session.commit()
+    _user(client, db_session, "noaccess1", "noaccess")
+    assert client.get(f"/api/categories/{cat['id']}/contents").status_code == 403
+
+
 def test_update_category_name_conflicts_with_live_sibling(client, db_session):
     _admin(client, db_session)
     _make_category(client, name="Кровля")

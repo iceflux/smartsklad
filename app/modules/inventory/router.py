@@ -8,7 +8,7 @@ from app.modules.auth.dependencies import ensure_permissions, get_current_user
 from app.modules.auth.permissions import Permission
 from app.modules.inventory.models import Category, PriceHistory, Product
 from app.modules.inventory.service import (
-    change_bulk_category, create_category, create_product, delete_category,
+    category_contents, change_bulk_category, create_category, create_product, delete_category,
     delete_product, export_products_csv, get_category_tree,
     list_products, restore_product, update_category, update_product,
 )
@@ -110,6 +110,14 @@ def api_delete_category(category_id: int, user=Depends(get_current_user), db=Dep
         delete_category(db, category_id, user)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.get("/categories/{category_id}/contents")
+def api_category_contents(category_id: int, user=Depends(get_current_user), db=Depends(get_db)):
+    _ensure(user, Permission.products_view)
+    if db.get(Category, category_id) is None:
+        raise HTTPException(status_code=404, detail="Категория не найдена")
+    return category_contents(db, category_id)
 
 
 @router.get("/products")

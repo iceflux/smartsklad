@@ -3,8 +3,9 @@ import json
 import pytest
 
 from app.modules.audit.models import AuditLog
-from app.modules.inventory.models import PriceHistory, Product
+from app.modules.inventory.models import Category, PriceHistory, Product
 from app.modules.inventory.service import (
+    category_contents,
     change_bulk_category,
     create_category,
     create_product,
@@ -23,6 +24,14 @@ from app.modules.inventory.service import (
 
 def _unit_id(db_session, name="шт"):
     return get_unit_by_name(db_session, name).id
+
+
+def _category(db_session, name, parent_id=None):
+    return create_category(db_session, name, parent_id)
+
+
+def _product(db_session, category_id, name="Товар"):
+    return create_product(db_session, name, f"SKU-{name}", category_id, _unit_id(db_session), 10.0, {}, 0)
 
 
 def test_create_category_creates_tree(db_session):
@@ -114,6 +123,83 @@ def test_delete_category_blocked_with_children_or_products(db_session):
         assert False
     except ValueError:
         pass
+
+
+def test_a_child_category_blocks_deletion_and_the_message_says_so(db_session):
+    root = _category(db_session, "Корень")
+    _category(db_session, "Ветка", parent_id=root.id)
+    with pytest.raises(ValueError, match="подкатегори"):
+        delete_category(db_session, root.id)
+
+
+def test_delete_category_message_names_products_and_children(db_session):
+    root = _category(db_session, "Корень")
+    _category(db_session, "Ветка", parent_id=root.id)
+    _product(db_session, root.id, "Гвоздь")
+    _product(db_session, root.id, "Шуруп")
+    with pytest.raises(ValueError) as e:
+        delete_category(db_session, root.id)
+    assert str(e.value) == (
+        "нельзя удалить категорию: в ней 2 товара и 1 подкатегория. "
+        "Сначала перенесите их в другую категорию или снимите с них категорию."
+    )
+
+
+@pytest.mark.parametrize("count,word", [
+    (1, "товар"), (2, "товара"), (5, "товаров"),
+    (11, "товаров"), (12, "товаров"), (13, "товаров"), (14, "товаров"),
+    (21, "товар"), (22, "товара"), (24, "товара"),
+])
+def test_delete_category_message_pluralises_products(db_session, count, word):
+    root = _category(db_session, f"Корень {count}")
+    for i in range(count):
+        _product(db_session, root.id, f"Товар {count}-{i}")
+    with pytest.raises(ValueError) as e:
+        delete_category(db_session, root.id)
+    assert f"в ней {count} {word}." in str(e.value)
+
+
+@pytest.mark.parametrize("count,word", [
+    (1, "подкатегория"), (2, "подкатегории"), (5, "подкатегорий"),
+    (11, "подкатегорий"), (12, "подкатегорий"), (13, "подкатегорий"), (14, "подкатегорий"),
+    (21, "подкатегория"), (22, "подкатегории"), (24, "подкатегории"),
+])
+def test_delete_category_message_pluralises_children(db_session, count, word):
+    root = _category(db_session, f"Корень {count}")
+    for i in range(count):
+        _category(db_session, f"Ветка {count}-{i}", parent_id=root.id)
+    with pytest.raises(ValueError) as e:
+        delete_category(db_session, root.id)
+    assert f"в ней {count} {word}." in str(e.value)
+
+
+def test_a_soft_deleted_product_does_not_block_deletion(db_session):
+    category = _category(db_session, "Категория")
+    _product(db_session, category.id)
+    delete_product(db_session, db_session.query(Product).filter_by(category_id=category.id).one().id)
+    delete_category(db_session, category.id)
+    db_session.expire_all()
+    assert db_session.get(Category, category.id).is_deleted is True
+
+
+def test_a_soft_deleted_child_does_not_block_deletion(db_session):
+    root = _category(db_session, "Корень")
+    child = _category(db_session, "Ветка", parent_id=root.id)
+    delete_category(db_session, child.id)
+    delete_category(db_session, root.id)
+    db_session.expire_all()
+    assert db_session.get(Category, root.id).is_deleted is True
+
+
+def test_category_contents_counts_only_live_rows(db_session):
+    root = _category(db_session, "Корень")
+    _category(db_session, "Ветка", parent_id=root.id)
+    gone = _category(db_session, "Ушедшая", parent_id=root.id)
+    delete_category(db_session, gone.id)
+    _product(db_session, root.id, "Живой")
+    _product(db_session, root.id, "Удалённый")
+    delete_product(db_session, db_session.query(Product).filter_by(name="Удалённый").one().id)
+    assert category_contents(db_session, root.id) == {"products": 1, "children": 1}
 
 
 def test_delete_and_restore_product(db_session):
