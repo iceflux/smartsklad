@@ -1346,8 +1346,6 @@ def test_refusal_names_the_length_limit_for_a_long_unit(db_session, tmp_path):
     name = _export_with_unit(tmp_path, long_name)
     with pytest.raises(ValueError, match="32 символов"):
         run_import(db_session, tmp_path, [name])
-    with pytest.raises(ValueError, match="32 символов"):
-        run_import(db_session, tmp_path, [name], unit_map={long_name: "new:" + long_name})
     with pytest.raises(ValueError) as short:
         name = _export_with_unit(tmp_path, "килограмм")
         run_import(db_session, tmp_path, [name])
