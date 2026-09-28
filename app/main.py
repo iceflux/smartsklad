@@ -189,6 +189,19 @@ def _category_label(category: Category | None) -> str:
     return category.name
 
 
+def _bracket_values(form: dict, prefix: str) -> dict:
+    return {key[len(prefix):-1]: value[0] for key, value in form.items()
+            if key.startswith(prefix) and key.endswith("]")}
+
+
+def _parse_unit_map(form: dict) -> dict:
+    names = {key: value.strip() for key, value in _bracket_values(form, "unit_name[").items()}
+    return {
+        key: "new:" + names[key] if value.startswith("new:") and names.get(key) else value
+        for key, value in _bracket_values(form, "unit_map[").items()
+    }
+
+
 def _import_page_context(user: User, folder: Path, *, report: dict | None = None,
                          selected: list[str] | None = None, msg: str | None = None) -> dict:
     return {
@@ -814,15 +827,18 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.import_manage)
         form = parse_qs((await request.body()).decode())
         filenames = form.get("filenames") or []
+        unit_map = _parse_unit_map(form)
         folder = resolve_folder(import_path(db))
+        units = list_units(db)
         try:
-            report = await run_in_threadpool(plan_import, db, folder, filenames)
+            report = await run_in_threadpool(plan_import, db, folder, filenames, unit_map=unit_map)
         except ValueError as err:
             return RedirectResponse("/import?" + urlencode({"msg": f"Ошибка: {err}"}),
                                     status_code=303)
         return templates.TemplateResponse(
             request, "import.html",
-            _import_page_context(user, folder, report=report, selected=filenames))
+            {**_import_page_context(user, folder, report=report, selected=filenames),
+             "units": units, "unit_map_decisions": unit_map})
 
     @app.post("/import/run")
     async def import_run_post(
@@ -835,9 +851,10 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.import_manage)
         form = parse_qs((await request.body()).decode())
         filenames = form.get("filenames") or []
+        unit_map = _parse_unit_map(form)
         try:
             report = await run_in_threadpool(run_import, db, resolve_folder(import_path(db)),
-                                             filenames, user=user)
+                                             filenames, user=user, unit_map=unit_map)
             key = (f"Импорт завершён: товаров {report['products']['created']}, "
                    f"клиентов {report['customers']['created']}, "
                    f"заказов {report['orders']['created']}, "

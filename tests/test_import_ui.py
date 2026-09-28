@@ -246,6 +246,135 @@ def test_run_post_does_not_block_the_event_loop(client, db_session, tmp_path, mo
     assert asyncio.run(scenario()) > 20
 
 
+def _export_unknown_unit(tmp_path, unit="килограмм"):
+    _export(tmp_path, {"products": [{"id": "p1", "name": "Гвоздь", "unit": unit}],
+                       "customers": [], "orders": []})
+
+
+def test_preview_shows_unit_resolution(client, db_session, tmp_path, monkeypatch):
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export_unknown_unit(tmp_path)
+    response = client.post("/import/preview", content=b"filenames=export.json", headers=FORM)
+    assert response.status_code == 200
+    assert "килограмм" in response.text
+    assert "name=\"unit_map[" in response.text
+    assert 'value="new:килограмм"' in response.text
+
+
+def test_unresolved_units_hide_the_run_form(client, db_session, tmp_path, monkeypatch):
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export_unknown_unit(tmp_path)
+    response = client.post("/import/preview", content=b"filenames=export.json", headers=FORM)
+    assert 'action="/import/run"' not in response.text
+    assert "Импортировать" not in response.text
+
+
+def test_run_refused_while_unit_unresolved(client, db_session, tmp_path, monkeypatch):
+    from app.modules.inventory.models import Product
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export_unknown_unit(tmp_path)
+    response = client.post("/import/run", content=b"filenames=export.json", headers=FORM,
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert "не заданы единицы: килограмм" in _msg(response)
+    assert db_session.query(Product).count() == 0
+
+
+def test_unit_map_creates_unit_and_unblocks_import(client, db_session, tmp_path, monkeypatch):
+    from app.modules.inventory.models import Product, Unit
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export_unknown_unit(tmp_path)
+    body = urlencode([("filenames", "export.json"),
+                      ("unit_map[килограмм]", "new:Килограмм")]).encode()
+    response = client.post("/import/run", content=body, headers=FORM, follow_redirects=False)
+    assert response.status_code == 303
+    assert "Ошибка" not in _msg(response)
+    assert db_session.query(Product).one().unit_rel.name == "Килограмм"
+    assert db_session.query(Unit).filter(Unit.name == "Килограмм").count() == 1
+
+
+def test_repreview_with_create_decision_writes_nothing(client, db_session, tmp_path, monkeypatch):
+    from app.modules.audit.models import AuditLog
+    from app.modules.inventory.models import Unit
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export_unknown_unit(tmp_path)
+    units_before = db_session.query(Unit).count()
+    body = urlencode([("filenames", "export.json"),
+                      ("unit_map[килограмм]", "new:Килограмм-новый")]).encode()
+    response = client.post("/import/preview", content=body, headers=FORM)
+    assert response.status_code == 200
+    assert 'name="unit_map[килограмм]" value="new:Килограмм-новый"' in response.text
+    assert 'action="/import/run"' in response.text
+    assert db_session.query(Unit).count() == units_before
+    assert db_session.query(Unit).filter(Unit.name == "Килограмм-новый").count() == 0
+    assert db_session.query(AuditLog).filter(AuditLog.action == "unit.create").count() == 0
+
+
+def test_new_unit_name_field_overrides_the_option_default(client, db_session, tmp_path, monkeypatch):
+    from app.modules.inventory.models import Product
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export_unknown_unit(tmp_path)
+    body = urlencode([("filenames", "export.json"),
+                      ("unit_map[килограмм]", "new:килограмм"),
+                      ("unit_name[килограмм]", "Килограмм")]).encode()
+    preview = client.post("/import/preview", content=body, headers=FORM)
+    assert 'name="unit_map[килограмм]" value="new:Килограмм"' in preview.text
+    response = client.post("/import/run", content=body, headers=FORM, follow_redirects=False)
+    assert "Ошибка" not in _msg(response)
+    assert db_session.query(Product).one().unit_rel.name == "Килограмм"
+
+
+def test_partial_decision_refused_and_writes_nothing(client, db_session, tmp_path, monkeypatch):
+    from app.modules.audit.models import AuditLog
+    from app.modules.inventory.models import Product, Unit
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export(tmp_path, {"products": [{"id": "p1", "name": "Гвоздь", "unit": "килограмм"},
+                                     {"id": "p2", "name": "Доска", "unit": "кубометр"}],
+                       "customers": [], "orders": []})
+    body = urlencode([("filenames", "export.json"),
+                      ("unit_map[килограмм]", "new:Килограмм-новый")]).encode()
+    response = client.post("/import/run", content=body, headers=FORM, follow_redirects=False)
+    assert response.status_code == 303
+    assert "не заданы единицы" in _msg(response)
+    assert db_session.query(Product).count() == 0
+    assert db_session.query(Unit).filter(Unit.name == "Килограмм-новый").count() == 0
+    assert db_session.query(AuditLog).filter(AuditLog.action == "unit.create").count() == 0
+    assert db_session.query(AuditLog).filter(AuditLog.action == "import.run").count() == 0
+
+
+def test_tricky_unit_names_survive_the_round_trip(client, db_session, tmp_path, monkeypatch):
+    from app.modules.inventory.models import Product, Unit
+    from app.modules.inventory.service import get_unit_by_name
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export(tmp_path, {"products": [{"id": "p1", "name": "Гвоздь", "unit": "1 000 шт"},
+                                     {"id": "p2", "name": "Доска", "unit": "куб.м"}],
+                       "customers": [], "orders": []})
+    preview = client.post("/import/preview", content=b"filenames=export.json", headers=FORM)
+    assert 'name="unit_map[1 000 шт]"' in preview.text
+    assert 'name="unit_map[куб.м]"' in preview.text
+    assert 'value="new:1 000 шт"' in preview.text
+    assert 'value="new:куб.м"' in preview.text
+    substitute = get_unit_by_name(db_session, "м3").id
+    body = urlencode([("filenames", "export.json"),
+                      ("unit_map[1 000 шт]", "new:1 000 шт"),
+                      ("unit_map[куб.м]", str(substitute))]).encode()
+    repreview = client.post("/import/preview", content=body, headers=FORM)
+    assert 'name="unit_map[1 000 шт]" value="new:1 000 шт"' in repreview.text
+    assert 'name="unit_map[куб.м]" value="%s"' % substitute in repreview.text
+    response = client.post("/import/run", content=body, headers=FORM, follow_redirects=False)
+    assert "Ошибка" not in _msg(response)
+    units = {p.name: p.unit_rel.name for p in db_session.query(Product).all()}
+    assert units == {"Гвоздь": "1 000 шт", "Доска": "м3"}
+
+
 def test_navigation_contains_import(client, db_session):
     _admin(client, db_session)
     text = client.get("/products").text
