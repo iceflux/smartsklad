@@ -109,7 +109,7 @@ def delete_category(db: Session, category_id: int, user=None) -> None:
     if parts:
         raise ValueError(
             "нельзя удалить категорию: в ней " + " и ".join(parts)
-            + ". Сначала перенесите их в другую категорию или снимите с них категорию."
+            + ". Перенесите или удалите содержимое."
         )
     cat.is_deleted = True
     db.commit()

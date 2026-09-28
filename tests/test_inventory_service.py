@@ -141,7 +141,7 @@ def test_delete_category_message_names_products_and_children(db_session):
         delete_category(db_session, root.id)
     assert str(e.value) == (
         "нельзя удалить категорию: в ней 2 товара и 1 подкатегория. "
-        "Сначала перенесите их в другую категорию или снимите с них категорию."
+        "Перенесите или удалите содержимое."
     )
 
 

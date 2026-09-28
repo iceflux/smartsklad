@@ -1,6 +1,7 @@
+from app.modules.audit.models import AuditLog
 from app.modules.auth.models import Role, User
 from app.modules.auth.service import get_role_by_name, hash_password, login
-from app.modules.inventory.models import Product
+from app.modules.inventory.models import Category, Product
 
 PASSWORD = "password123"
 
@@ -180,8 +181,13 @@ def test_delete_category_conflict_names_the_subcategory(client, db_session):
     assert r.status_code == 409
     assert r.json()["detail"] == (
         "нельзя удалить категорию: в ней 1 подкатегория. "
-        "Сначала перенесите их в другую категорию или снимите с них категорию."
+        "Перенесите или удалите содержимое."
     )
+    db_session.expire_all()
+    assert db_session.get(Category, cat["id"]).is_deleted is False
+    assert db_session.query(AuditLog).filter_by(
+        action="category.delete", entity_id=cat["id"]
+    ).count() == 0
 
 
 def test_delete_category_conflict_names_the_products(client, db_session):
@@ -192,7 +198,7 @@ def test_delete_category_conflict_names_the_products(client, db_session):
     assert r.status_code == 409
     assert r.json()["detail"] == (
         "нельзя удалить категорию: в ней 1 товар. "
-        "Сначала перенесите их в другую категорию или снимите с них категорию."
+        "Перенесите или удалите содержимое."
     )
 
 
@@ -207,8 +213,13 @@ def test_delete_category_conflict_names_both_with_counts(client, db_session):
     assert r.status_code == 409
     assert r.json()["detail"] == (
         "нельзя удалить категорию: в ней 2 товара и 2 подкатегории. "
-        "Сначала перенесите их в другую категорию или снимите с них категорию."
+        "Перенесите или удалите содержимое."
     )
+    db_session.expire_all()
+    assert db_session.get(Category, cat["id"]).is_deleted is False
+    assert db_session.query(AuditLog).filter_by(
+        action="category.delete", entity_id=cat["id"]
+    ).count() == 0
 
 
 def test_delete_category_ignores_a_soft_deleted_product(client, db_session):
@@ -219,6 +230,10 @@ def test_delete_category_ignores_a_soft_deleted_product(client, db_session):
     r = client.delete(f"/api/categories/{cat['id']}")
     assert r.status_code == 204
     assert client.get("/api/categories").json() == []
+    rows = db_session.query(AuditLog).filter_by(
+        action="category.delete", entity_id=cat["id"]
+    ).all()
+    assert len(rows) == 1 and rows[0].new_value == "Кровля"
 
 
 def test_category_contents_counts_only_live_rows(client, db_session):
@@ -244,6 +259,20 @@ def test_category_contents_requires_products_view(client, db_session):
     db_session.commit()
     _user(client, db_session, "noaccess1", "noaccess")
     assert client.get(f"/api/categories/{cat['id']}/contents").status_code == 403
+
+
+def test_category_contents_allows_products_view_alone(client, db_session):
+    _admin(client, db_session)
+    cat = _make_category(client, name="Кровля")
+    _make_product(client, category_id=cat["id"])
+    role = Role(name="readonly", is_system=False, is_super=False, permissions=["products.view"])
+    db_session.add(role)
+    db_session.commit()
+    user = _user(client, db_session, "readonly1", "readonly")
+    assert user.role.is_super is False
+    r = client.get(f"/api/categories/{cat['id']}/contents")
+    assert r.status_code == 200
+    assert r.json() == {"products": 1, "children": 0}
 
 
 def test_update_category_name_conflicts_with_live_sibling(client, db_session):
