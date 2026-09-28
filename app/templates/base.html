@@ -65,6 +65,9 @@
                     <a href="/roles" class="mr-4">Роли</a>
                     <a href="/users" class="mr-4">Пользователи</a>
                 {% endif %}
+                {% if can_manage_units|default(false) %}
+                    <a href="/units" class="mr-4">Единицы измерения</a>
+                {% endif %}
                 {% if can_view_audit|default(false) %}
                     <a href="/audit" class="mr-4">Журнал аудита</a>
                 {% endif %}

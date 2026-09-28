@@ -71,9 +71,12 @@ from app.modules.importer.router import router as importer_router
 from app.modules.importer.service import import_path, plan_import, run_import, save_import_path
 from app.modules.inventory.router import router as inventory_router
 from app.modules.orders.router import router as orders_router
+from app.modules.inventory.units_router import router as units_router
 from app.modules.inventory.service import (
     change_bulk_category,
+    create_unit,
     delete_product,
+    delete_unit,
     ensure_default_units,
     export_products_csv,
     get_category_tree,
@@ -82,6 +85,7 @@ from app.modules.inventory.service import (
     list_units,
     restore_product,
     update_product,
+    update_unit,
 )
 from app.modules.customers.service import (
     delete_customer,
@@ -241,6 +245,7 @@ def create_app() -> FastAPI:
     app.include_router(roles_router, prefix="/api")
     app.include_router(users_router, prefix="/api")
     app.include_router(inventory_router, prefix="/api")
+    app.include_router(units_router, prefix="/api")
     app.include_router(customers_router, prefix="/api")
     app.include_router(orders_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
@@ -1045,6 +1050,55 @@ def create_app() -> FastAPI:
             "tree": get_category_tree(db),
             **_page_context(user),
         })
+
+    @app.get("/units")
+    def units_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.units_manage)
+        return templates.TemplateResponse(request, "units.html", {
+            "title": "Единицы измерения", "user": user, "units": list_units(db),
+            "msg": request.query_params.get("msg"),
+            **_page_context(user),
+        })
+
+    @app.post("/units/new")
+    async def units_new_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.units_manage)
+        form = parse_qs((await request.body()).decode())
+        try:
+            create_unit(db, (form.get("name") or [""])[0], user=user)
+            key = "Единица добавлена"
+        except ValueError as err:
+            key = f"Ошибка: {err}"
+        return RedirectResponse("/units?" + urlencode({"msg": key}), status_code=303)
+
+    @app.post("/units/{unit_id}/edit")
+    async def units_edit_page(unit_id: int, request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.units_manage)
+        form = parse_qs((await request.body()).decode())
+        try:
+            update_unit(db, unit_id, (form.get("name") or [""])[0], user=user)
+            key = "Единица переименована"
+        except ValueError as err:
+            key = f"Ошибка: {err}"
+        return RedirectResponse("/units?" + urlencode({"msg": key}), status_code=303)
+
+    @app.post("/units/{unit_id}/delete")
+    def units_delete_page(unit_id: int, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        ensure_permissions(user, Permission.units_manage)
+        try:
+            delete_unit(db, unit_id, user=user)
+            key = "Единица удалена"
+        except ValueError as err:
+            key = f"Ошибка: {err}"
+        return RedirectResponse("/units?" + urlencode({"msg": key}), status_code=303)
 
     @app.get("/customers")
     def customers_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
