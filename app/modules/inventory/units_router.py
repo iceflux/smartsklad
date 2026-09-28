@@ -16,7 +16,7 @@ class UnitIn(BaseModel):
 
 
 def _out(unit) -> dict:
-    return {"id": unit.id, "name": unit.name, "is_deleted": unit.is_deleted}
+    return {"id": unit.id, "name": unit.name}
 
 
 @router.get("/units")
