@@ -30,6 +30,17 @@
             <label class="block mb-1">По</label>
             <input type="date" name="date_to" value="">
         </div>
+        <div>
+            <label class="block mb-1">Строк в топе</label>
+            <input type="number" name="top_limit" min="1" max="500" value="{{ top_limit }}"
+                   list="top_values" class="border p-2 w-28">
+            <datalist id="top_values">
+                <option value="5"></option>
+                <option value="10"></option>
+                <option value="20"></option>
+                <option value="50"></option>
+            </datalist>
+        </div>
         <button class="border px-3 py-2">Показать</button>
     </form>
     <p class="mb-4 text-sm text-gray-600">Показано: {{ metrics.date_from.strftime('%d.%m.%Y') }} — {{ metrics.date_to.strftime('%d.%m.%Y') }}</p>

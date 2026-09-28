@@ -67,6 +67,51 @@ def _seed(db_session, day=None, amount=100.0, number="00001"):
     return o
 
 
+def _six_ordered_tops(db_session):
+    for i in range(1, 7):
+        c = Customer(name=f"Клиент-{i}", personal_discount=0.0)
+        p = Product(name=f"Гвозди-{i}", sku=f"SKU-TOP-{i}", unit_id=_unit_id(db_session),
+                    price=10.0, rest=50)
+        db_session.add(c)
+        db_session.add(p)
+        db_session.commit()
+        o = Order(number=f"{i:05d}", customer_id=c.id, status="done", discount=0.0,
+                  total_amount=float(100 - i),
+                  created_at=datetime.combine(date.today(), time(12, 0)))
+        db_session.add(o)
+        db_session.commit()
+        o.items.append(OrderItem(product_id=p.id, product_name_snapshot=p.name,
+                                 product_price_snapshot=10.0, discount_snapshot=0.0,
+                                 quantity=i, unit_snapshot="шт"))
+        db_session.commit()
+
+
+def test_dashboard_api_top_limit_slices_both_tops(client, db_session):
+    _admin(client, db_session)
+    _six_ordered_tops(db_session)
+    r = client.get("/api/dashboard/sales?preset=all&top_limit=2")
+    assert r.status_code == 200
+    body = r.json()
+    assert [row["name"] for row in body["top_products"]] == ["Гвозди-6", "Гвозди-5"]
+    assert [row["name"] for row in body["top_customers"]] == ["Клиент-1", "Клиент-2"]
+
+
+def test_dashboard_api_top_limit_defaults_to_ten(client, db_session):
+    _admin(client, db_session)
+    _six_ordered_tops(db_session)
+    body = client.get("/api/dashboard/sales?preset=all").json()
+    assert len(body["top_products"]) == 6
+    assert len(body["top_customers"]) == 6
+
+
+def test_dashboard_api_top_limit_range(client, db_session):
+    _admin(client, db_session)
+    for bad in ("abc", "0", "501", "-1", ""):
+        assert client.get(f"/api/dashboard/sales?top_limit={bad}").status_code == 422
+    for good in ("1", "500"):
+        assert client.get(f"/api/dashboard/sales?top_limit={good}").status_code == 200
+
+
 def test_dashboard_api_requires_auth(client, db_session):
     r = client.get("/api/dashboard/sales")
     assert r.status_code == 401

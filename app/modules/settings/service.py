@@ -10,6 +10,7 @@ DEFAULT_PASSWORD_CHARSET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ234
 DEFAULT_PASSWORD_LENGTH = 12
 MIN_STOCK_DAYS_KEY = "min_stock_days"
 DEFAULT_MIN_STOCK_DAYS = 14
+DASHBOARD_TOP_LIMIT_KEY = "dashboard_top_limit"
 REPORT_ENABLED_KEY = "report_email_enabled"
 REPORT_PERIOD_KEY = "report_email_period"
 REPORT_TIME_KEY = "report_email_time"
@@ -25,6 +26,7 @@ def _defaults() -> dict[str, str]:
         USER_PASSWORD_CHARSET_KEY: DEFAULT_PASSWORD_CHARSET,
         USER_PASSWORD_LENGTH_KEY: str(DEFAULT_PASSWORD_LENGTH),
         MIN_STOCK_DAYS_KEY: str(DEFAULT_MIN_STOCK_DAYS),
+        DASHBOARD_TOP_LIMIT_KEY: "10",
         REPORT_ENABLED_KEY: "false",
         REPORT_PERIOD_KEY: "week",
         REPORT_TIME_KEY: "09:00",
