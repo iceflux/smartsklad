@@ -102,12 +102,18 @@ def api_update_category(category_id: int, payload: CategoryIn, user=Depends(get_
 
 
 @router.delete("/categories/{category_id}", status_code=204)
-def api_delete_category(category_id: int, user=Depends(get_current_user), db=Depends(get_db)):
+def api_delete_category(
+    category_id: int,
+    reassign_to: Optional[int] = Query(None),
+    resolve: bool = Query(False),
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
     _ensure(user, Permission.categories_manage)
     if db.get(Category, category_id) is None:
         raise HTTPException(status_code=404, detail="Категория не найдена")
     try:
-        delete_category(db, category_id, user)
+        delete_category(db, category_id, user, resolve=resolve, reassign_to=reassign_to)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 

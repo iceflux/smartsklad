@@ -1,3 +1,5 @@
+import json
+
 from app.modules.audit.models import AuditLog
 from app.modules.auth.models import Role, User
 from app.modules.auth.service import get_role_by_name, hash_password, login
@@ -234,6 +236,59 @@ def test_delete_category_ignores_a_soft_deleted_product(client, db_session):
         action="category.delete", entity_id=cat["id"]
     ).all()
     assert len(rows) == 1 and rows[0].new_value == "Кровля"
+
+
+def test_delete_category_reassigns_the_contents(client, db_session):
+    _admin(client, db_session)
+    root = _make_category(client, name="Кровля")
+    child = _make_category(client, name="Черепица", parent_id=root["id"])
+    target = _make_category(client, name="Целевая")
+    p = _make_product(client, category_id=root["id"])
+    r = client.delete(f"/api/categories/{root['id']}?resolve=true&reassign_to={target['id']}")
+    assert r.status_code == 204
+    db_session.expire_all()
+    assert db_session.get(Category, root["id"]).is_deleted is True
+    assert db_session.get(Category, child["id"]).parent_id == target["id"]
+    assert db_session.get(Product, p["id"]).category_id == target["id"]
+    entry = db_session.query(AuditLog).filter_by(
+        action="category.reassign", entity_id=root["id"]
+    ).one()
+    assert json.loads(entry.new_value) == {"to": target["id"], "products": 1, "children": 1}
+
+
+def test_delete_category_resolve_without_a_target_clears_the_contents(client, db_session):
+    _admin(client, db_session)
+    root = _make_category(client, name="Кровля")
+    child = _make_category(client, name="Черепица", parent_id=root["id"])
+    p = _make_product(client, category_id=root["id"])
+    r = client.delete(f"/api/categories/{root['id']}?resolve=true")
+    assert r.status_code == 204
+    db_session.expire_all()
+    assert db_session.get(Category, root["id"]).is_deleted is True
+    assert db_session.get(Category, child["id"]).parent_id is None
+    assert db_session.get(Product, p["id"]).category_id is None
+
+
+def test_delete_category_rejects_an_unknown_reassign_target(client, db_session):
+    _admin(client, db_session)
+    root = _make_category(client, name="Кровля")
+    _make_product(client, category_id=root["id"])
+    r = client.delete(f"/api/categories/{root['id']}?resolve=true&reassign_to=9999")
+    assert r.status_code == 409
+    assert r.json()["detail"] == "категория назначения не найдена"
+    db_session.expire_all()
+    assert db_session.get(Category, root["id"]).is_deleted is False
+
+
+def test_delete_category_reassigns_into_a_descendant_is_refused(client, db_session):
+    _admin(client, db_session)
+    root = _make_category(client, name="Кровля")
+    child = _make_category(client, name="Черепица", parent_id=root["id"])
+    r = client.delete(f"/api/categories/{root['id']}?resolve=true&reassign_to={child['id']}")
+    assert r.status_code == 409
+    assert "потомка" in r.json()["detail"]
+    db_session.expire_all()
+    assert db_session.get(Category, root["id"]).is_deleted is False
 
 
 def test_category_contents_counts_only_live_rows(client, db_session):

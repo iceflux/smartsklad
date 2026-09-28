@@ -46,14 +46,68 @@
     </table>
 
     {% if can_manage %}
+    <script id="categories-data" type="application/json">{{ tree | tojson }}</script>
     <script>
+        var tree = JSON.parse(document.getElementById('categories-data').textContent);
+
+        function moveTargetsFor(id) {
+            var out = [];
+            tree.forEach(function (root) {
+                var own = String(root.id) === id;
+                if (!own) { out.push(root); }
+                (root.children || []).forEach(function (child) {
+                    if (!own && String(child.id) !== id) { out.push(child); }
+                });
+            });
+            return out;
+        }
+
+        function plural(n, one, few, many) {
+            if (n % 10 === 1 && n % 100 !== 11) { return one; }
+            if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) { return few; }
+            return many;
+        }
+
+        function removeCategory(url) {
+            fetch(url, {method: 'DELETE'}).then(function (res) {
+                if (res.ok) { window.location.href = '/categories?msg=Категория удалена'; }
+                else { res.json().then(function (d) { alert(d.detail || 'Ошибка'); }); }
+            });
+        }
+
         document.querySelectorAll('.delete-category').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                if (!confirm('Удалить категорию?')) { return; }
-                fetch('/api/categories/' + btn.dataset.id, {method: 'DELETE'}).then(function (res) {
-                    if (res.ok) { window.location.href = '/categories?msg=Категория удалена'; }
-                    else { res.json().then(function (d) { alert(d.detail || 'Ошибка'); }); }
-                });
+                var id = btn.dataset.id;
+                var base = '/api/categories/' + id;
+                fetch(base + '/contents').then(function (r) { return r.json(); })
+                  .then(function (c) {
+                      var url = base + '?resolve=true';
+                      if (!c.products && !c.children) {
+                          if (confirm('Удалить категорию?')) { removeCategory(url); }
+                          return;
+                      }
+                      var parts = [];
+                      if (c.products) { parts.push(c.products + ' ' + plural(c.products, 'товар', 'товара', 'товаров')); }
+                      if (c.children) { parts.push(c.children + ' ' + plural(c.children, 'подкатегория', 'подкатегории', 'подкатегорий')); }
+                      var targets = moveTargetsFor(id);
+                      var answer;
+                      if (targets.length) {
+                          var lines = ['В категории: ' + parts.join(' и ') + '.', 'Куда перенести? Введите номер:'];
+                          targets.forEach(function (t, i) { lines.push('  ' + (i + 1) + ' — ' + t.name); });
+                          lines.push('Пусто — снять категорию с товаров и подкатегорий.');
+                          answer = prompt(lines.join('\n'), '');
+                          if (answer === null) { return; }
+                      } else if (!confirm('В категории: ' + parts.join(' и ') + '.'
+                          + '\nДругой категории нет — снять категорию с товаров и подкатегорий?')) {
+                          return;
+                      }
+                      if (answer && answer.trim() !== '') {
+                          var pick = targets[Number(answer.trim()) - 1];
+                          if (!pick) { alert('Нет категории с таким номером'); return; }
+                          url += '&reassign_to=' + pick.id;
+                      }
+                      removeCategory(url);
+                  });
             });
         });
     </script>

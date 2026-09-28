@@ -146,3 +146,14 @@ def test_product_edit_page_renders_zero_min_stock(client, db_session):
     r = client.get(f"/products/{pid}/edit")
     assert r.status_code == 200
     assert 'name="min_stock" type="number" min="0" value="0"' in r.text
+
+
+def test_categories_page_offers_where_to_move_the_contents(client, db_session):
+    _admin(client, db_session)
+    client.post("/api/categories", json={"name": "Продукты", "parent_id": None})
+    r = client.get("/categories")
+    assert r.status_code == 200
+    assert 'id="categories-data"' in r.text
+    assert "resolve=true" in r.text
+    assert "reassign_to=" in r.text
+    assert "onclick" not in r.text

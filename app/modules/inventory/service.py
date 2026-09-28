@@ -94,11 +94,7 @@ def category_contents(db: Session, category_id: int) -> dict:
     }
 
 
-def delete_category(db: Session, category_id: int, user=None) -> None:
-    cat = db.get(Category, category_id)
-    if cat is None:
-        raise ValueError("category not found")
-    counts = category_contents(db, cat.id)
+def _not_empty_message(counts: dict) -> str:
     parts = []
     if counts["products"]:
         n = counts["products"]
@@ -106,15 +102,51 @@ def delete_category(db: Session, category_id: int, user=None) -> None:
     if counts["children"]:
         n = counts["children"]
         parts.append(f"{n} {_plural(n, 'подкатегория', 'подкатегории', 'подкатегорий')}")
-    if parts:
-        raise ValueError(
-            "нельзя удалить категорию: в ней " + " и ".join(parts)
-            + ". Перенесите или удалите содержимое."
+    return (
+        "нельзя удалить категорию: в ней " + " и ".join(parts)
+        + ". Перенесите или удалите содержимое."
+    )
+
+
+def delete_category(db: Session, category_id: int, user=None, *, resolve: bool = False,
+                    reassign_to: int | None = None) -> None:
+    cat = db.get(Category, category_id)
+    if cat is None:
+        raise ValueError("category not found")
+    counts = category_contents(db, cat.id)
+    blocked = bool(counts["products"] or counts["children"])
+    if blocked and not resolve:
+        raise ValueError(_not_empty_message(counts))
+    target = None
+    moved_products = moved_children = 0
+    if blocked:
+        destination = None
+        if reassign_to is not None:
+            target = db.get(Category, reassign_to)
+            if target is None or target.is_deleted:
+                raise ValueError("категория назначения не найдена")
+            if reassign_to == cat.id or reassign_to in _descendant_ids(db, cat.id):
+                raise ValueError("нельзя перенести категорию в саму себя или в своего потомка")
+            destination = target.id
+        moved_products = (
+            db.query(Product)
+            .filter(Product.category_id == cat.id, Product.is_deleted.is_(False))
+            .update({Product.category_id: destination}, synchronize_session=False)
+        )
+        moved_children = (
+            db.query(Category)
+            .filter(Category.parent_id == cat.id, Category.is_deleted.is_(False))
+            .update({Category.parent_id: destination}, synchronize_session=False)
         )
     cat.is_deleted = True
     db.commit()
     log_action(db, action="category.delete", entity_type="category", entity_id=cat.id,
                new_value=cat.name, user_id=user.id if user else None)
+    if target is not None:
+        log_action(db, action="category.reassign", entity_type="category", entity_id=cat.id,
+                   new_value=json.dumps({"to": target.id, "products": moved_products,
+                                         "children": moved_children}, ensure_ascii=False),
+                   user_id=user.id if user else None)
 
 
 def list_categories(db: Session) -> list[Category]:

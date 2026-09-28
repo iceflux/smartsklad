@@ -202,6 +202,77 @@ def test_category_contents_counts_only_live_rows(db_session):
     assert category_contents(db_session, root.id) == {"products": 1, "children": 1}
 
 
+def test_reassigning_moves_products_and_children(db_session):
+    root = _category(db_session, "Корень")
+    child = _category(db_session, "Ветка", parent_id=root.id)
+    target = _category(db_session, "Целевая")
+    product = _product(db_session, root.id, "Гвоздь")
+
+    delete_category(db_session, root.id, resolve=True, reassign_to=target.id)
+
+    db_session.expire_all()
+    assert db_session.get(Product, product.id).category_id == target.id
+    assert db_session.get(Category, child.id).parent_id == target.id
+    assert db_session.get(Category, root.id).is_deleted is True
+    entry = db_session.query(AuditLog).filter_by(
+        action="category.reassign", entity_id=root.id
+    ).one()
+    assert json.loads(entry.new_value) == {"to": target.id, "products": 1, "children": 1}
+
+
+def test_resolving_clears_the_category_from_products_and_children(db_session):
+    root = _category(db_session, "Корень")
+    child = _category(db_session, "Ветка", parent_id=root.id)
+    product = _product(db_session, root.id, "Гвоздь")
+
+    delete_category(db_session, root.id, resolve=True)
+
+    db_session.expire_all()
+    assert db_session.get(Product, product.id).category_id is None
+    assert db_session.get(Category, child.id).parent_id is None
+    assert db_session.get(Category, root.id).is_deleted is True
+    assert db_session.query(AuditLog).filter_by(
+        action="category.reassign", entity_id=root.id
+    ).count() == 0
+
+
+def test_reassign_to_alone_does_not_release_the_block(db_session):
+    root = _category(db_session, "Корень")
+    target = _category(db_session, "Целевая")
+    product = _product(db_session, root.id, "Гвоздь")
+    with pytest.raises(ValueError, match="нельзя удалить категорию"):
+        delete_category(db_session, root.id, reassign_to=target.id)
+    db_session.expire_all()
+    assert db_session.get(Category, root.id).is_deleted is False
+    assert db_session.get(Product, product.id).category_id == root.id
+
+
+def test_cannot_reassign_into_itself_or_a_descendant(db_session):
+    root = _category(db_session, "Корень")
+    child = _category(db_session, "Ветка", parent_id=root.id)
+    product = _product(db_session, root.id, "Гвоздь")
+    for target in (root.id, child.id):
+        with pytest.raises(ValueError, match="себя|потомка"):
+            delete_category(db_session, root.id, resolve=True, reassign_to=target)
+    db_session.expire_all()
+    assert db_session.get(Category, root.id).is_deleted is False
+    assert db_session.get(Product, product.id).category_id == root.id
+    assert db_session.get(Category, child.id).parent_id == root.id
+
+
+def test_reassign_to_an_unknown_or_deleted_category_is_refused(db_session):
+    root = _category(db_session, "Корень")
+    product = _product(db_session, root.id, "Гвоздь")
+    gone = _category(db_session, "Ушедшая")
+    delete_category(db_session, gone.id)
+    for target in (9999, gone.id):
+        with pytest.raises(ValueError, match="не найдена"):
+            delete_category(db_session, root.id, resolve=True, reassign_to=target)
+    db_session.expire_all()
+    assert db_session.get(Category, root.id).is_deleted is False
+    assert db_session.get(Product, product.id).category_id == root.id
+
+
 def test_delete_and_restore_product(db_session):
     p = create_product(db_session, "Гвоздь", "G-1", None, _unit_id(db_session, "кг"), 5.0, {}, 0)
     delete_product(db_session, p.id)
