@@ -201,7 +201,7 @@ def _bracket_values(form: dict, prefix: str) -> dict:
 def _parse_unit_map(form: dict) -> dict:
     names = {key: value.strip() for key, value in _bracket_values(form, "unit_name[").items()}
     return {
-        key: "new:" + names[key] if value.startswith("new:") and names.get(key) else value
+        key: "new:" + names[key] if value == "new:" and key in names else value
         for key, value in _bracket_values(form, "unit_map[").items()
     }
 

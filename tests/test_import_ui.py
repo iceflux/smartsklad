@@ -51,6 +51,11 @@ def _substitute_ids(html, raw_unit):
     return re.findall(r'<option value="(\d+)">', block)
 
 
+def _create_option_value(html, raw_unit):
+    block = html.split(f'name="unit_map[{raw_unit}]"')[1].split("</select>")[0]
+    return re.search(r'<option value="([^"]*)"', block).group(1)
+
+
 def test_page_redirects_anonymous(client):
     response = client.get("/import", follow_redirects=False)
     assert response.status_code == 303
@@ -265,7 +270,8 @@ def test_preview_shows_unit_resolution(client, db_session, tmp_path, monkeypatch
     assert response.status_code == 200
     assert "килограмм" in response.text
     assert "name=\"unit_map[" in response.text
-    assert 'value="new:килограмм"' in response.text
+    assert '<option value="new:">' in response.text
+    assert 'name="unit_name[килограмм]" value="килограмм"' in response.text
 
 
 def test_unresolved_units_hide_the_run_form(client, db_session, tmp_path, monkeypatch):
@@ -327,13 +333,33 @@ def test_new_unit_name_field_overrides_the_option_default(client, db_session, tm
     _use_folder(monkeypatch, tmp_path)
     _export_unknown_unit(tmp_path)
     body = urlencode([("filenames", "export.json"),
-                      ("unit_map[килограмм]", "new:килограмм"),
+                      ("unit_map[килограмм]", "new:"),
                       ("unit_name[килограмм]", "Килограмм")]).encode()
     preview = client.post("/import/preview", content=body, headers=FORM)
     assert 'name="unit_map[килограмм]" value="new:Килограмм"' in preview.text
     response = client.post("/import/run", content=body, headers=FORM, follow_redirects=False)
     assert "Ошибка" not in _msg(response)
     assert db_session.query(Product).one().unit_rel.name == "Килограмм"
+
+
+def test_cleared_new_unit_name_refuses_the_import(client, db_session, tmp_path, monkeypatch):
+    from app.modules.inventory.models import Product, Unit
+    from app.modules.inventory.service import DEFAULT_UNITS
+    _admin(client, db_session)
+    _use_folder(monkeypatch, tmp_path)
+    _export_unknown_unit(tmp_path)
+    html = client.post("/import/preview", content=b"filenames=export.json", headers=FORM).text
+    body = urlencode([("filenames", "export.json"),
+                      ("unit_map[килограмм]", _create_option_value(html, "килограмм"))]).encode()
+    preview = client.post("/import/preview", content=body, headers=FORM,
+                          follow_redirects=False)
+    assert preview.status_code == 303
+    assert "название единицы обязательно" in _msg(preview)
+    response = client.post("/import/run", content=body, headers=FORM, follow_redirects=False)
+    assert response.status_code == 303
+    assert "название единицы обязательно" in _msg(response)
+    assert db_session.query(Product).count() == 0
+    assert db_session.query(Unit).count() == len(DEFAULT_UNITS)
 
 
 def test_partial_decision_refused_and_writes_nothing(client, db_session, tmp_path, monkeypatch):
@@ -366,11 +392,12 @@ def test_tricky_unit_names_survive_the_round_trip(client, db_session, tmp_path, 
     preview = client.post("/import/preview", content=b"filenames=export.json", headers=FORM)
     assert 'name="unit_map[1 000 шт]"' in preview.text
     assert 'name="unit_map[куб.м]"' in preview.text
-    assert 'value="new:1 000 шт"' in preview.text
-    assert 'value="new:куб.м"' in preview.text
+    assert 'name="unit_name[1 000 шт]" value="1 000 шт"' in preview.text
+    assert 'name="unit_name[куб.м]" value="куб.м"' in preview.text
     substitute = get_unit_by_name(db_session, "м3").id
     body = urlencode([("filenames", "export.json"),
-                      ("unit_map[1 000 шт]", "new:1 000 шт"),
+                      ("unit_map[1 000 шт]", "new:"),
+                      ("unit_name[1 000 шт]", "1 000 шт"),
                       ("unit_map[куб.м]", str(substitute))]).encode()
     repreview = client.post("/import/preview", content=body, headers=FORM)
     assert 'name="unit_map[1 000 шт]" value="new:1 000 шт"' in repreview.text

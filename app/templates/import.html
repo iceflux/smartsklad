@@ -94,7 +94,7 @@
                         <p class="font-semibold">1С: {{ u }}</p>
                         <label class="text-sm">Подставить
                             <select name="unit_map[{{ u }}]" class="border px-2 py-1">
-                                <option value="new:{{ u }}">создать новую «{{ u }}»</option>
+                                <option value="new:">создать новую «{{ u }}»</option>
                                 {% for e in units %}
                                 <option value="{{ e.id }}">— {{ e.name }}</option>
                                 {% endfor %}
