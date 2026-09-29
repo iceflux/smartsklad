@@ -82,10 +82,10 @@ def create_order(
         order.items.append(OrderItem(
             product_id=product.id,
             product_name_snapshot=product.name,
-            product_price_snapshot=product.price,
+            product_price_snapshot=spec.get("price_snapshot", product.price),
             discount_snapshot=_validate_discount(spec["discount"], "item discount"),
             quantity=int(spec["quantity"]),
-            unit_snapshot=product.unit,
+            unit_snapshot=spec.get("unit_snapshot", product.unit),
         ))
     recalc_total(order)
     db.commit()
@@ -225,7 +225,8 @@ def copy_order(db, order_id, *, user=None):
     if src is None:
         raise ValueError("order not found")
     items = [
-        {"product_id": it.product_id, "quantity": it.quantity, "discount": it.discount_snapshot}
+        {"product_id": it.product_id, "quantity": it.quantity, "discount": it.discount_snapshot,
+         "price_snapshot": it.product_price_snapshot, "unit_snapshot": it.unit_snapshot}
         for it in src.items
     ]
     return create_order(db, customer_id=src.customer_id,

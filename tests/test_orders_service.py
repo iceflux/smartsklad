@@ -132,6 +132,9 @@ def test_update_order_and_copy(env):
     assert clone.status == "new"
     assert len(clone.items) == 1
     assert clone.items[0].quantity == 3
+    assert clone.items[0].product_price_snapshot == 20.0
+    assert clone.items[0].unit_snapshot == "шт"
+    assert clone.total_amount == round(3 * 20 * 0.9, 2)
 
 
 def test_list_and_stats(env):
@@ -194,6 +197,21 @@ def _imported_order(db_session, customer, lines):
         item.unit_snapshot = unit
     db_session.flush()
     return order
+
+
+def test_copying_an_order_carries_the_live_snapshots_of_the_source(
+    db_session, plain_customer,
+):
+    product = _imported_product(db_session, "Гвозди", "NAIL-1")
+    order = _imported_order(db_session, plain_customer, [(product, 100.0, "кг")])
+    db_session.commit()
+
+    clone = copy_order(db_session, order.id)
+
+    assert clone.id != order.id
+    assert clone.items[0].product_price_snapshot == 100.0
+    assert clone.items[0].unit_snapshot == "кг"
+    assert clone.total_amount == 100.0
 
 
 def test_saving_an_order_keeps_the_price_snapshot_when_the_product_is_unchanged(
