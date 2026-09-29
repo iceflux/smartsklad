@@ -2,7 +2,7 @@ import pytest
 
 from app.modules.inventory.models import Product
 from app.modules.orders.service import (
-    CustomerNotFound, OrderNotFound,
+    CustomerNotFoundError, OrderNotFoundError,
     create_order, change_status, update_order, delete_order, restore_order,
     copy_order, list_orders, customer_order_stats,
 )
@@ -65,7 +65,7 @@ def test_create_order_next_number(db_session, product, customer):
 
 
 def test_create_order_invalid_customer(db_session, product):
-    with pytest.raises(CustomerNotFound) as exc:
+    with pytest.raises(CustomerNotFoundError) as exc:
         create_order(db_session, customer_id=999,
                      items=[{"product_id": product.id, "quantity": 1, "discount": 0.0}])
     assert str(exc.value) == "клиент не найден"
@@ -77,7 +77,7 @@ def test_a_missing_order_is_reported_by_type(db_session):
                  lambda: delete_order(db_session, 999),
                  lambda: restore_order(db_session, 999),
                  lambda: update_order(db_session, 999, discount=0.0)):
-        with pytest.raises(OrderNotFound) as exc:
+        with pytest.raises(OrderNotFoundError) as exc:
             call()
         assert str(exc.value) == "заказ не найден"
 
@@ -391,7 +391,7 @@ def test_saving_an_order_still_refuses_another_client(db_session, product, plain
     lines = [{"product_id": product.id, "quantity": 1, "discount": 0.0}]
 
     for other_id in (gone.id, 9999):
-        with pytest.raises(CustomerNotFound) as exc:
+        with pytest.raises(CustomerNotFoundError) as exc:
             update_order(db_session, order.id, customer_id=other_id, items=lines)
         assert str(exc.value) == "клиент не найден"
     assert db_session.get(Order, order.id).customer_id == plain_customer.id

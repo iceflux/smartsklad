@@ -17,11 +17,11 @@ NEXT_POSSIBLE = {
 }
 
 
-class OrderNotFound(ValueError):
+class OrderNotFoundError(ValueError):
     pass
 
 
-class CustomerNotFound(ValueError):
+class CustomerNotFoundError(ValueError):
     pass
 
 
@@ -35,7 +35,7 @@ def _validate_discount(value: float, field: str = "скидка") -> float:
 def _get_customer(db: Session, customer_id: int) -> Customer:
     customer = db.get(Customer, customer_id)
     if customer is None or customer.is_deleted:
-        raise CustomerNotFound("клиент не найден")
+        raise CustomerNotFoundError("клиент не найден")
     return customer
 
 
@@ -148,7 +148,7 @@ def _return_stock(db: Session, order: Order) -> None:
 def change_status(db: Session, order_id: int, new_status: str, *, user=None) -> Order:
     order = db.get(Order, order_id)
     if order is None or order.deleted_at is not None:
-        raise OrderNotFound("заказ не найден")
+        raise OrderNotFoundError("заказ не найден")
     if new_status not in VALID_STATUSES:
         raise ValueError("неизвестный статус")
     if new_status == order.status:
@@ -170,7 +170,7 @@ def change_status(db: Session, order_id: int, new_status: str, *, user=None) -> 
 def update_order(db, order_id, *, customer_id=None, discount=None, items=None, user=None):
     order = db.get(Order, order_id)
     if order is None or order.deleted_at is not None:
-        raise OrderNotFound("заказ не найден")
+        raise OrderNotFoundError("заказ не найден")
     if order.status == "done":
         raise ValueError("нельзя редактировать выполненный заказ")
     old_value = json.dumps(_order_dict(order), ensure_ascii=False)
@@ -211,7 +211,7 @@ def update_order(db, order_id, *, customer_id=None, discount=None, items=None, u
 def delete_order(db, order_id, *, user=None):
     order = db.get(Order, order_id)
     if order is None or order.deleted_at is not None:
-        raise OrderNotFound("заказ не найден")
+        raise OrderNotFoundError("заказ не найден")
     order.deleted_at = datetime.now()
     db.commit()
     log_action(db, action="order.delete", entity_type="order", entity_id=order_id,
@@ -221,7 +221,7 @@ def delete_order(db, order_id, *, user=None):
 def restore_order(db, order_id, *, user=None):
     order = db.get(Order, order_id)
     if order is None or order.deleted_at is None:
-        raise OrderNotFound("заказ не найден")
+        raise OrderNotFoundError("заказ не найден")
     order.deleted_at = None
     db.commit()
     log_action(db, action="order.restore", entity_type="order", entity_id=order_id,
@@ -231,7 +231,7 @@ def restore_order(db, order_id, *, user=None):
 def copy_order(db, order_id, *, user=None):
     src = db.get(Order, order_id)
     if src is None:
-        raise OrderNotFound("заказ не найден")
+        raise OrderNotFoundError("заказ не найден")
     items = [
         {"product_id": it.product_id, "quantity": it.quantity, "discount": it.discount_snapshot,
          "price_snapshot": it.product_price_snapshot, "unit_snapshot": it.unit_snapshot}

@@ -306,6 +306,7 @@ def test_copy_page_reports_a_deleted_client_as_404(client, db_session):
     assert client.delete(f"/api/customers/{c.id}").status_code == 204
     r = client.post(f"/orders/{order.id}/copy", follow_redirects=False)
     assert r.status_code == 404
+    assert r.json()["detail"] == "Заказ не найден"
 
 
 def test_copy_page_shows_the_stock_error_instead_of_404(client, db_session):
@@ -352,7 +353,7 @@ def test_status_page_still_404s_for_a_missing_order(client, db_session):
     r = client.post("/orders/9999/status", data={"status": "processing"},
                     follow_redirects=False)
     assert r.status_code == 404
-    assert "Заказ не найден" in r.text
+    assert r.json()["detail"] == "заказ не найден"
 
 
 def test_status_page_shows_a_forbidden_transition_as_a_message(client, db_session):

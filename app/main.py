@@ -98,8 +98,8 @@ from app.modules.customers.service import (
 from app.modules.orders.service import (
     NEXT_POSSIBLE,
     VALID_STATUSES,
-    CustomerNotFound,
-    OrderNotFound,
+    CustomerNotFoundError,
+    OrderNotFoundError,
     change_status,
     copy_order,
     create_order,
@@ -1455,7 +1455,7 @@ def create_app() -> FastAPI:
             update_order(db, order_id, customer_id=int(raw_customer), discount=discount,
                          items=items, user=user)
         except ValueError as e:
-            if isinstance(e, (OrderNotFound, CustomerNotFound)):
+            if isinstance(e, (OrderNotFoundError, CustomerNotFoundError)):
                 raise HTTPException(status_code=404, detail=str(e))
             return RedirectResponse(f"/orders/{order_id}?" + urlencode({"msg": str(e)}), status_code=303)
         return RedirectResponse(f"/orders/{order_id}?msg=Заказ обновлён", status_code=303)
@@ -1470,8 +1470,8 @@ def create_app() -> FastAPI:
         try:
             change_status(db, order_id, new_status, user=user)
         except ValueError as e:
-            if isinstance(e, OrderNotFound):
-                raise HTTPException(status_code=404, detail="Заказ не найден")
+            if isinstance(e, OrderNotFoundError):
+                raise HTTPException(status_code=404, detail=str(e))
             return RedirectResponse(f"/orders/{order_id}?" + urlencode({"msg": str(e)}), status_code=303)
         return RedirectResponse(f"/orders/{order_id}?msg=Статус обновлён", status_code=303)
 
@@ -1483,7 +1483,7 @@ def create_app() -> FastAPI:
         try:
             order = copy_order(db, order_id, user=user)
         except ValueError as e:
-            if isinstance(e, (OrderNotFound, CustomerNotFound)):
+            if isinstance(e, (OrderNotFoundError, CustomerNotFoundError)):
                 raise HTTPException(status_code=404, detail="Заказ не найден")
             return RedirectResponse(f"/orders/{order_id}?" + urlencode({"msg": str(e)}),
                                     status_code=303)
