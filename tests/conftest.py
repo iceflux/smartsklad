@@ -28,24 +28,33 @@ from app.modules.settings.service import ensure_default_settings
 from app.modules.inventory.service import ensure_default_units
 
 
-class _EngineTrap:
-    def __getattr__(self, name):
-        raise AssertionError(f"тест не должен обращаться к app.db.engine.{name}")
+class _AppDbTrap:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __getattr__(self, attr):
+        raise AssertionError(f"тест не должен обращаться к app.db.{self.name}.{attr}")
+
+    def __call__(self, *args, **kwargs):
+        raise AssertionError(f"тест не должен звать app.db.{self.name}()")
 
 
 @pytest.fixture(autouse=True)
-def no_app_engine(monkeypatch, db_engine):
-    """Заглушка на engine приложения автоусная, а не в одном тесте.
+def no_app_engine(monkeypatch):
+    """Ловушка на базу приложения автоусная, а не в одном тесте.
 
-    Подмены одного SessionLocal недостаточно: запись через engine.connect() её
-    обошла бы и ушла в рабочую базу из .env, оставив тест зелёным. Ловша
-    нужна каждому тесту, а не только проверке генератора демо-данных: иначе
-    первая же новая запись в app.db.engine из чужого модуля уедет в базу
-    владельца раньше, чем это заметит структурная проверка исходника.
+    Подмены одного SessionLocal на тестовый движок недостаточно: она и
+    перенаправляла бы запись вместо того, чтобы её ловить. Здесь оба атрибута
+    `app.db` падают, поэтому первая же новая запись из чужого модуля видна
+    сразу, а не уезжает ни в рабочую базу из `.env`, ни в тестовую.
+
+    Ловится только обращение по атрибуту. Три модуля связывают их при импорте
+    и потому ловшу обходят: `app/main.py:18`, `app/modules/backup/service.py:15`
+    (его `perform_restore` зовёт `SessionLocal()` на строке 290) и
+    `app/modules/backup/scheduler.py:4`.
     """
-    monkeypatch.setattr("app.db.SessionLocal",
-                        lambda: sessionmaker(bind=db_engine, autoflush=False)())
-    monkeypatch.setattr("app.db.engine", _EngineTrap())
+    monkeypatch.setattr("app.db.SessionLocal", _AppDbTrap("SessionLocal"))
+    monkeypatch.setattr("app.db.engine", _AppDbTrap("engine"))
     yield
 
 
