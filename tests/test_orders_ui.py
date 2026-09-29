@@ -176,6 +176,28 @@ def test_edit_form_saves_a_soft_deleted_line_beside_a_live_one(client, db_sessio
     assert [(i.product_id, i.quantity) for i in saved.items] == [(p.id, 2), (live.id, 5)]
 
 
+def test_edit_form_save_keeps_an_imported_price_over_http(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    p.price = 0.0
+    order.items[0].product_price_snapshot = 250.0
+    order.items[0].unit_snapshot = "кг"
+    db_session.commit()
+    assert p.price == 0.0
+    product_ids, quantities, discounts = _posted_lines(
+        client.get(f"/orders/{order.id}/edit").text)
+    r = client.post(f"/orders/{order.id}/edit", data={
+        "customer_id": str(c.id), "discount": "0",
+        "product_id": product_ids, "quantity": quantities, "line_discount": discounts,
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    db_session.expire_all()
+    saved = db_session.get(Order, order.id)
+    assert saved.items[0].product_price_snapshot == 250.0
+    assert saved.items[0].unit_snapshot == "кг"
+    assert saved.total_amount == 500.0
+
+
 def test_edit_form_saves_an_order_of_a_soft_deleted_client(client, db_session):
     _admin(client, db_session)
     p, c, order = _seed(db_session)
@@ -270,6 +292,34 @@ def test_orders_ui_actions(client, db_session):
     assert r.status_code == 303
     r = client.get("/orders")
     assert "00001" in r.text
+
+
+def test_copy_page_reports_a_missing_order_as_404(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/orders/9999/copy", follow_redirects=False)
+    assert r.status_code == 404
+
+
+def test_copy_page_reports_a_deleted_client_as_404(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    assert client.delete(f"/api/customers/{c.id}").status_code == 204
+    r = client.post(f"/orders/{order.id}/copy", follow_redirects=False)
+    assert r.status_code == 404
+
+
+def test_copy_page_shows_the_stock_error_instead_of_404(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    db_session.expire_all()
+    db_session.get(Product, p.id).rest = 1
+    db_session.commit()
+    r = client.post(f"/orders/{order.id}/copy", follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote_plus
+    assert f"/orders/{order.id}" in unquote_plus(r.headers["location"])
+    assert "insufficient stock" in unquote_plus(r.headers["location"])
+    assert db_session.query(Order).count() == 1
 
 
 def test_orders_new_form_submit_creates(client, db_session):

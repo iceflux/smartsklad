@@ -1480,8 +1480,11 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.orders_create)
         try:
             order = copy_order(db, order_id, user=user)
-        except ValueError:
-            raise HTTPException(status_code=404, detail="Заказ не найден")
+        except ValueError as e:
+            if str(e) in ("order not found", "customer not found"):
+                raise HTTPException(status_code=404, detail="Заказ не найден")
+            return RedirectResponse(f"/orders/{order_id}?" + urlencode({"msg": str(e)}),
+                                    status_code=303)
         return RedirectResponse(f"/orders/{order.id}?msg=Заказ скопирован", status_code=303)
 
     @app.post("/orders/{order_id}/delete")
