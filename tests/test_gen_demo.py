@@ -1,5 +1,7 @@
 import json
+import random
 from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy.orm import sessionmaker
 
@@ -11,7 +13,20 @@ from app.modules.inventory.models import Product
 from app.modules.inventory.service import DEFAULT_UNITS
 from app.modules.orders.models import Order
 from app.modules.orders.service import create_order
-from scripts.gen_demo import PRODUCTS, VARIANTS, VARIANTS_FEMININE, build_payload, main, write_payload
+from scripts import gen_demo
+from scripts.gen_demo import (
+    DEFAULT_CUSTOMERS,
+    DEFAULT_ORDERS,
+    DEFAULT_PRODUCTS,
+    DEFAULT_SEED,
+    PRODUCTS,
+    SIZES,
+    VARIANTS,
+    VARIANTS_FEMININE,
+    build_payload,
+    main,
+    write_payload,
+)
 
 SEED = 7
 
@@ -98,6 +113,26 @@ def test_product_adjective_agrees_with_the_noun(tmp_path):
         assert adjective in (VARIANTS if not nouns[noun] else VARIANTS_FEMININE)
 
 
+def test_names_are_unique_at_the_default_size(tmp_path):
+    payload = json.loads(_file(tmp_path, products=DEFAULT_PRODUCTS, customers=DEFAULT_CUSTOMERS,
+                              orders=5, seed=DEFAULT_SEED).read_bytes().decode("utf-8"))
+    names = [row["name"] for row in payload["products"]]
+    customers = [row["name"] for row in payload["customers"]]
+    assert len(set(names)) == len(names) == DEFAULT_PRODUCTS
+    assert len(set(customers)) == len(customers) == DEFAULT_CUSTOMERS
+
+
+def test_the_raw_name_space_collides_at_the_default_size():
+    rng = random.Random(DEFAULT_SEED)
+    raw = []
+    for _ in range(DEFAULT_PRODUCTS):
+        noun, feminine, _units = PRODUCTS[rng.randrange(len(PRODUCTS))]
+        variants = VARIANTS_FEMININE if feminine else VARIANTS
+        raw.append(f"{noun} {variants[rng.randrange(len(variants))]} "
+                   f"{SIZES[rng.randrange(len(SIZES))]}")
+    assert len(set(raw)) < len(raw), "пробелов имён больше нет, гвард можно убрать"
+
+
 def test_generated_file_passes_the_real_import(db_session, tmp_path):
     path = _file(tmp_path, products=40, customers=15, orders=60)
     preview = plan_import(db_session, tmp_path, [path.name])
@@ -138,9 +173,21 @@ def test_a_new_order_goes_through_on_a_demo_product(db_session, tmp_path):
     assert db_session.query(Order).filter(Order.id == order.id).one().items[0].quantity == 3
 
 
+class _EngineTrap:
+    def __getattr__(self, name):
+        raise AssertionError(f"генератор не должен обращаться к engine.{name}")
+
+
 def test_the_generator_writes_nothing_to_the_database(db_session, db_engine, tmp_path, monkeypatch):
+    """Проверяет, что main() не пишет в базу.
+
+    Ловушка на app.db.engine добавлена потому, что подмены одного SessionLocal
+    недостаточно: запись через engine.connect() её обошла бы, и такая запись
+    ушла бы в рабочую базу из .env, оставив тест зелёным.
+    """
     monkeypatch.setattr("app.db.SessionLocal",
                         lambda: sessionmaker(bind=db_engine, autoflush=False)())
+    monkeypatch.setattr("app.db.engine", _EngineTrap())
     assert main(["--products", "30", "--customers", "10", "--orders", "40",
                  "--out", str(tmp_path / "demo.json"), "--seed", "3"]) == 0
     assert (tmp_path / "demo.json").is_file()
@@ -148,6 +195,13 @@ def test_the_generator_writes_nothing_to_the_database(db_session, db_engine, tmp
     assert db_session.query(Customer).count() == 0
     assert db_session.query(Order).count() == 0
     assert db_session.query(AuditLog).count() == 0
+
+
+def test_the_generator_source_names_no_database():
+    source = Path(gen_demo.__file__).read_text(encoding="utf-8")
+    for token in ("SessionLocal", "create_engine", "get_db", "engine", "sessionmaker",
+                  "from app.db", "app.db"):
+        assert token not in source, f"в скрипте появился доступ к базе: {token}"
 
 
 def test_command_line_writes_the_file_it_is_asked_for(tmp_path):

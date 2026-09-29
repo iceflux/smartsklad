@@ -94,6 +94,10 @@ MAX_LINES = 6
 MAX_QUANTITY = 25
 MIN_REST = 50
 MAX_REST = 500
+DEFAULT_PRODUCTS = 200
+DEFAULT_CUSTOMERS = 60
+DEFAULT_ORDERS = 400
+DEFAULT_SEED = 1
 
 
 def _digits(rng: random.Random, length: int) -> str:
@@ -203,12 +207,15 @@ def main(argv: list[str] | None = None) -> int:
         description="Сгенерировать демо-данные .json в формате импорта из 1С. "
                     "Файл потом импортируется через /import как обычная выгрузка 1С. "
                     "Базу данных скрипт не трогает.")
-    parser.add_argument("--products", type=int, default=200, help="сколько товаров")
-    parser.add_argument("--customers", type=int, default=60, help="сколько клиентов")
-    parser.add_argument("--orders", type=int, default=400, help="сколько заказов")
-    parser.add_argument("--out", required=True, help="путь к .json, по умолчанию импорта: "
-                                                     ".system_folder/1c_export/demo.json")
-    parser.add_argument("--seed", type=int, default=1, help="зерно: тот же seed даёт тот же файл")
+    parser.add_argument("--products", type=int, default=DEFAULT_PRODUCTS, help="сколько товаров")
+    parser.add_argument("--customers", type=int, default=DEFAULT_CUSTOMERS, help="сколько клиентов")
+    parser.add_argument("--orders", type=int, default=DEFAULT_ORDERS, help="сколько заказов")
+    parser.add_argument("--out", required=True, help="путь к .json, который потом положите "
+                                                     "в папку импорта, например "
+                                                     ".system_folder/1c_export/demo.json (обязателен)")
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED,
+                        help="зерно: один seed даёт один и тот же файл в пределах одного дня, "
+                             "потому что даты заказов считаются от сегодняшнего")
     args = parser.parse_args(argv)
 
     payload = build_payload(args.products, args.customers, args.orders, args.seed)

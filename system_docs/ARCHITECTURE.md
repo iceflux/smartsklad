@@ -18,7 +18,7 @@
 
 - `tests/` на **pytest** + `httpx` (`TestClient`).
 - БД в тестах — **SQLite in-memory** (`StaticPool`), таблицы создаются из `Base.metadata` в `tests/conftest.py` — `pytest` запускается одной командой, Docker не нужен.
-- Сейчас: 917 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, units, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI, printing service/API, notifications service/API/UI + PDF-вложение, AI service/API/UI, dashboard service/API/UI, backup, importer + необязательные price/rest, генератор демо-данных, удаление категорий + node-харнесс, офлайн-Tailwind, ограничение частоты входа + текст 429 на странице входа). Один пропуск — `test_rejects_symlink_pointing_outside_folder`: на Windows без права `SeCreateSymbolicLink` он скипается. node-харнессы `tests/test_categories_page_js.py` и `tests/test_login_page_js.py` пропускаются без node, то есть без node будет 914 passed, 4 skipped. Известный флейк: `tests/test_backup_service.py::test_create_backup_serializes_concurrent_name_reservation` (подробности в корневом `AGENTS.md`, раздел «Тесты»).
+- Сейчас: 920 тестов (health, audit, auth models/service/api, roles/users API+UI, password recovery, inventory service/API/UI, units, audit UI, index page, customers service/API/UI, orders service/API/UI, settings service/API/UI, printing service/API, notifications service/API/UI + PDF-вложение, AI service/API/UI, dashboard service/API/UI, backup, importer + необязательные price/rest, генератор демо-данных, удаление категорий + node-харнесс, офлайн-Tailwind, ограничение частоты входа + текст 429 на странице входа). Один пропуск — `test_rejects_symlink_pointing_outside_folder`: на Windows без права `SeCreateSymbolicLink` он скипается. node-харнессы `tests/test_categories_page_js.py` и `tests/test_login_page_js.py` пропускаются без node, то есть без node будет 917 passed, 4 skipped. Известный флейк: `tests/test_backup_service.py::test_create_backup_serializes_concurrent_name_reservation` (подробности в корневом `AGENTS.md`, раздел «Тесты»).
 
 ## Генератор демо-данных (`scripts/gen_demo.py`)
 
@@ -27,7 +27,8 @@
 - CLI: `--products 200 --customers 60 --orders 400 --out PATH --seed 1`. Один `random.Random(seed)` на весь файл, поэтому один seed даёт байт в байт одинаковый файл (в течение дня: даты заказов отсчитываются от `date.today()`).
 - Единицы берутся из `DEFAULT_UNITS`, а не выдумываются: любая единица вне справочника остановила бы импорт экраном решения, и демо не запустилось бы с первого раза.
 - **Базу не трогает** — ни одного запроса; запись в неё принадлежит исключительно экрану импорта. Это закреплено тестом, который подменяет `app.db.SessionLocal` на тестовый движок и требует ноль строк в `products`/`customers`/`orders`/`audit_log`.
-- Товары и клиенты получают `price` и `rest`, а импорт их читает (см. ниже) — без этого новый заказ на демо-товаре отклонялся бы проверкой остатка.
+- Товары получают `price` и `rest`, а импорт их читает — без этого новый заказ на демо-товаре отклонялся бы проверкой остатка. Механизм чтения — откат `_price`/`_rest` к нулю, а не дефолты `ProductPlan` (они недостижимы).
+- Имена товаров и клиентов дедуплицируются на генерации (`if name in seen`, при совпадении добавляется `№<индекс>`): без этого гварда при дефолтном размере 200/60 импорт схлопывает часть товаров в `matched`, потому что сопоставление идёт по названию. Среднее число коллизий при снятом гварде — 5.0 на n=200 по 20 seed'ам, 2478.7 на n=5000; ни один из 200 seed'ов при n=200 не даёт нуля, поэтому гвард закреплён тестом на дефолтном размере.
 
 ## Аутентификация и роли (`app/modules/auth/`)
 
