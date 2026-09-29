@@ -32,13 +32,6 @@ def test_get_settings(client, db_session):
     assert any(s["key"] == "stock_track_default" and s["value"] == "true" for s in r.json())
 
 
-def test_get_settings_exposes_the_dashboard_top_limit_default(client, db_session):
-    _admin(client, db_session)
-    r = client.get("/api/settings")
-    assert r.status_code == 200
-    assert any(s["key"] == "dashboard_top_limit" and s["value"] == "10" for s in r.json())
-
-
 def test_put_settings_requires_permission(client, db_session):
     _login(client, db_session, "seller1", "seller")  # seller не имеет settings.change
     r = client.put("/api/settings/stock-track", json={"value": "false"})

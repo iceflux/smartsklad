@@ -112,7 +112,6 @@ from app.modules.settings.router import router as settings_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.notifications.models import NotificationLog
 from app.modules.settings.service import (
-    DASHBOARD_TOP_LIMIT_KEY,
     DEFAULT_MIN_STOCK_DAYS,
     DEFAULT_PASSWORD_CHARSET,
     DEFAULT_PASSWORD_LENGTH,
@@ -606,17 +605,12 @@ def create_app() -> FastAPI:
             return RedirectResponse(
                 "/dashboard?" + urlencode({"preset": preset, "msg": str(e)}), status_code=303
             )
-        stored_limit = get_int_setting(db, DASHBOARD_TOP_LIMIT_KEY, 10)
-        if not 1 <= stored_limit <= 500:
-            stored_limit = 10
         try:
             top_limit = int(request.query_params["top_limit"])
         except (KeyError, ValueError):
-            top_limit = stored_limit
+            top_limit = 10
         if not 1 <= top_limit <= 500:
-            top_limit = stored_limit
-        if top_limit != stored_limit:
-            set_setting(db, DASHBOARD_TOP_LIMIT_KEY, str(top_limit), user=user)
+            top_limit = 10
         metrics = dashboard_metrics(db, start, end, top_limit=top_limit)
         return templates.TemplateResponse(request, "dashboard.html", {
             "title": "Аналитика продаж", "user": user,

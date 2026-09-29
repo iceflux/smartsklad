@@ -1,14 +1,12 @@
 import re
 from datetime import date, datetime, time, timedelta
 
-from app.modules.audit.models import AuditLog
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
 from app.modules.inventory.service import get_unit_by_name
-from app.modules.settings.service import DASHBOARD_TOP_LIMIT_KEY, get_setting, set_setting
 
 
 def _unit_id(db_session):
@@ -54,13 +52,6 @@ def _input_tag(html, name):
 def _input_value(html, name):
     value = re.search(r'value="([^"]*)"', _input_tag(html, name))
     return value.group(1) if value else ""
-
-
-def _settings_updates(db_session):
-    return (db_session.query(AuditLog)
-            .filter(AuditLog.action == "settings.update",
-                    AuditLog.entity_type == "settings")
-            .count())
 
 
 def _six_ordered_tops(db_session):
@@ -198,44 +189,12 @@ def test_dashboard_page_top_limit_shortens_both_tops(client, db_session):
         assert f"Клиент-{i}" not in r.text
 
 
-def test_dashboard_page_top_limit_is_remembered(client, db_session):
-    _admin(client, db_session)
-    r = client.get("/dashboard?preset=all&top_limit=4")
-    assert _input_value(r.text, "top_limit") == "4"
-    db_session.expire_all()
-    assert get_setting(db_session, DASHBOARD_TOP_LIMIT_KEY) == "4"
-    assert _input_value(client.get("/dashboard?preset=all").text, "top_limit") == "4"
-
-
 def test_dashboard_page_top_limit_ignores_garbage_and_out_of_range(client, db_session):
     _admin(client, db_session)
     for bad in ("abc", "1.5", "0", "999"):
         r = client.get(f"/dashboard?preset=all&top_limit={bad}")
+        assert r.status_code == 200
         assert _input_value(r.text, "top_limit") == "10", bad
-    db_session.expire_all()
-    assert get_setting(db_session, DASHBOARD_TOP_LIMIT_KEY) == "10"
-
-
-def test_dashboard_page_writes_the_setting_only_when_it_changed(client, db_session):
-    _admin(client, db_session)
-    before = _settings_updates(db_session)
-    assert client.get("/dashboard?preset=all&top_limit=5").status_code == 200
-    db_session.expire_all()
-    assert _settings_updates(db_session) == before + 1
-    row = (db_session.query(AuditLog)
-           .filter(AuditLog.action == "settings.update",
-                   AuditLog.entity_type == "settings")
-           .order_by(AuditLog.id.desc()).first())
-    assert (row.old_value, row.new_value) == ("10", "5")
-    assert client.get("/dashboard?preset=all").status_code == 200
-    assert client.get("/dashboard?preset=all&top_limit=5").status_code == 200
-    db_session.expire_all()
-    assert _settings_updates(db_session) == before + 1
-
-
-def test_dashboard_page_top_limit_ignores_a_garbage_stored_setting(client, db_session):
-    _admin(client, db_session)
-    set_setting(db_session, DASHBOARD_TOP_LIMIT_KEY, "999", user=None)
     assert _input_value(client.get("/dashboard?preset=all").text, "top_limit") == "10"
 
 
@@ -244,10 +203,12 @@ def test_dashboard_page_offers_the_top_limit_control(client, db_session):
     r = client.get("/dashboard?preset=all&top_limit=20")
     tag = _input_tag(r.text, "top_limit")
     assert 'type="number"' in tag
+    assert 'id="top_limit"' in tag
     assert 'min="1"' in tag
     assert 'max="500"' in tag
     assert 'list="top_values"' in tag
     assert 'value="20"' in tag
+    assert '<label class="block mb-1" for="top_limit">' in r.text
     datalist = re.search(r'<datalist id="top_values">(.*?)</datalist>', r.text, re.S)
     assert datalist is not None
     for suggested in ("5", "10", "20", "50"):

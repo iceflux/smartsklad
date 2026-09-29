@@ -31,8 +31,8 @@
             <input type="date" name="date_to" value="">
         </div>
         <div>
-            <label class="block mb-1">Строк в топе</label>
-            <input type="number" name="top_limit" min="1" max="500" value="{{ top_limit }}"
+            <label class="block mb-1" for="top_limit">Строк в топе</label>
+            <input type="number" id="top_limit" name="top_limit" min="1" max="500" value="{{ top_limit }}"
                    list="top_values" class="border p-2 w-28">
             <datalist id="top_values">
                 <option value="5"></option>
