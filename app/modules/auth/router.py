@@ -9,6 +9,7 @@ from app.db import get_db
 from app.modules.auth.dependencies import SESSION_COOKIE, require_permissions
 from app.modules.auth.models import User
 from app.modules.auth.permissions import Permission
+from app.modules.auth.ratelimit import clear_failures, register_failure, too_many_attempts
 from app.modules.auth.service import (
     admin_reset_password,
     login,
@@ -20,6 +21,10 @@ from app.modules.auth.service import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def _client_key(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -28,9 +33,19 @@ class LoginRequest(BaseModel):
 @router.post("/login")
 def api_login(body: LoginRequest, request: Request, db: Annotated[Session, Depends(get_db)]):
     ip = request.client.host if request.client else None
+    key = ip or "unknown"
+    wait = too_many_attempts(key)
+    if wait is not None:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Слишком много попыток входа. Повторите через {wait} с.",
+            headers={"Retry-After": str(wait)},
+        )
     session = login(db, body.username, body.password, ip)
     if session is None:
+        register_failure(key)
         raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+    clear_failures(key)
     response = Response(status_code=204)
     response.set_cookie(
         SESSION_COOKIE,
@@ -64,7 +79,20 @@ class ResetRequest(BaseModel):
 
 
 @router.post("/password-recovery", status_code=202)
-def api_recover(body: RecoveryRequest, db: Annotated[Session, Depends(get_db)]):
+def api_recover(
+    body: RecoveryRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+):
+    key = _client_key(request)
+    wait = too_many_attempts(key)
+    if wait is not None:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Слишком много запросов на восстановление пароля. Повторите через {wait} с.",
+            headers={"Retry-After": str(wait)},
+        )
+    register_failure(key)
     request_password_reset(db, body.username_or_email)
     return {"ok": True}
 

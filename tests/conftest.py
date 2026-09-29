@@ -22,9 +22,17 @@ import app.modules.settings.models  # noqa: F401
 import app.modules.notifications.models  # noqa: F401
 import app.modules.backup.models  # noqa: F401
 import app.modules.importer.models  # noqa: F401
+from app.modules.auth.ratelimit import reset_state
 from app.modules.auth.service import ensure_default_roles
 from app.modules.settings.service import ensure_default_settings
 from app.modules.inventory.service import ensure_default_units
+
+
+@pytest.fixture(autouse=True)
+def clean_ratelimit():
+    reset_state()
+    yield
+    reset_state()
 
 
 @pytest.fixture
