@@ -5,19 +5,30 @@ ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = ROOT / "app" / "templates"
 BUILT_CSS = ROOT / "app" / "static" / "app.css"
 
+"""`NOT_STYLED_BY_TAILWIND` holds only bare js hooks, never a tailwind utility.
+If one of these names ever gains a real utility next to the querySelectorAll,
+delete it from the mapping so the purge test starts checking it again."""
+
 NOT_STYLED_BY_TAILWIND = {
     "delete-category": "js hook, document.querySelectorAll('.delete-category') in categories.html",
     "role-form": "js hook, document.querySelectorAll('.role-form') in users.html",
 }
 
+CLASS_ATTR = re.compile(r"""class=(["'])(.*?)\1""", re.DOTALL)
+
+
+def _class_attrs():
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        text = path.read_text(encoding="utf-8")
+        for match in CLASS_ATTR.finditer(text):
+            yield path, match.group(2)
+
 
 def _classes_in_templates():
     found = {}
-    for path in sorted(TEMPLATES.rglob("*.html")):
-        text = path.read_text(encoding="utf-8")
-        for match in re.finditer(r'class="([^"]*)"', text):
-            for name in re.sub(r"{%.*?%}", " ", match.group(1)).split():
-                found.setdefault(name, path.relative_to(ROOT))
+    for path, value in _class_attrs():
+        for name in re.sub(r"{%.*?%}", " ", value).split():
+            found.setdefault(name, path.relative_to(ROOT))
     return found
 
 
@@ -38,10 +49,8 @@ def test_every_template_class_is_in_the_built_stylesheet():
 
 
 def test_no_template_composes_a_class_name_from_a_variable():
-    for path in sorted(TEMPLATES.rglob("*.html")):
-        text = path.read_text(encoding="utf-8")
-        for match in re.finditer(r'class="([^"]*)"', text):
-            assert "{{" not in match.group(1), f"{path.name}: {match.group(1)}"
+    for path, value in _class_attrs():
+        assert "{{" not in value, f"{path.name}: {value}"
 
 
 def test_templates_do_not_load_the_tailwind_play_cdn():
