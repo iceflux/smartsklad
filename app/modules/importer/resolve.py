@@ -19,6 +19,8 @@ class ProductPlan:
     existing_id: int | None
     create: bool
     sku: str | None = None
+    price: float = 0.0
+    rest: int = 0
 
 
 @dataclass
@@ -55,6 +57,20 @@ def _name_index(db: Session, model) -> dict[str, object]:
 def _unit(value) -> str:
     raw = value.strip() if isinstance(value, str) else ""
     return raw or "шт"
+
+
+def _price(value) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _rest(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 class SkuFactory:
@@ -95,7 +111,8 @@ def resolve_products(db: Session, rows: list[dict]) -> tuple[list[ProductPlan], 
             plans.append(ProductPlan(source_id, name, unit, found.id, False))
             stats["matched"] += 1
             continue
-        plans.append(ProductPlan(source_id, name, unit, None, True, next_sku()))
+        plans.append(ProductPlan(source_id, name, unit, None, True, next_sku(),
+                                 _price(row.get("price")), _rest(row.get("rest"))))
         stats["created"] += 1
     return plans, stats
 

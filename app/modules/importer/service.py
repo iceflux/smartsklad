@@ -141,7 +141,7 @@ def _write_products(db: Session, plans, units: dict) -> dict:
         if not plan.create:
             continue
         product = Product(name=plan.name, sku=plan.sku, unit_id=_resolved_unit(units, plan.unit).id,
-                          price=0.0, rest=0, track_rest=True)
+                          price=plan.price, rest=plan.rest, track_rest=True)
         db.add(product)
         db.flush()
         created[plan.source_id] = product.id

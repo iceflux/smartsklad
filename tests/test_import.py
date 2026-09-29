@@ -1420,3 +1420,30 @@ def test_preview_of_known_units_writes_no_audit_row(db_session, tmp_path):
     assert db_session.query(AuditLog).count() == 0
 
 
+def test_product_price_and_rest_are_taken_from_the_file(db_session, tmp_path):
+    _export(tmp_path, products=[{"id": "p1", "name": "Гвоздь", "unit": "шт",
+                                 "price": 12.5, "rest": 40}])
+    run_import(db_session, tmp_path, ["export.json"])
+    product = db_session.query(Product).one()
+    assert product.price == 12.5
+    assert product.rest == 40
+
+
+def test_product_price_and_rest_stay_zero_without_the_fields(db_session, tmp_path):
+    _export(tmp_path, products=[{"id": "p1", "name": "Гвоздь", "unit": "шт"}])
+    run_import(db_session, tmp_path, ["export.json"])
+    product = db_session.query(Product).one()
+    assert product.price == 0.0
+    assert product.rest == 0
+
+
+@pytest.mark.parametrize("field,value", [("price", "не число"), ("rest", "не число")])
+def test_unusable_product_price_or_rest_falls_back_to_zero(db_session, tmp_path, field, value):
+    row = {"id": "p1", "name": "Гвоздь", "unit": "шт", "price": 12.5, "rest": 40}
+    row[field] = value
+    _export(tmp_path, products=[row])
+    run_import(db_session, tmp_path, ["export.json"])
+    product = db_session.query(Product).one()
+    assert getattr(product, field) == 0
+
+
