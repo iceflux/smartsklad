@@ -317,8 +317,92 @@ def test_copy_page_shows_the_stock_error_instead_of_404(client, db_session):
     r = client.post(f"/orders/{order.id}/copy", follow_redirects=False)
     assert r.status_code == 303
     from urllib.parse import unquote_plus
-    assert f"/orders/{order.id}" in unquote_plus(r.headers["location"])
-    assert "insufficient stock" in unquote_plus(r.headers["location"])
+    location = unquote_plus(r.headers["location"])
+    assert location == (
+        f"/orders/{order.id}?msg=не хватает остатка у товара Гвозди: нужно 2, есть 1")
+    assert db_session.query(Order).count() == 1
+
+
+def test_edit_page_still_404s_for_a_missing_order(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    r = client.post("/orders/9999/edit", data={
+        "customer_id": str(c.id), "discount": "0",
+        "product_id": [str(p.id)], "quantity": ["1"], "line_discount": ["0"],
+    }, follow_redirects=False)
+    assert r.status_code == 404
+    assert "заказ не найден" in r.text
+
+
+def test_edit_page_still_404s_in_russian_for_a_missing_client(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    r = client.post(f"/orders/{order.id}/edit", data={
+        "customer_id": "9999", "discount": "0",
+        "product_id": [str(p.id)], "quantity": ["1"], "line_discount": ["0"],
+    }, follow_redirects=False)
+    assert r.status_code == 404
+    assert "клиент не найден" in r.text
+    db_session.expire_all()
+    assert db_session.get(Order, order.id).customer_id == c.id
+
+
+def test_status_page_still_404s_for_a_missing_order(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/orders/9999/status", data={"status": "processing"},
+                    follow_redirects=False)
+    assert r.status_code == 404
+    assert "Заказ не найден" in r.text
+
+
+def test_status_page_shows_a_forbidden_transition_as_a_message(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    r = client.post(f"/orders/{order.id}/status", data={"status": "done"},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote_plus
+    location = unquote_plus(r.headers["location"])
+    assert location == f"/orders/{order.id}?msg=недопустимый переход статуса"
+
+
+def test_new_page_shows_each_validation_error_in_russian(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    from urllib.parse import unquote_plus
+
+    r = client.post("/orders/new", data={
+        "customer_id": str(c.id), "discount": "0",
+        "product_id": [str(p.id), str(p.id)],
+        "quantity": ["1", "1"], "line_discount": ["0", "0"],
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert unquote_plus(r.headers["location"]) == "/orders/new?msg=товар в заказе повторяется"
+
+    r = client.post("/orders/new", data={
+        "customer_id": str(c.id), "discount": "0",
+        "product_id": [str(p.id)], "quantity": ["0"], "line_discount": ["0"],
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert unquote_plus(r.headers["location"]) == (
+        "/orders/new?msg=количество должно быть не меньше 1")
+
+    r = client.post("/orders/new", data={
+        "customer_id": str(c.id), "discount": "0",
+        "product_id": [str(p.id)], "quantity": ["11"], "line_discount": ["0"],
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert unquote_plus(r.headers["location"]) == (
+        "/orders/new?msg=не хватает остатка у товара Гвозди: нужно 11, есть 10")
+
+    r = client.post("/orders/new", data={
+        "customer_id": "9999", "discount": "0",
+        "product_id": [str(p.id)], "quantity": ["1"], "line_discount": ["0"],
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert unquote_plus(r.headers["location"]) == "/orders/new?msg=клиент не найден"
+
+    db_session.expire_all()
     assert db_session.query(Order).count() == 1
 
 

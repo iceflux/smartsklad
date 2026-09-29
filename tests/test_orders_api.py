@@ -80,3 +80,47 @@ def test_api_order_denied_without_right(client, db_session, env):
     assert client.post("/api/orders", json={
         "customer_id": 1, "items": [{"product_id": 1, "quantity": 1, "discount": 0}],
     }).status_code == 403
+
+
+def test_api_reports_a_missing_order_as_404_in_russian(client, db_session, env):
+    _admin(client, db_session)
+    r = client.patch("/api/orders/9999", json={"discount": 0})
+    assert r.status_code == 404
+    assert r.json()["detail"] == "заказ не найден"
+
+
+def test_api_reports_a_missing_client_as_404_in_russian(client, db_session, env):
+    _admin(client, db_session)
+    p, _c = env
+    r = client.post("/api/orders", json={
+        "customer_id": 9999, "items": [{"product_id": p.id, "quantity": 1, "discount": 0}],
+    })
+    assert r.status_code == 404
+    assert r.json()["detail"] == "клиент не найден"
+
+
+def test_api_reports_a_validation_error_as_422_with_russian_text(client, db_session, env):
+    _admin(client, db_session)
+    p, c = env
+    line = {"product_id": p.id, "quantity": 1, "discount": 0}
+
+    repeated = client.post("/api/orders", json={
+        "customer_id": c.id, "items": [line, dict(line)]})
+    assert repeated.status_code == 422
+    assert repeated.json()["detail"] == "товар в заказе повторяется"
+
+    over = client.post("/api/orders", json={
+        "customer_id": c.id, "items": [dict(line, quantity=51)]})
+    assert over.status_code == 422
+    assert over.json()["detail"] == "не хватает остатка у товара Гвозди: нужно 51, есть 50"
+
+    below_one = client.post("/api/orders", json={
+        "customer_id": c.id, "items": [dict(line, quantity=0)]})
+    assert below_one.status_code == 422
+    assert below_one.json()["detail"] == "количество должно быть не меньше 1"
+
+    oid = client.post("/api/orders", json={
+        "customer_id": c.id, "items": [line]}).json()["id"]
+    empty = client.patch(f"/api/orders/{oid}", json={"items": []})
+    assert empty.status_code == 422
+    assert empty.json()["detail"] == "добавьте хотя бы одну позицию"

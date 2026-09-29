@@ -10,8 +10,8 @@ from app.modules.auth.permissions import Permission
 from app.modules.customers.models import Customer
 from app.modules.orders.models import Order
 from app.modules.orders.service import (
-    change_status, copy_order, create_order, delete_order,
-    list_orders, restore_order, update_order,
+    CustomerNotFound, OrderNotFound, change_status, copy_order, create_order,
+    delete_order, list_orders, restore_order, update_order,
 )
 
 router = APIRouter()
@@ -40,7 +40,7 @@ class StatusIn(BaseModel):
 
 
 def _value_error_http(e: ValueError) -> HTTPException:
-    if str(e) in ("order not found", "customer not found"):
+    if isinstance(e, (OrderNotFound, CustomerNotFound)):
         return HTTPException(status_code=404, detail=str(e))
     return HTTPException(status_code=422, detail=str(e))
 

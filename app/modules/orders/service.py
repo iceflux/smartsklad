@@ -17,17 +17,25 @@ NEXT_POSSIBLE = {
 }
 
 
-def _validate_discount(value: float, field: str = "discount") -> float:
+class OrderNotFound(ValueError):
+    pass
+
+
+class CustomerNotFound(ValueError):
+    pass
+
+
+def _validate_discount(value: float, field: str = "скидка") -> float:
     value = float(value)
     if value < 0 or value > 99:
-        raise ValueError(f"{field} must be between 0 and 99")
+        raise ValueError(f"{field} должна быть от 0 до 99")
     return value
 
 
 def _get_customer(db: Session, customer_id: int) -> Customer:
     customer = db.get(Customer, customer_id)
     if customer is None or customer.is_deleted:
-        raise ValueError("customer not found")
+        raise CustomerNotFound("клиент не найден")
     return customer
 
 
@@ -83,7 +91,7 @@ def create_order(
             product_id=product.id,
             product_name_snapshot=product.name,
             product_price_snapshot=spec.get("price_snapshot", product.price),
-            discount_snapshot=_validate_discount(spec["discount"], "item discount"),
+            discount_snapshot=_validate_discount(spec["discount"], "скидка позиции"),
             quantity=int(spec["quantity"]),
             unit_snapshot=spec.get("unit_snapshot", product.unit),
         ))
@@ -98,17 +106,17 @@ def create_order(
 def _validate_items(db: Session, items: list[dict]) -> None:
     product_ids = [i["product_id"] for i in items]
     if len(product_ids) != len(set(product_ids)):
-        raise ValueError("duplicate product in items")
+        raise ValueError("товар в заказе повторяется")
     for spec in items:
         product = db.get(Product, spec["product_id"])
         if product is None:
-            raise ValueError("product not found")
+            raise ValueError("товар не найден")
         if int(spec["quantity"]) < 1:
-            raise ValueError("quantity must be >= 1")
+            raise ValueError("количество должно быть не меньше 1")
         if product.track_rest and product.rest < int(spec["quantity"]):
             raise ValueError(
-                f"insufficient stock for product {product.name}: "
-                f"need {int(spec['quantity'])}, have {product.rest}"
+                f"не хватает остатка у товара {product.name}: "
+                f"нужно {int(spec['quantity'])}, есть {product.rest}"
             )
 
 
@@ -119,8 +127,8 @@ def _check_and_writeoff(db: Session, order: Order) -> None:
             continue
         if product.rest < it.quantity:
             raise ValueError(
-                f"insufficient stock for product {it.product_name_snapshot}: "
-                f"need {it.quantity}, have {product.rest}"
+                f"не хватает остатка у товара {it.product_name_snapshot}: "
+                f"нужно {it.quantity}, есть {product.rest}"
             )
     for it in order.items:
         product = db.get(Product, it.product_id)
@@ -140,13 +148,13 @@ def _return_stock(db: Session, order: Order) -> None:
 def change_status(db: Session, order_id: int, new_status: str, *, user=None) -> Order:
     order = db.get(Order, order_id)
     if order is None or order.deleted_at is not None:
-        raise ValueError("order not found")
+        raise OrderNotFound("заказ не найден")
     if new_status not in VALID_STATUSES:
-        raise ValueError("invalid status")
+        raise ValueError("неизвестный статус")
     if new_status == order.status:
-        raise ValueError("status unchanged")
+        raise ValueError("статус не изменился")
     if new_status not in NEXT_POSSIBLE.get(order.status, set()):
-        raise ValueError("invalid status transition")
+        raise ValueError("недопустимый переход статуса")
     old_status = order.status
     if new_status == "done":
         _check_and_writeoff(db, order)
@@ -162,9 +170,9 @@ def change_status(db: Session, order_id: int, new_status: str, *, user=None) -> 
 def update_order(db, order_id, *, customer_id=None, discount=None, items=None, user=None):
     order = db.get(Order, order_id)
     if order is None or order.deleted_at is not None:
-        raise ValueError("order not found")
+        raise OrderNotFound("заказ не найден")
     if order.status == "done":
-        raise ValueError("cannot edit done order")
+        raise ValueError("нельзя редактировать выполненный заказ")
     old_value = json.dumps(_order_dict(order), ensure_ascii=False)
     if customer_id is not None and customer_id != order.customer_id:
         c = _get_customer(db, customer_id)
@@ -173,7 +181,7 @@ def update_order(db, order_id, *, customer_id=None, discount=None, items=None, u
         order.discount = _validate_discount(discount)
     if items is not None:
         if not items:
-            raise ValueError("items required")
+            raise ValueError("добавьте хотя бы одну позицию")
         _validate_items(db, items)
         previous: dict[int, list[tuple[float, str]]] = {}
         for old in order.items:
@@ -188,7 +196,7 @@ def update_order(db, order_id, *, customer_id=None, discount=None, items=None, u
                 product_id=product.id,
                 product_name_snapshot=product.name,
                 product_price_snapshot=price,
-                discount_snapshot=_validate_discount(spec["discount"], "item discount"),
+                discount_snapshot=_validate_discount(spec["discount"], "скидка позиции"),
                 quantity=int(spec["quantity"]),
                 unit_snapshot=unit,
             ))
@@ -203,7 +211,7 @@ def update_order(db, order_id, *, customer_id=None, discount=None, items=None, u
 def delete_order(db, order_id, *, user=None):
     order = db.get(Order, order_id)
     if order is None or order.deleted_at is not None:
-        raise ValueError("order not found")
+        raise OrderNotFound("заказ не найден")
     order.deleted_at = datetime.now()
     db.commit()
     log_action(db, action="order.delete", entity_type="order", entity_id=order_id,
@@ -213,7 +221,7 @@ def delete_order(db, order_id, *, user=None):
 def restore_order(db, order_id, *, user=None):
     order = db.get(Order, order_id)
     if order is None or order.deleted_at is None:
-        raise ValueError("order not found")
+        raise OrderNotFound("заказ не найден")
     order.deleted_at = None
     db.commit()
     log_action(db, action="order.restore", entity_type="order", entity_id=order_id,
@@ -223,7 +231,7 @@ def restore_order(db, order_id, *, user=None):
 def copy_order(db, order_id, *, user=None):
     src = db.get(Order, order_id)
     if src is None:
-        raise ValueError("order not found")
+        raise OrderNotFound("заказ не найден")
     items = [
         {"product_id": it.product_id, "quantity": it.quantity, "discount": it.discount_snapshot,
          "price_snapshot": it.product_price_snapshot, "unit_snapshot": it.unit_snapshot}

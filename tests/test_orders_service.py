@@ -2,6 +2,7 @@ import pytest
 
 from app.modules.inventory.models import Product
 from app.modules.orders.service import (
+    CustomerNotFound, OrderNotFound,
     create_order, change_status, update_order, delete_order, restore_order,
     copy_order, list_orders, customer_order_stats,
 )
@@ -64,9 +65,21 @@ def test_create_order_next_number(db_session, product, customer):
 
 
 def test_create_order_invalid_customer(db_session, product):
-    with pytest.raises(ValueError):
+    with pytest.raises(CustomerNotFound) as exc:
         create_order(db_session, customer_id=999,
                      items=[{"product_id": product.id, "quantity": 1, "discount": 0.0}])
+    assert str(exc.value) == "клиент не найден"
+
+
+def test_a_missing_order_is_reported_by_type(db_session):
+    for call in (lambda: change_status(db_session, 999, "processing"),
+                 lambda: copy_order(db_session, 999),
+                 lambda: delete_order(db_session, 999),
+                 lambda: restore_order(db_session, 999),
+                 lambda: update_order(db_session, 999, discount=0.0)):
+        with pytest.raises(OrderNotFound) as exc:
+            call()
+        assert str(exc.value) == "заказ не найден"
 
 
 @pytest.fixture
@@ -95,8 +108,9 @@ def test_status_done_insufficient_stock_rejected(setup):
     change_status(db, order.id, "processing")
     product.rest = 1
     db.commit()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as exc:
         change_status(db, order.id, "done")
+    assert str(exc.value) == "не хватает остатка у товара Гвозди: нужно 3, есть 1"
     assert db.get(Product, product.id).rest == 1  # не тронули
 
 
@@ -169,15 +183,63 @@ def test_update_done_forbidden(env):
                      items=[{"product_id": p1.id, "quantity": 1, "discount": 0.0}])
     change_status(db, o.id, "processing")
     change_status(db, o.id, "done")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as exc:
         update_order(db, o.id, items=[{"product_id": p1.id, "quantity": 5, "discount": 0.0}])
+    assert str(exc.value) == "нельзя редактировать выполненный заказ"
+
+
+def test_the_rest_of_the_service_messages_are_russian(db_session, product, customer):
+    order = create_order(db_session, customer_id=customer.id, discount=0,
+                         items=[{"product_id": product.id, "quantity": 1, "discount": 0}])
+    line = {"product_id": product.id, "quantity": 1, "discount": 0}
+    cases = [
+        (lambda: change_status(db_session, order.id, "shipped"), "неизвестный статус"),
+        (lambda: change_status(db_session, order.id, "new"), "статус не изменился"),
+        (lambda: update_order(db_session, order.id, discount=100),
+         "скидка должна быть от 0 до 99"),
+        (lambda: create_order(db_session, customer_id=customer.id,
+                              items=[dict(line, discount=100)]),
+         "скидка позиции должна быть от 0 до 99"),
+        (lambda: create_order(db_session, customer_id=customer.id,
+                              items=[dict(line, product_id=9999)]),
+         "товар не найден"),
+    ]
+    for call, expected in cases:
+        with pytest.raises(ValueError) as exc:
+            call()
+        assert str(exc.value) == expected
 
 
 def test_create_order_rejects_over_stock(db_session, product, customer):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as exc:
         create_order(db_session, customer_id=customer.id,
                      items=[{"product_id": product.id, "quantity": 51, "discount": 0.0}])
+    assert str(exc.value) == "не хватает остатка у товара Гвозди: нужно 51, есть 50"
     assert product.rest == 50  # не тронули
+
+
+def test_create_order_rejects_a_repeated_product(db_session, product, customer):
+    with pytest.raises(ValueError) as exc:
+        create_order(db_session, customer_id=customer.id, items=[
+            {"product_id": product.id, "quantity": 1, "discount": 0.0},
+            {"product_id": product.id, "quantity": 1, "discount": 0.0},
+        ])
+    assert str(exc.value) == "товар в заказе повторяется"
+
+
+def test_create_order_rejects_a_quantity_below_one(db_session, product, customer):
+    with pytest.raises(ValueError) as exc:
+        create_order(db_session, customer_id=customer.id,
+                     items=[{"product_id": product.id, "quantity": 0, "discount": 0.0}])
+    assert str(exc.value) == "количество должно быть не меньше 1"
+
+
+def test_saving_an_order_without_lines_is_refused(db_session, product, customer):
+    order = create_order(db_session, customer_id=customer.id,
+                         items=[{"product_id": product.id, "quantity": 1, "discount": 0.0}])
+    with pytest.raises(ValueError) as exc:
+        update_order(db_session, order.id, items=[])
+    assert str(exc.value) == "добавьте хотя бы одну позицию"
 
 
 def _imported_product(db_session, name, sku, unit_name="шт"):
@@ -329,6 +391,7 @@ def test_saving_an_order_still_refuses_another_client(db_session, product, plain
     lines = [{"product_id": product.id, "quantity": 1, "discount": 0.0}]
 
     for other_id in (gone.id, 9999):
-        with pytest.raises(ValueError, match="customer not found"):
+        with pytest.raises(CustomerNotFound) as exc:
             update_order(db_session, order.id, customer_id=other_id, items=lines)
+        assert str(exc.value) == "клиент не найден"
     assert db_session.get(Order, order.id).customer_id == plain_customer.id
