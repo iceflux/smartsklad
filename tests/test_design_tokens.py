@@ -1,7 +1,8 @@
 """Стоп-guard семантических токенов: замена оттенков Tailwind на классы токенов
 обязана оставить вид приложения тем же. Пять проверок: светлая палитра равна
 прежним оттенкам, тёмная отличается от светлой, контраст посчитан по WCAG, печать
-остаётся светлой, каждый зарегистрированный токен доехал до собранного CSS.
+остаётся светлой, каждый класс-токен, который используют шаблоны, доехал до собранного
+CSS с непустым значением.
 
 Порог контраста один, 4.5 для обычного текста. Второй порог WCAG — 3.0 для
 крупного (>=24px либо >=18.66px полужирного) — в таблице не используется ни для
@@ -24,6 +25,14 @@
 в конец вывода независимо от того, где блок стоял в tailwind.css, и даже если его
 засунуть внутрь @layer base. Поэтому перестановка блока в исходнике проверяется
 без пересборки, а в артефакте проверяется только то, что блок туда доехал.
+
+Пятая проверка идёт по разметке, а не по всем 23 токенам, потому что safelist
+tailwind.config.js удалён: сборщик не выдаёт класс, которого нет в шаблонах, и
+проверять в артефакте токен, которым никто не пользуется, нечем. `warning` —
+ровно такой токен (текста `amber-600` в вёрстке нет ни разу), и его отсутствие в
+app.css правильно, а не поломка. Всё остальное проверяется как раньше: имя
+класса, которое не совпало с зарегистрированным цветом, не доедет до CSS вовсе,
+и это ловит и эта проверка, и tests/test_tailwind_purge.py.
 """
 
 import re
@@ -103,6 +112,11 @@ LIGHT_EXEMPTIONS = {
 PRINT_RULE = re.compile(r"@media\s+print\s*\{")
 DECLARATION = re.compile(r"--color-([a-z-]+)\s*:\s*([^;}]+)\s*;?")
 QUOTED = re.compile(r'"([a-z][a-z-]*)"')
+TEMPLATE_CLASS = re.compile(r"""class=(["'])(.*?)\1""", re.DOTALL)
+COLOR_UTILITY = re.compile(
+    r"^(?:bg|text|border|ring|divide|placeholder|from|to|via|outline|decoration"
+    r"|accent|caret|fill|stroke)-(.+?)(?:/\d+)?$"
+)
 
 
 def _source():
@@ -231,7 +245,17 @@ def test_print_rules_outrank_the_dark_rules():
     assert forced >= set(LIGHT_SHADES)
 
 
-def test_every_registered_token_reaches_the_built_stylesheet_with_a_non_empty_value():
+def _template_classes():
+    found = {}
+    for path in sorted((ROOT / "app" / "templates").rglob("*.html")):
+        text = path.read_text(encoding="utf-8")
+        for match in TEMPLATE_CLASS.finditer(text):
+            for name in re.sub(r"{%.*?%}", " ", match.group(2)).split():
+                found.setdefault(name, path.relative_to(ROOT))
+    return found
+
+
+def test_every_token_class_the_templates_use_reaches_the_built_stylesheet():
     registered = _registered()
     assert registered == set(LIGHT_SHADES)
     assert set(_light()) == registered
@@ -242,12 +266,18 @@ def test_every_registered_token_reaches_the_built_stylesheet_with_a_non_empty_va
         f"токен объявлен, но в app.css доехал с пустым значением или не доехал: "
         f"{sorted(set(registered) - set(emitted))}"
     )
-    missing = {
-        name
-        for name in registered
-        if not re.search(
-            r"\.text-" + re.escape(name) + r"(?![-\w\\])\s*\{[^}]*var\(--color-" + re.escape(name) + r"\)",
-            built,
+    used = {}
+    for name, where in _template_classes().items():
+        match = COLOR_UTILITY.match(name)
+        if match and match.group(1) in registered:
+            used[name] = (match.group(1), where)
+    missing = {}
+    for name, (token, where) in sorted(used.items()):
+        found = re.search(
+            r"\." + re.escape(name) + r"(?![-\w\\])\s*\{([^}]*)\}", built
         )
-    }
-    assert missing == set(), f"токен зарегистрирован, но класс в собранный CSS не попал: {sorted(missing)}"
+        value = found.group(1) if found else ""
+        if f"var(--color-{token})" not in value or not value.split(":", 1)[-1].strip():
+            missing[name] = f"{where} -> {token}: {value.strip() or 'правила нет'}"
+    assert missing == {}, missing
+    assert used, "ни одного класса-токена в шаблонах: проверка не может упасть"

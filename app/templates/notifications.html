@@ -2,7 +2,7 @@
 {% block content %}
 <div class="p-4">
     <h1 class="text-2xl mb-4">Журнал уведомлений</h1>
-    {% if msg %}<p class="text-green-600 mb-2">{{ msg }}</p>{% endif %}
+    {% if msg %}<p class="text-success mb-2">{{ msg }}</p>{% endif %}
     <form method="get" class="flex flex-wrap gap-2 mb-4">
         <select name="channel" class="border p-2">
             <option value="">Все каналы</option>
@@ -17,8 +17,8 @@
         <button type="submit" class="border px-3 py-1">Фильтровать</button>
         <a href="/notifications" class="border px-3 py-1">Сбросить</a>
     </form>
-    <table class="w-full border border-gray-300">
-        <thead class="bg-gray-100 text-left">
+    <table class="w-full border border-line-strong">
+        <thead class="bg-surface-sunken text-left">
             <tr>
                 <th class="p-2">Время</th>
                 <th class="p-2">Канал</th>
@@ -37,7 +37,7 @@
                 <td class="p-2">{{ l.recipient }}</td>
                 <td class="p-2">{{ l.status }}</td>
                 <td class="p-2">{{ l.error }}</td>
-                <td class="p-2">{% if l.document_id %}<a href="/orders/{{ l.document_id }}" class="text-blue-600">{{ l.document_id }}</a>{% endif %}</td>
+                <td class="p-2">{% if l.document_id %}<a href="/orders/{{ l.document_id }}" class="text-accent">{{ l.document_id }}</a>{% endif %}</td>
                 <td class="p-2">{{ l.username }}</td>
             </tr>
             {% else %}

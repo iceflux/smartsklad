@@ -41,7 +41,7 @@
         <div>
             <label class="block mb-1">Минимальный запас</label>
             <input name="min_stock" type="number" min="0" value="{{ product.min_stock if product and product.min_stock is not none else '' }}" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
-            <p class="text-sm text-gray-500">Пусто — брать запас из настроек ({{ min_stock_days_hint }} дней продаж).</p>
+            <p class="text-sm text-muted">Пусто — брать запас из настроек ({{ min_stock_days_hint }} дней продаж).</p>
         </div>
         <div>
             <label class="block mb-1">Цена</label>
@@ -57,15 +57,15 @@
         <div>
             <label class="block mb-1">Учитывать остатки</label>
             <input type="checkbox" name="track_rest" {% if product and product.track_rest %}checked{% elif is_new and stock_track_default != "false" %}checked{% endif %}>
-            <p class="text-sm text-gray-500">{% if is_new %}По умолчанию — значение из настроек.{% else %}Переопределение учёта остатков для этого товара.{% endif %}</p>
+            <p class="text-sm text-muted">{% if is_new %}По умолчанию — значение из настроек.{% else %}Переопределение учёта остатков для этого товара.{% endif %}</p>
         </div>
         {% endif %}
         <div>
             <label class="block mb-1">Характеристики (JSON)</label>
             <textarea name="characteristic" rows="5" class="w-full border p-2 font-mono text-sm" {% if not can_edit %}disabled{% endif %}>{{ characteristic_json }}</textarea>
         </div>
-        <p id="error" class="text-red-600 hidden"></p>
-        <button class="bg-blue-600 text-white px-4 py-2">Сохранить</button>
+        <p id="error" class="text-danger hidden"></p>
+        <button class="bg-accent text-on-accent px-4 py-2">Сохранить</button>
         <a href="/products" class="ml-2 border px-4 py-2">Отмена</a>
     </form>
     <script>

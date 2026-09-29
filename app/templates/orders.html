@@ -4,11 +4,11 @@
     <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-bold">Заказы</h1>
         {% if can_create %}
-            <a href="/orders/new" class="bg-blue-600 text-white px-3 py-1">Новый заказ</a>
+            <a href="/orders/new" class="bg-accent text-on-accent px-3 py-1">Новый заказ</a>
         {% endif %}
     </div>
 
-    {% if msg %}<p class="mb-4 bg-green-50 border border-green-200 p-2">{{ msg }}</p>{% endif %}
+    {% if msg %}<p class="mb-4 bg-success-bg border border-success-border p-2">{{ msg }}</p>{% endif %}
 
     <form method="get" action="/orders" class="flex flex-wrap items-end gap-2 mb-4">
         <div>
@@ -49,8 +49,8 @@
             <input type="checkbox" name="include_deleted" value="1" {% if include_deleted %}checked{% endif %}>
             Показывать удалённые
         </label>
-        <button class="bg-gray-200 px-3 py-2">Фильтр</button>
-        <a href="/orders" class="text-sm text-blue-600 py-2">Сбросить</a>
+        <button class="bg-line px-3 py-2">Фильтр</button>
+        <a href="/orders" class="text-sm text-accent py-2">Сбросить</a>
     </form>
 
     <table class="w-full border-collapse">
@@ -65,24 +65,24 @@
         </thead>
         <tbody>
             {% for o in orders %}
-            <tr class="border-b {% if o.is_deleted %}bg-gray-100 text-gray-500{% endif %}">
-                <td class="p-2"><a href="/orders/{{ o.id }}" class="text-blue-600">{{ o.number }}</a>{% if o.is_deleted %} (удалён){% endif %}</td>
+            <tr class="border-b {% if o.is_deleted %}bg-surface-sunken text-muted{% endif %}">
+                <td class="p-2"><a href="/orders/{{ o.id }}" class="text-accent">{{ o.number }}</a>{% if o.is_deleted %} (удалён){% endif %}</td>
                 <td class="p-2">{{ o.customer_name }}</td>
                 <td class="p-2">{{ status_labels[o.status] }}</td>
                 <td class="p-2">{{ o.total_amount }}</td>
                 <td class="p-2">{{ o.created_at }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="5" class="p-4 text-center text-gray-500">Заказы не найдены</td></tr>
+            <tr><td colspan="5" class="p-4 text-center text-muted">Заказы не найдены</td></tr>
             {% endfor %}
         </tbody>
     </table>
 
     <div class="flex items-center gap-3 mt-4 text-sm">
         <span>Всего: {{ total }}</span>
-        {% if page > 1 %}<a class="text-blue-600" href="/orders?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
+        {% if page > 1 %}<a class="text-accent" href="/orders?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
         <span>Стр. {{ page }} из {{ pages }}</span>
-        {% if page < pages %}<a class="text-blue-600" href="/orders?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
+        {% if page < pages %}<a class="text-accent" href="/orders?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
     </div>
 </main>
 {% endblock %}

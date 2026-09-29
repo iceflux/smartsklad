@@ -6,10 +6,10 @@
     <title>{% block title %}{{ title }}{% endblock %}</title>
     <link rel="stylesheet" href="/static/app.css">
 </head>
-<body class="bg-gray-50 text-gray-900">
+<body class="bg-surface text-primary">
 {% set maintenance = maintenance_state() %}
 {% if maintenance.mode == "countdown" %}
-<div class="bg-amber-100 border-b border-amber-300 p-3 text-center" data-starts-at="{{ maintenance.starts_at }}">
+<div class="bg-warning-strong-bg border-b border-warning-strong-border p-3 text-center" data-starts-at="{{ maintenance.starts_at }}">
     <p class="font-semibold">Через <span id="countdown">?</span> начнётся восстановление из резервной копии.</p>
     <p class="text-sm">Начало: {{ maintenance.starts_at_text }}. Недоработанные изменения будут потеряны. Сохраните открытые документы и выйдите из заказов.</p>
     {% if can_manage_backups|default(false) %}

@@ -5,14 +5,14 @@
     <form id="role-form" class="space-y-4">
         <div>
             <label class="block mb-1">Название</label>
-            <input name="name" required value="{{ role.name if role else '' }}" {% if role and role.is_system %}readonly class="w-full border p-2 bg-gray-100"{% else %}class="w-full border p-2"{% endif %}>
+            <input name="name" required value="{{ role.name if role else '' }}" {% if role and role.is_system %}readonly class="w-full border p-2 bg-surface-sunken"{% else %}class="w-full border p-2"{% endif %}>
         </div>
         <div>
             <label class="block mb-1">Права</label>
             {% if role is none or not role.is_super %}
                 {% for prefix, items in groups %}
                 <fieldset class="mb-3">
-                    <legend class="text-sm font-semibold text-gray-600">{{ prefix }}</legend>
+                    <legend class="text-sm font-semibold text-caption">{{ prefix }}</legend>
                     {% for i in items %}
                     <label class="block">
                         <input type="checkbox" name="permissions" value="{{ i.code }}" {% if i.checked %}checked{% endif %}>
@@ -22,11 +22,11 @@
                 </fieldset>
                 {% endfor %}
             {% else %}
-                <p class="text-sm text-gray-500">Суперроль — все права включены всегда</p>
+                <p class="text-sm text-muted">Суперроль — все права включены всегда</p>
             {% endif %}
         </div>
-        <p id="error" class="text-red-600 hidden"></p>
-        <button class="bg-blue-600 text-white px-4 py-2">Сохранить</button>
+        <p id="error" class="text-danger hidden"></p>
+        <button class="bg-accent text-on-accent px-4 py-2">Сохранить</button>
         {% if not is_new and not role.is_system %}
             <button type="button" class="ml-2 border px-4 py-2" onclick="confirmDelete()">Удалить роль</button>
         {% endif %}

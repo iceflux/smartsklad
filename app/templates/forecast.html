@@ -2,7 +2,7 @@
 {% block content %}
 <main class="max-w-6xl mx-auto p-4">
     <h1 class="text-2xl font-bold mb-4">Прогноз спроса</h1>
-    {% if msg %}<p class="mb-4 bg-green-50 border border-green-200 p-2">{{ msg }}</p>{% endif %}
+    {% if msg %}<p class="mb-4 bg-success-bg border border-success-border p-2">{{ msg }}</p>{% endif %}
     <form method="get" action="/forecast" class="mb-4">
         <label class="mr-4">
             <input type="checkbox" name="only_purchase" value="1" {% if only_purchase %}checked{% endif %}>
@@ -10,8 +10,8 @@
         </label>
         <button class="border px-3 py-1">Применить</button>
     </form>
-    <p class="mb-2 text-sm text-gray-600">Товаров: {{ total }}</p>
-    <table class="w-full bg-white border">
+    <p class="mb-2 text-sm text-caption">Товаров: {{ total }}</p>
+    <table class="w-full bg-surface-raised border">
         <thead>
             <tr class="border-b">
                 <th class="p-2 text-left">Товар</th>
@@ -33,7 +33,7 @@
                 <td class="p-2 text-right">{{ row.rest }} {{ row.unit }}</td>
                 <td class="p-2 text-right">{{ row.min_stock }}</td>
                 <td class="p-2 text-right">{{ '%.2f'|format(row.avg_daily_sold) }}</td>
-                <td class="p-2 text-right">{% if not row.has_data %}<span class="text-gray-500">мало данных</span>{% elif row.forecast_7 is not none %}{{ row.forecast_7 }}{% else %}—{% endif %}</td>
+                <td class="p-2 text-right">{% if not row.has_data %}<span class="text-muted">мало данных</span>{% elif row.forecast_7 is not none %}{{ row.forecast_7 }}{% else %}—{% endif %}</td>
                 <td class="p-2 text-right">{% if row.forecast_14 is not none %}{{ row.forecast_14 }}{% else %}—{% endif %}</td>
                 <td class="p-2 text-right">{% if row.forecast_30 is not none %}{{ row.forecast_30 }}{% else %}—{% endif %}</td>
                 <td class="p-2 text-right">{% if row.recommended_qty is not none %}<span class="font-bold">{{ row.recommended_qty }}</span>{% else %}—{% endif %}</td>

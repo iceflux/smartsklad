@@ -7,7 +7,7 @@
             <a href="/dashboard/export.csv?date_from={{ metrics.date_from.isoformat() }}&date_to={{ metrics.date_to.isoformat() }}" class="border px-3 py-1">Экспорт CSV</a>
         {% endif %}
     </div>
-    {% if msg %}<p class="mb-4 bg-red-50 border border-red-200 p-2">{{ msg }}</p>{% endif %}
+    {% if msg %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">{{ msg }}</p>{% endif %}
     <form method="get" action="/dashboard" class="flex items-end gap-3 mb-4">
         <div>
             <label class="block mb-1">Период</label>
@@ -43,26 +43,26 @@
         </div>
         <button class="border px-3 py-2">Показать</button>
     </form>
-    <p class="mb-4 text-sm text-gray-600">Показано: {{ metrics.date_from.strftime('%d.%m.%Y') }} — {{ metrics.date_to.strftime('%d.%m.%Y') }}</p>
+    <p class="mb-4 text-sm text-caption">Показано: {{ metrics.date_from.strftime('%d.%m.%Y') }} — {{ metrics.date_to.strftime('%d.%m.%Y') }}</p>
     {% if metrics.orders_count == 0 %}
-        <p class="p-4 bg-white border text-gray-500">За выбранный период продаж нет</p>
+        <p class="p-4 bg-surface-raised border text-muted">За выбранный период продаж нет</p>
     {% else %}
         <div class="grid grid-cols-3 gap-4 mb-6">
-            <div class="bg-white border p-4">
-                <p class="text-sm text-gray-600">Заказов</p>
+            <div class="bg-surface-raised border p-4">
+                <p class="text-sm text-caption">Заказов</p>
                 <p class="text-2xl font-bold">{{ metrics.orders_count }}</p>
             </div>
-            <div class="bg-white border p-4">
-                <p class="text-sm text-gray-600">Сумма продаж</p>
+            <div class="bg-surface-raised border p-4">
+                <p class="text-sm text-caption">Сумма продаж</p>
                 <p class="text-2xl font-bold">{{ '%.2f'|format(metrics.total_sum) }}</p>
             </div>
-            <div class="bg-white border p-4">
-                <p class="text-sm text-gray-600">Средний чек</p>
+            <div class="bg-surface-raised border p-4">
+                <p class="text-sm text-caption">Средний чек</p>
                 <p class="text-2xl font-bold">{{ '%.2f'|format(metrics.avg_check) }}</p>
             </div>
         </div>
-        <div class="bg-white border p-4 mb-6">
-            <p class="text-sm text-gray-600 mb-2">Продажи по дням</p>
+        <div class="bg-surface-raised border p-4 mb-6">
+            <p class="text-sm text-caption mb-2">Продажи по дням</p>
             <svg viewBox="0 0 {{ chart.width }} {{ chart.height }}" class="w-full" role="img" aria-label="Продажи по дням">
                 <line x1="{{ chart.left }}" y1="{{ chart.axis_y }}" x2="{{ chart.width }}" y2="{{ chart.axis_y }}" stroke="#d1d5db" />
                 {% for bar in chart.bars %}
@@ -78,26 +78,26 @@
         <div class="grid grid-cols-2 gap-4">
             <div>
                 <h2 class="text-lg font-bold mb-2">Топ товаров</h2>
-                <table class="w-full border-collapse bg-white border">
+                <table class="w-full border-collapse bg-surface-raised border">
                     <thead><tr class="border-b text-left"><th class="p-2">Товар</th><th class="p-2 text-right">Продано</th></tr></thead>
                     <tbody>
                         {% for row in metrics.top_products %}
                         <tr class="border-b"><td class="p-2">{{ row.name }}</td><td class="p-2 text-right">{{ row.quantity }}</td></tr>
                         {% else %}
-                        <tr><td colspan="2" class="p-4 text-center text-gray-500">Нет данных</td></tr>
+                        <tr><td colspan="2" class="p-4 text-center text-muted">Нет данных</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
             <div>
                 <h2 class="text-lg font-bold mb-2">Топ клиентов</h2>
-                <table class="w-full border-collapse bg-white border">
+                <table class="w-full border-collapse bg-surface-raised border">
                     <thead><tr class="border-b text-left"><th class="p-2">Клиент</th><th class="p-2 text-right">Сумма</th></tr></thead>
                     <tbody>
                         {% for row in metrics.top_customers %}
                         <tr class="border-b"><td class="p-2">{{ row.name }}</td><td class="p-2 text-right">{{ '%.2f'|format(row.total_sum) }}</td></tr>
                         {% else %}
-                        <tr><td colspan="2" class="p-4 text-center text-gray-500">Нет данных</td></tr>
+                        <tr><td colspan="2" class="p-4 text-center text-muted">Нет данных</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

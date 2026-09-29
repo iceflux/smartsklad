@@ -7,7 +7,12 @@ BUILT_CSS = ROOT / "app" / "static" / "app.css"
 
 """`NOT_STYLED_BY_TAILWIND` holds only bare js hooks, never a tailwind utility.
 If one of these names ever gains a real utility next to the querySelectorAll,
-delete it from the mapping so the purge test starts checking it again."""
+delete it from the mapping so the purge test starts checking it again.
+
+`LEGACY_SHADES` — тот список, ради которого этот файл и менялся. Проверка
+«класс есть в собранном CSS» литеральный оттенок пропускает: `text-blue-600`
+собрался бы и выглядел бы правильно, просто мимо токена, и в тёмной теме остался
+бы синим. Поэтому возврат оттенка ловится отдельно и падает всегда."""
 
 NOT_STYLED_BY_TAILWIND = {
     "delete-category": "js hook, document.querySelectorAll('.delete-category') in categories.html",
@@ -15,6 +20,13 @@ NOT_STYLED_BY_TAILWIND = {
 }
 
 CLASS_ATTR = re.compile(r"""class=(["'])(.*?)\1""", re.DOTALL)
+
+LEGACY_SHADES = re.compile(
+    r"^(?:bg|text|border|ring|divide|placeholder|from|to|via|outline|decoration"
+    r"|accent|caret|fill|stroke|shadow)-"
+    r"(?:(?:gray|blue|green|red|amber|yellow)-(?:50|100|200|300|400|500|600|700|800|900)"
+    r"|white|black)$"
+)
 
 
 def _class_attrs():
@@ -46,6 +58,18 @@ def test_every_template_class_is_in_the_built_stylesheet():
         and not _class_selector(name).search(css)
     }
     assert missing == {}
+
+
+def test_no_template_uses_a_literal_palette_shade():
+    found = {
+        name: str(where)
+        for name, where in _classes_in_templates().items()
+        if LEGACY_SHADES.match(name)
+    }
+    assert found == {}, (
+        "в разметке вернулся литеральный оттенок Tailwind вместо токена: "
+        f"{found}. Соответствие «оттенок → токен» в AGENTS.md, раздел про токены."
+    )
 
 
 def test_no_template_composes_a_class_name_from_a_variable():
