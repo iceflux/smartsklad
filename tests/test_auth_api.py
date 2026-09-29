@@ -49,7 +49,7 @@ def test_login_bad_credentials_returns_401(client, db_session):
     assert not r.cookies.get("session")
 
 
-def test_login_allows_ten_failures_and_blocks_the_next_one(client, db_session):
+def test_login_gives_way_after_the_configured_number_of_failures(client, db_session):
     _seller(db_session)
     assert _fail_login(client, ratelimit.MAX_FAILURES) == [401] * ratelimit.MAX_FAILURES
 
@@ -101,6 +101,25 @@ def test_password_recovery_is_rate_limited(client, db_session):
     assert r.status_code == 429
     assert "Слишком много запросов на восстановление пароля" in r.json()["detail"]
     assert 0 < int(r.headers["Retry-After"]) <= ratelimit.WINDOW_SECONDS
+
+
+def test_password_recovery_limit_is_per_address(client, db_session):
+    _post_recovery(client, ratelimit.MAX_FAILURES)
+    assert client.post("/api/auth/password-recovery", json={"username_or_email": "seller1"}).status_code == 429
+
+    other = TestClient(client.app, client=("10.0.0.9", 40000))
+
+    assert other.post("/api/auth/password-recovery", json={"username_or_email": "seller1"}).status_code == 202
+    assert client.post("/api/auth/password-recovery", json={"username_or_email": "seller1"}).status_code == 429
+
+
+def test_recovery_requests_spend_the_login_budget(client, db_session):
+    _seller(db_session)
+    _fail_login(client, 6)
+    assert _post_recovery(client, 4) == [202] * 4
+
+    assert client.post("/api/auth/login", json={"username": "seller1", "password": "password123"}).status_code == 429
+    assert client.post("/api/auth/password-recovery", json={"username_or_email": "seller1"}).status_code == 429
 
 
 def test_rate_limit_covers_only_the_credential_endpoints(client, db_session):

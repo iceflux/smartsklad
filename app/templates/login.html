@@ -24,7 +24,12 @@
         body: JSON.stringify({username: f.username.value, password: f.password.value}),
       });
       if (res.ok) { window.location.href = '/'; }
-      else { document.getElementById('error').classList.remove('hidden'); }
+      else {
+        const d = await res.json().catch(() => ({}));
+        const err = document.getElementById('error');
+        err.textContent = d.detail || 'Неверный логин или пароль';
+        err.classList.remove('hidden');
+      }
     });
   </script>
 </main>

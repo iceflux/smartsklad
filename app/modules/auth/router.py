@@ -33,7 +33,7 @@ class LoginRequest(BaseModel):
 @router.post("/login")
 def api_login(body: LoginRequest, request: Request, db: Annotated[Session, Depends(get_db)]):
     ip = request.client.host if request.client else None
-    key = ip or "unknown"
+    key = _client_key(request)
     wait = too_many_attempts(key)
     if wait is not None:
         raise HTTPException(
