@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -61,16 +62,18 @@ def _unit(value) -> str:
 
 def _price(value) -> float:
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
         return 0.0
+    return number if math.isfinite(number) and number >= 0 else 0.0
 
 
 def _rest(value) -> int:
     try:
-        return int(value)
-    except (TypeError, ValueError):
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
         return 0
+    return number if number >= 0 else 0
 
 
 class SkuFactory:

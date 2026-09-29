@@ -26,6 +26,8 @@ from app.modules.importer.models import ImportMap
 from app.modules.importer.orders import parse_order_date, resolve_orders
 from app.modules.importer.resolve import (
     SkuFactory,
+    _price,
+    _rest,
     _unit,
     clean_inn,
     norm,
@@ -1445,5 +1447,30 @@ def test_unusable_product_price_or_rest_falls_back_to_zero(db_session, tmp_path,
     run_import(db_session, tmp_path, ["export.json"])
     product = db_session.query(Product).one()
     assert getattr(product, field) == 0
+
+
+def test_price_falls_back_to_zero_on_every_unusable_value():
+    """Ни одна проверка на конечность не заменена тестом базы: PostgreSQL молча
+    принимает NaN в double precision, а SQLite превращает его в NULL, поэтому
+    проверять приходится сами функции.
+    """
+    for value in ("NaN", "nan", "inf", "-inf", "Infinity", "-Infinity", "1e400", "-5", -5.0,
+                  float("nan"), float("inf"), None, "не число"):
+        assert _price(value) == 0.0, value
+
+
+def test_rest_falls_back_to_zero_on_every_unusable_value():
+    for value in ("NaN", "nan", "inf", "-inf", "Infinity", "-Infinity", float("nan"),
+                  float("inf"), float("-inf"), "-5", -5, None, "не число", "3.9"):
+        assert _rest(value) == 0, value
+
+
+def test_price_and_rest_still_read_ordinary_values():
+    assert _price("12.5") == 12.5
+    assert _price(0) == 0.0
+    assert _price(7) == 7.0
+    assert _rest("40") == 40
+    assert _rest(3.9) == 3
+    assert _rest("40") == 40
 
 
