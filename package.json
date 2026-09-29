@@ -1,0 +1,10 @@
+{
+  "name": "smartsklad",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./app/static/tailwind.css -o ./app/static/app.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  }
+}

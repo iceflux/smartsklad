@@ -11,3 +11,5 @@ venv/
 .env
 
 backups/
+
+node_modules/
