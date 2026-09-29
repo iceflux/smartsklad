@@ -67,8 +67,8 @@ def _seed(db_session, day=None, amount=100.0, number="00001"):
     return o
 
 
-def _six_ordered_tops(db_session):
-    for i in range(1, 7):
+def _six_ordered_tops(db_session, count=6):
+    for i in range(1, count + 1):
         c = Customer(name=f"Клиент-{i}", personal_discount=0.0)
         p = Product(name=f"Гвозди-{i}", sku=f"SKU-TOP-{i}", unit_id=_unit_id(db_session),
                     price=10.0, rest=50)
@@ -98,10 +98,12 @@ def test_dashboard_api_top_limit_slices_both_tops(client, db_session):
 
 def test_dashboard_api_top_limit_defaults_to_ten(client, db_session):
     _admin(client, db_session)
-    _six_ordered_tops(db_session)
+    _six_ordered_tops(db_session, count=12)
     body = client.get("/api/dashboard/sales?preset=all").json()
-    assert len(body["top_products"]) == 6
-    assert len(body["top_customers"]) == 6
+    assert [row["name"] for row in body["top_products"]] == [
+        f"Гвозди-{i}" for i in (12, 11, 10, 9, 8, 7, 6, 5, 4, 3)]
+    assert [row["name"] for row in body["top_customers"]] == [
+        f"Клиент-{i}" for i in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)]
 
 
 def test_dashboard_api_top_limit_range(client, db_session):
