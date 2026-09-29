@@ -1,3 +1,61 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+    :root {
+        /* Поверхности: страница, приподнятые карточки, приглушённые строки */
+        --color-surface: 249 250 251;
+        --color-surface-raised: 255 255 255;
+        --color-surface-sunken: 243 244 246;
+        /* Границы: обычная и заметная */
+        --color-border: 229 231 235;
+        --color-border-strong: 209 213 219;
+        /* Текст: основной, вторичный, едва заметный, и на акценте */
+        --color-text: 17 24 39;
+        --color-text-muted: 107 114 128;
+        --color-text-subtle: 156 163 175;
+        --color-text-on-accent: 255 255 255;
+        /* Акцент: кнопки и ссылки */
+        --color-accent: 37 99 235;
+        /* Ошибка: текст, плашка, рамка */
+        --color-danger: 220 38 38;
+        --color-danger-bg: 254 242 242;
+        --color-danger-border: 254 202 202;
+        /* Успех: текст, плашка, рамка */
+        --color-success: 22 163 74;
+        --color-success-bg: 240 253 244;
+        --color-success-border: 187 247 208;
+        /* Предупреждение: текст, плашка, рамка */
+        --color-warning: 217 119 6;
+        --color-warning-bg: 255 251 235;
+        --color-warning-border: 254 243 199;
+    }
+}
+
+/* Тёмная тема вне @layer base: сборка Tailwind 3 выбрасывает из base
+   правило, селектор которого состоит ровно из одного класса, — `.dark`
+   доходит до выходного CSS только здесь. Каскад не важен: у `.dark`
+   специфичность выше, чем у `:root`, а правило задаёт только
+   пользовательские свойства, которые утилиты не трогают. */
+.dark {
+    --color-surface: 18 18 18;
+    --color-surface-raised: 31 31 31;
+    --color-surface-sunken: 39 39 42;
+    --color-border: 55 55 61;
+    --color-border-strong: 82 82 91;
+    --color-text: 237 237 242;
+    --color-text-muted: 161 161 170;
+    --color-text-subtle: 113 113 122;
+    --color-text-on-accent: 17 24 39;
+    --color-accent: 125 158 235;
+    --color-danger: 248 113 113;
+    --color-danger-bg: 69 26 26;
+    --color-danger-border: 127 29 29;
+    --color-success: 74 222 128;
+    --color-success-bg: 22 55 38;
+    --color-success-border: 22 101 52;
+    --color-warning: 252 211 77;
+    --color-warning-bg: 69 50 12;
+    --color-warning-border: 120 84 20;
+}
