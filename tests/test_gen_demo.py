@@ -3,8 +3,6 @@ import random
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy.orm import sessionmaker
-
 from app.modules.audit.models import AuditLog
 from app.modules.customers.models import Customer
 from app.modules.importer.orders import DATE_FORMATS, parse_order_date
@@ -173,21 +171,12 @@ def test_a_new_order_goes_through_on_a_demo_product(db_session, tmp_path):
     assert db_session.query(Order).filter(Order.id == order.id).one().items[0].quantity == 3
 
 
-class _EngineTrap:
-    def __getattr__(self, name):
-        raise AssertionError(f"генератор не должен обращаться к engine.{name}")
-
-
-def test_the_generator_writes_nothing_to_the_database(db_session, db_engine, tmp_path, monkeypatch):
+def test_the_generator_writes_nothing_to_the_database(db_session, tmp_path):
     """Проверяет, что main() не пишет в базу.
 
-    Ловушка на app.db.engine добавлена потому, что подмены одного SessionLocal
-    недостаточно: запись через engine.connect() её обошла бы, и такая запись
-    ушла бы в рабочую базу из .env, оставив тест зелёным.
+    Ловушка на app.db.engine ставится автоусной фикстурой no_app_engine в
+    conftest, а не здесь: она нужна каждому тесту этого файла, а не одному.
     """
-    monkeypatch.setattr("app.db.SessionLocal",
-                        lambda: sessionmaker(bind=db_engine, autoflush=False)())
-    monkeypatch.setattr("app.db.engine", _EngineTrap())
     assert main(["--products", "30", "--customers", "10", "--orders", "40",
                  "--out", str(tmp_path / "demo.json"), "--seed", "3"]) == 0
     assert (tmp_path / "demo.json").is_file()

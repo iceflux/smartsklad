@@ -28,6 +28,27 @@ from app.modules.settings.service import ensure_default_settings
 from app.modules.inventory.service import ensure_default_units
 
 
+class _EngineTrap:
+    def __getattr__(self, name):
+        raise AssertionError(f"тест не должен обращаться к app.db.engine.{name}")
+
+
+@pytest.fixture(autouse=True)
+def no_app_engine(monkeypatch, db_engine):
+    """Заглушка на engine приложения автоусная, а не в одном тесте.
+
+    Подмены одного SessionLocal недостаточно: запись через engine.connect() её
+    обошла бы и ушла в рабочую базу из .env, оставив тест зелёным. Ловша
+    нужна каждому тесту, а не только проверке генератора демо-данных: иначе
+    первая же новая запись в app.db.engine из чужого модуля уедет в базу
+    владельца раньше, чем это заметит структурная проверка исходника.
+    """
+    monkeypatch.setattr("app.db.SessionLocal",
+                        lambda: sessionmaker(bind=db_engine, autoflush=False)())
+    monkeypatch.setattr("app.db.engine", _EngineTrap())
+    yield
+
+
 @pytest.fixture(autouse=True)
 def clean_ratelimit():
     reset_state()
