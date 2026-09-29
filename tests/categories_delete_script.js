@@ -57,15 +57,17 @@ function run(options) {
     assert.deepStrictEqual(moved.calls.deletes, ['/api/categories/1?resolve=true&reassign_to=3']);
     assert.ok(moved.calls.prompts[0].includes('2 товара и 1 подкатегория'), moved.calls.prompts[0]);
     assert.ok(moved.calls.prompts[0].includes('1 — Другое'), moved.calls.prompts[0]);
-    assert.ok(moved.calls.prompts[0].includes('2 — Лист'), moved.calls.prompts[0]);
+    assert.ok(!moved.calls.prompts[0].includes('Лист'), 'a child must not be offered as a destination');
     assert.ok(!moved.calls.prompts[0].includes('Ветка'), 'a descendant must not be offered');
 
     const second = await run({id: 1, contents: full, answer: '2'});
-    assert.deepStrictEqual(second.calls.deletes, ['/api/categories/1?resolve=true&reassign_to=4']);
+    assert.deepStrictEqual(second.calls.deletes, [], 'a child must not be numbered as a destination');
 
     const child = await run({id: 2, contents: full, answer: '1'});
     assert.deepStrictEqual(child.calls.deletes, ['/api/categories/2?resolve=true&reassign_to=1']);
-    assert.ok(!child.calls.prompts[0].includes('2 — Ветка'), 'the deleted category must not be offered');
+    assert.ok(!child.calls.prompts[0].includes('Ветка'), 'the deleted category must not be offered');
+    assert.ok(child.calls.prompts[0].includes('1 — Корень'), 'the parent root stays a destination');
+    assert.ok(!child.calls.prompts[0].includes('Лист'), 'a sibling child is not a destination');
 
     const cleared = await run({id: 1, contents: full, answer: '   '});
     assert.deepStrictEqual(cleared.calls.deletes, ['/api/categories/1?resolve=true']);

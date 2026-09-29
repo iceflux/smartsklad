@@ -51,15 +51,7 @@
         var tree = JSON.parse(document.getElementById('categories-data').textContent);
 
         function moveTargetsFor(id) {
-            var out = [];
-            tree.forEach(function (root) {
-                var own = String(root.id) === id;
-                if (!own) { out.push(root); }
-                (root.children || []).forEach(function (child) {
-                    if (!own && String(child.id) !== id) { out.push(child); }
-                });
-            });
-            return out;
+            return tree.filter(function (root) { return String(root.id) !== id; });
         }
 
         function plural(n, one, few, many) {
