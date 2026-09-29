@@ -23,7 +23,12 @@ from app.modules.importer.files import (
     resolve_folder,
 )
 from app.modules.importer.models import ImportMap
-from app.modules.importer.orders import parse_order_date, resolve_orders
+from app.modules.importer.orders import (
+    _price as _item_price,
+    _quantity,
+    parse_order_date,
+    resolve_orders,
+)
 from app.modules.importer.resolve import (
     SkuFactory,
     _price,
@@ -782,6 +787,32 @@ def test_line_with_broken_quantity_is_skipped_with_warning(db_session):
     assert any("количеством меньше 1" in w for w in stats["warnings"])
 
 
+@pytest.mark.parametrize("quantity", [-1, -5, "-5", -0.5])
+def test_line_with_negative_quantity_is_skipped_with_warning(db_session, quantity):
+    """Нижнюю границу количества держит не _quantity, а вызывающая сторона:
+    orders.py отбрасывает всё, что меньше 1, и пишет предупреждение."""
+    customer = _customer(db_session)
+    product = _product(db_session, "Гвоздь", "S1")
+    plans, stats = resolve_orders(
+        db_session, [_order(items=[_line(product_id="p1", quantity=quantity)])],
+        {"p1": product.id}, {"c1": customer.id})
+    assert plans[0].items == []
+    assert stats["empty_orders"] == 1
+    assert any("количеством меньше 1" in w for w in stats["warnings"])
+
+
+def test_order_line_price_that_is_not_finite_never_reaches_the_order(db_session, tmp_path):
+    """Цена позиции из файла обязана быть конечной: иначе она ложится в
+    product_price_snapshot и через recalc_total отравляет итог заказа."""
+    customer = _customer(db_session)
+    product = _product(db_session, "Гвоздь", "S1")
+    plans, _ = resolve_orders(
+        db_session,
+        [_order(items=[_line(product_id="p1", price="NaN"), _line(product_id="p1", price="-5")])],
+        {"p1": product.id}, {"c1": customer.id})
+    assert [i.price for i in plans[0].items] == [0.0]
+
+
 def test_known_customer_id_used_and_unknown_one_falls_to_service(db_session):
     customer = _customer(db_session)
     plans, stats = resolve_orders(
@@ -1472,5 +1503,29 @@ def test_price_and_rest_still_read_ordinary_values():
     assert _rest("40") == 40
     assert _rest(3.9) == 3
     assert _rest("40") == 40
+
+
+def test_order_item_price_falls_back_to_zero_on_every_unusable_value():
+    """Та же дыра, что и у товара, но в другой колонке: цена позиции ложится в
+    OrderItem.product_price_snapshot и через recalc_total отравляет итог заказа.
+    """
+    for value in ("NaN", "nan", "inf", "-inf", "Infinity", "-Infinity", "1e400", "-5", -5.0,
+                  float("nan"), float("inf"), 10 ** 400, None, "не число"):
+        assert _item_price(value) == 0.0, value
+
+
+def test_order_item_quantity_falls_back_to_zero_on_every_unusable_value():
+    for value in ("NaN", "nan", "inf", "-inf", "Infinity", "-Infinity", float("nan"),
+                  float("inf"), float("-inf"), None, "не число", "3.9"):
+        assert _quantity(value) == 0, value
+
+
+def test_order_item_price_and_quantity_still_read_ordinary_values():
+    assert _item_price("12.5") == 12.5
+    assert _item_price(0) == 0.0
+    assert _item_price(7) == 7.0
+    assert _quantity("2") == 2
+    assert _quantity(3.9) == 3
+    assert _quantity(1) == 1
 
 

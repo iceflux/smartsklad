@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -51,15 +52,16 @@ def parse_order_date(value) -> datetime:
 def _quantity(value) -> int:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 
 def _price(value) -> float:
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
         return 0.0
+    return number if math.isfinite(number) and number >= 0 else 0.0
 
 
 def _add(items: dict, key, item: ItemPlan) -> int:
