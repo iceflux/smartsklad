@@ -72,3 +72,42 @@
     --color-warning-strong-bg: 94 67 16;
     --color-warning-strong-border: 180 130 30;
 }
+
+/* Печать: тёмная тема на бумагу не попадает. Заказ, напечатанный с тёмным фоном, —
+   брак, поэтому значения печати принудительно возвращаются к светлым.
+   Блок стоит ВНЕ @layer base и ПОСЛЕ .dark, и это не stylistic choice: любое
+   правило без слоя приходит в каскад позже любого правила из слоя, поэтому
+   @media print внутри @layer base проиграл бы .dark, который слоя не имеет.
+   Здесь специфичность .dark и :root совпадает (0,1,0) и тёмная тема выигрывает
+   только порядком следования — печать переигрывает её тем же порядком, стоя
+   после. Дублируются все 23 значения, и это единственное место с дублем:
+   tests/test_design_tokens.py сверяет этот блок с :root, поэтому значение,
+   поменянное в светлой палитре и забытое здесь, роняет прогон. */
+@media print {
+    :root,
+    .dark {
+        --color-surface: 249 250 251;
+        --color-surface-raised: 255 255 255;
+        --color-surface-sunken: 243 244 246;
+        --color-line: 229 231 235;
+        --color-line-strong: 209 213 219;
+        --color-primary: 17 24 39;
+        --color-secondary: 55 65 81;
+        --color-caption: 75 85 99;
+        --color-muted: 107 114 128;
+        --color-subtle: 156 163 175;
+        --color-on-accent: 255 255 255;
+        --color-accent: 37 99 235;
+        --color-danger: 220 38 38;
+        --color-danger-bg: 254 242 242;
+        --color-danger-border: 254 202 202;
+        --color-success: 22 163 74;
+        --color-success-bg: 240 253 244;
+        --color-success-border: 187 247 208;
+        --color-warning: 217 119 6;
+        --color-warning-bg: 255 251 235;
+        --color-warning-border: 253 230 138;
+        --color-warning-strong-bg: 254 243 199;
+        --color-warning-strong-border: 252 211 77;
+    }
+}
