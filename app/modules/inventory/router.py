@@ -120,7 +120,7 @@ def api_delete_category(
 
 @router.get("/categories/{category_id}/contents")
 def api_category_contents(category_id: int, user=Depends(get_current_user), db=Depends(get_db)):
-    _ensure(user, Permission.products_view)
+    _ensure(user, Permission.categories_manage)
     if db.get(Category, category_id) is None:
         raise HTTPException(status_code=404, detail="Категория не найдена")
     return category_contents(db, category_id)

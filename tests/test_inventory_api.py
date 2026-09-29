@@ -323,28 +323,44 @@ def test_category_contents_counts_only_live_rows(client, db_session):
     assert client.get("/api/categories/9999/contents").status_code == 404
 
 
-def test_category_contents_requires_products_view(client, db_session):
+def test_category_contents_requires_categories_manage(client, db_session):
     _admin(client, db_session)
     cat = _make_category(client, name="Кровля")
-    role = Role(name="noaccess", is_system=False, is_super=False, permissions=["categories.manage"])
+    role = Role(name="noaccess", is_system=False, is_super=False, permissions=["products.view"])
     db_session.add(role)
     db_session.commit()
     _user(client, db_session, "noaccess1", "noaccess")
     assert client.get(f"/api/categories/{cat['id']}/contents").status_code == 403
 
 
-def test_category_contents_allows_products_view_alone(client, db_session):
+def test_category_contents_allows_a_manager_of_categories_alone(client, db_session):
     _admin(client, db_session)
     cat = _make_category(client, name="Кровля")
     _make_product(client, category_id=cat["id"])
-    role = Role(name="readonly", is_system=False, is_super=False, permissions=["products.view"])
+    role = Role(name="catman", is_system=False, is_super=False, permissions=["categories.manage"])
     db_session.add(role)
     db_session.commit()
-    user = _user(client, db_session, "readonly1", "readonly")
-    assert user.role.is_super is False
+    user = _user(client, db_session, "catman1", "catman")
+    assert "products.view" not in user.role.permissions
     r = client.get(f"/api/categories/{cat['id']}/contents")
     assert r.status_code == 200
     assert r.json() == {"products": 1, "children": 0}
+
+
+def test_the_delete_button_a_manager_sees_is_reachable_over_http(client, db_session):
+    _admin(client, db_session)
+    cat = _make_category(client, name="Кровля")
+    _make_product(client, category_id=cat["id"])
+    role = Role(name="catman", is_system=False, is_super=False,
+                permissions=["products.view", "categories.manage"])
+    db_session.add(role)
+    db_session.commit()
+    _user(client, db_session, "catman1", "catman")
+    page = client.get("/categories")
+    assert page.status_code == 200
+    assert f'data-id="{cat["id"]}"' in page.text
+    assert client.get(f"/api/categories/{cat['id']}/contents").status_code == 200
+    assert client.delete(f"/api/categories/{cat['id']}?resolve=true").status_code == 204
 
 
 def test_update_category_name_conflicts_with_live_sibling(client, db_session):
