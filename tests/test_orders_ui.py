@@ -176,6 +176,36 @@ def test_edit_form_saves_a_soft_deleted_line_beside_a_live_one(client, db_sessio
     assert [(i.product_id, i.quantity) for i in saved.items] == [(p.id, 2), (live.id, 5)]
 
 
+def test_edit_form_saves_an_order_of_a_soft_deleted_client(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    assert client.delete(f"/api/customers/{c.id}").status_code == 204
+    product_ids, quantities, discounts = _posted_lines(
+        client.get(f"/orders/{order.id}/edit").text)
+    r = client.post(f"/orders/{order.id}/edit", data={
+        "customer_id": str(c.id), "discount": "0",
+        "product_id": product_ids, "quantity": quantities, "line_discount": discounts,
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    db_session.expire_all()
+    assert db_session.get(Order, order.id).customer_id == c.id
+
+
+def test_edit_form_still_404s_for_another_missing_client(client, db_session):
+    _admin(client, db_session)
+    p, c, order = _seed(db_session)
+    assert client.delete(f"/api/customers/{c.id}").status_code == 204
+    product_ids, quantities, discounts = _posted_lines(
+        client.get(f"/orders/{order.id}/edit").text)
+    r = client.post(f"/orders/{order.id}/edit", data={
+        "customer_id": "9999", "discount": "0",
+        "product_id": product_ids, "quantity": quantities, "line_discount": discounts,
+    }, follow_redirects=False)
+    assert r.status_code == 404
+    db_session.expire_all()
+    assert db_session.get(Order, order.id).customer_id == c.id
+
+
 def test_orders_page_redirects_anonymous(client):
     r = client.get("/orders", follow_redirects=False)
     assert r.status_code == 303

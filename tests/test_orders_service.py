@@ -282,3 +282,35 @@ def test_repeated_product_takes_the_first_free_snapshot(db_session, plain_custom
     assert len(saved.items) == 1
     assert saved.items[0].product_price_snapshot == 100.0
     assert saved.items[0].unit_snapshot == "кг"
+
+
+def test_saving_an_order_keeps_a_soft_deleted_client_unchanged(
+    db_session, product, plain_customer,
+):
+    order = create_order(db_session, customer_id=plain_customer.id,
+                         items=[{"product_id": product.id, "quantity": 1, "discount": 0.0}])
+    plain_customer.is_deleted = True
+    db_session.commit()
+
+    saved = update_order(db_session, order.id, customer_id=plain_customer.id, items=[
+        {"product_id": product.id, "quantity": 2, "discount": 0.0},
+    ])
+
+    assert saved.customer_id == plain_customer.id
+    assert db_session.get(Order, order.id).items[0].quantity == 2
+
+
+def test_saving_an_order_still_refuses_another_client(db_session, product, plain_customer):
+    order = create_order(db_session, customer_id=plain_customer.id,
+                         items=[{"product_id": product.id, "quantity": 1, "discount": 0.0}])
+    gone = Customer(name="ООО Ликвидировано", is_deleted=True)
+    db_session.add(gone)
+    db_session.commit()
+    plain_customer.is_deleted = True
+    db_session.commit()
+    lines = [{"product_id": product.id, "quantity": 1, "discount": 0.0}]
+
+    for other_id in (gone.id, 9999):
+        with pytest.raises(ValueError, match="customer not found"):
+            update_order(db_session, order.id, customer_id=other_id, items=lines)
+    assert db_session.get(Order, order.id).customer_id == plain_customer.id

@@ -166,7 +166,7 @@ def update_order(db, order_id, *, customer_id=None, discount=None, items=None, u
     if order.status == "done":
         raise ValueError("cannot edit done order")
     old_value = json.dumps(_order_dict(order), ensure_ascii=False)
-    if customer_id is not None:
+    if customer_id is not None and customer_id != order.customer_id:
         c = _get_customer(db, customer_id)
         order.customer_id = c.id
     if discount is not None:
