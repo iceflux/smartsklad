@@ -15,7 +15,6 @@ REPORT_PERIOD_KEY = "report_email_period"
 REPORT_TIME_KEY = "report_email_time"
 REPORT_RECIPIENTS_KEY = "report_email_recipients"
 REPORT_PERIODS = ("day", "week", "month")
-USER_KEY_PREFIX = "ui."
 SIDEBAR_COLLAPSED_KEY = "ui.sidebar_collapsed"
 USER_KEYS = (SIDEBAR_COLLAPSED_KEY,)
 

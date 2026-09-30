@@ -7,16 +7,22 @@
    пользователя и уже стоит в атрибуте data-sidebar на <body>, поэтому
    браузеру нечего догадываться и вёрстка не мигает. */
 @layer components {
+    /* Закрытый сайдбар уезжает только трансформацией, а трансформация не
+       вынимает ссылки из порядка табуляции: закрытая панель оставалась
+       доступной с клавиатуры (и на узком экране, и в узком широком окне).
+       `visibility` убирает её и оттуда, не трогая анимацию появления. */
     .app-sidebar {
         position: fixed;
         inset-block: 0;
         left: 0;
         z-index: 40;
         width: 16rem;
+        visibility: hidden;
         transform: translateX(-100%);
         transition: transform 0.15s ease-out;
     }
     body[data-nav="open"] .app-sidebar {
+        visibility: visible;
         transform: translateX(0);
     }
     .app-overlay {
@@ -82,10 +88,14 @@
         color: rgb(var(--color-muted));
     }
     @media (min-width: 1024px) {
+        /* Широкий экран: сайдбар постоянная колонка, поэтому его
+           обязательно видно — без `visibility: visible` базовое правило
+           оставило бы панель скрытой на всех мониторах. */
         .app-sidebar {
             position: sticky;
             top: 0;
             height: 100vh;
+            visibility: visible;
             transform: none;
             flex-shrink: 0;
         }

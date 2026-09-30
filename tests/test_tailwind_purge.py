@@ -34,6 +34,18 @@ MENU_SELECTORS = [
     r"\.app-sidebar\{",
     r"\.app-overlay\{",
     r"\.app-nav-current\{",
+    # Десктопное переопределение — отдельный селектор, а не продолжение базового
+    # правила: без него на мониторе остаётся `position:fixed` +
+    # `translateX(-100%)`, бургер скрыт (`lg:hidden`) и ни один из 14 разделов
+    # недостижим. Проверка «`.app-sidebar{` есть в CSS» этот шов не видит: строка
+    # в списке уже стоит, а панель всё равно не на экране.
+    r"@media \(min-width:1024px\)\{\.app-sidebar\{[^}]*position:sticky",
+    # Свёрнутое по настройке состояние живёт здесь же, на широком экране.
+    r'body\[data-sidebar=("?)collapsed\1\] \.app-sidebar\{',
+    # Закрытая панель обязана быть `visibility: hidden`: трансформация не
+    # вынимает ссылки из порядка табуляции.
+    r"\.app-sidebar\{[^}]*visibility:hidden",
+    r'body\[data-nav=("?)open\1\] \.app-sidebar\{[^}]*visibility:visible',
 ]
 
 

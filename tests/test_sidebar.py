@@ -282,6 +282,42 @@ def test_the_menu_marks_nothing_on_a_path_that_matches_no_link(client):
     assert _current_links(_header(body)) == []
 
 
+@pytest.mark.parametrize(
+    "path, href, label",
+    [
+        ("/products", "/products", "Товары"),
+        ("/customers", "/customers", "Клиенты"),
+        ("/units", "/units", "Единицы измерения"),
+        ("/forecast", "/forecast", "Прогноз"),
+        ("/import", "/import", "Импорт"),
+        ("/roles", "/roles", "Роли"),
+        ("/users", "/users", "Пользователи"),
+        ("/settings", "/settings", "Настройки"),
+        ("/notifications", "/notifications", "Уведомления"),
+        ("/audit", "/audit", "Журнал аудита"),
+        ("/backups", "/backups", "Резервные копии"),
+        ("/dashboard", "/dashboard", "Аналитика"),
+        ("/categories", "/categories", "Категории"),
+        ("/reset-password", None, None),
+        ("/users/{user_id}/edit", "/users", "Пользователи"),
+    ],
+)
+def test_every_group_item_marks_its_own_section(client, db_session, path, href, label):
+    """Пункты групп рендерит цикл, а не отдельная строка как «Заказы».
+
+    Раньше отметка текущего раздела проверялась только на зашитой в шаблон ссылке
+    «Заказы» (`base.html:65`), поэтому удаление `{% if %}` из цикла
+    `base.html:73` оставляло весь прогон зелёным, а тринадцать разделов молча
+    переставали подсвечиваться. Разбор: одно точное совпадение, одна вложенная
+    страница и путь, не совпадающий ни с чем.
+    """
+    user = _login_as(client, db_session, "boss", "admin")
+    markup = _sidebar(client.get(path.format(user_id=user.id)).text)
+    expected = [] if href is None else [(href, label)]
+    assert _current_links(markup) == expected, markup
+    assert markup.count("app-nav-current") == len(expected), markup
+
+
 def test_the_root_marks_the_brand_and_no_menu_item(client, db_session):
     _login_as(client, db_session, "boss", "admin")
     body = client.get("/").text
