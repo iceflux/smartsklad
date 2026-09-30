@@ -53,10 +53,7 @@
             transform: none;
             flex-shrink: 0;
         }
-.app-menu-toggle {
-        display: inline-flex;
-    }
-    .app-overlay {
+        .app-overlay {
             display: none;
         }
         .app-menu-toggle {

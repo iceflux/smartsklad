@@ -179,8 +179,17 @@ def test_the_settings_api_hides_the_per_user_menu_key(client, db_session):
     _login_as(client, db_session, "boss", "admin")
     client.post("/ui/sidebar", data={"collapsed": "true"}, follow_redirects=False)
     keys = [row["key"] for row in client.get("/api/settings").json()]
-    assert keys, "список настроек опустел целиком — фильтр съел лишнее"
-    assert not [key for key in keys if key.startswith("ui.")]
+    assert "ui.sidebar_collapsed" not in keys
+    assert not [key for key in keys if key.startswith("ui.")], (
+        f"поользовательский ключ попал в общий список: {keys}"
+    )
+    expected = {
+        "min_stock_days", "report_email_enabled", "report_email_period",
+        "report_email_recipients", "report_email_time", "stock_track_default",
+        "telegram_bot_token", "telegram_chat_id", "user_password_charset",
+        "user_password_length",
+    }
+    assert set(keys) == expected, f"из списка настроек выпали или лишние глобалки: {sorted(keys)}"
 
 
 def test_the_settings_page_does_not_list_the_per_user_menu_key(client, db_session):

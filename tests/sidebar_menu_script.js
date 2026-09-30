@@ -17,7 +17,11 @@ function run() {
         getAttribute(k) { return this._v[k] === undefined ? null : this._v[k]; },
         setAttribute(k, v) { this._v[k] = v; },
     };
-    const toggle = {addEventListener: (e, fn) => { listeners['toggle:' + e] = fn; }};
+    const toggle = {
+        _v: {'aria-expanded': 'false'},
+        addEventListener: (e, fn) => { listeners['toggle:' + e] = fn; },
+        setAttribute(k, v) { this._v[k] = v; },
+    };
     const overlay = {addEventListener: (e, fn) => { listeners['overlay:' + e] = fn; }};
     const sandbox = {
         document: {
@@ -29,7 +33,7 @@ function run() {
     };
     vm.createContext(sandbox);
     vm.runInContext(block, sandbox);
-    return {body, listeners};
+    return {body, listeners, toggle};
 }
 
 const opened = run();
@@ -48,5 +52,17 @@ const fresh = run();
 fresh.listeners['toggle:click']();
 fresh.listeners['doc:keydown']({key: 'Escape'});
 assert.strictEqual(fresh.body.getAttribute('data-nav'), 'closed', 'Escape must close an open menu');
+
+const aria = run();
+assert.strictEqual(aria.toggle._v['aria-expanded'], 'false', 'the markup seeds the button closed');
+aria.listeners['toggle:click']();
+assert.strictEqual(aria.toggle._v['aria-expanded'], 'true', 'opening must set aria-expanded');
+aria.listeners['overlay:click']();
+assert.strictEqual(aria.toggle._v['aria-expanded'], 'false', 'the overlay must reset aria-expanded');
+aria.listeners['toggle:click']();
+aria.listeners['doc:keydown']({key: 'Escape'});
+assert.strictEqual(aria.toggle._v['aria-expanded'], 'false', 'Escape must reset aria-expanded');
+
+assert.ok(/aria-expanded="false"/.test(template), 'the menu button ships no initial aria-expanded');
 
 console.log('ok');

@@ -17,6 +17,7 @@ REPORT_RECIPIENTS_KEY = "report_email_recipients"
 REPORT_PERIODS = ("day", "week", "month")
 USER_KEY_PREFIX = "ui."
 SIDEBAR_COLLAPSED_KEY = "ui.sidebar_collapsed"
+USER_KEYS = (SIDEBAR_COLLAPSED_KEY,)
 
 
 def user_setting_key(key: str, user_id: int) -> str:
@@ -24,7 +25,18 @@ def user_setting_key(key: str, user_id: int) -> str:
 
 
 def is_user_setting(key: str) -> bool:
-    return key.startswith(USER_KEY_PREFIX)
+    """Ключ на пользователя — это известное имя плюс «:» и хвост.
+
+    Одного префикса `ui.` мало: глобальная настройка с таким же префиксом
+    (она правдоподобна — интерфейсных глобалок будет много) молча ушла бы
+    из общего списка вместе с меню. Поэтому сверяется и имя из USER_KEYS, и
+    двоеточие. Проверки «хвост из цифр» здесь нет намеренно: отличить ею
+    `ui.sidebar_collapsed:7` от глобалки, названной `ui.sidebar_collapsed:что-то`,
+    нечем — такого глобалки нет и заводить её незачем, а непроверяемая ветка
+    в предикате — тот же класс дефекта, что тест, который не может упасть.
+    """
+    base, sep, _user_id = key.rpartition(":")
+    return bool(sep) and base in USER_KEYS
 
 
 def _defaults() -> dict[str, str]:

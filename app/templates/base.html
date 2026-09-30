@@ -41,7 +41,7 @@
 {% endif %}
     <div class="flex min-h-screen">
         <div class="app-menu-toggle items-center gap-2 p-3">
-            <button type="button" data-menu-toggle class="lg:hidden border px-3 py-1">Меню</button>
+            <button type="button" data-menu-toggle aria-expanded="false" class="lg:hidden border px-3 py-1">Меню</button>
             {% if collapsed %}
             <form method="post" action="/ui/sidebar" class="hidden lg:inline-flex">
                 <input type="hidden" name="collapsed" value="false">
@@ -92,10 +92,11 @@
 <script>
 (function () {
     var body = document.body;
+    var toggle = document.querySelector("[data-menu-toggle]");
     function show(open) {
         body.setAttribute("data-nav", open ? "open" : "closed");
+        if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
     }
-    var toggle = document.querySelector("[data-menu-toggle]");
     if (toggle) {
         toggle.addEventListener("click", function () {
             show(body.getAttribute("data-nav") !== "open");

@@ -28,6 +28,13 @@ LEGACY_SHADES = re.compile(
     r"|white|black)$"
 )
 
+MENU_SELECTORS = [
+    r'body\[data-nav=("?)open\1\] \.app-sidebar',
+    r'body\[data-nav=("?)closed\1\] \.app-overlay',
+    r"\.app-sidebar\{",
+    r"\.app-overlay\{",
+]
+
 
 def _class_attrs():
     for path in sorted(TEMPLATES.rglob("*.html")):
@@ -81,3 +88,21 @@ def test_templates_do_not_load_the_tailwind_play_cdn():
     base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
     assert "cdn.tailwindcss.com" not in base
     assert '/static/app.css' in base
+
+
+def test_the_shipped_css_carries_the_selectors_the_menu_markup_and_script_depend_on():
+    """Шов между разметкой, скриптом и CSS.
+
+    node-харнесс подставляет телу документа свой собственный `data-nav="closed"`,
+    поэтому сверки с серверной разметкой он не делает и переименование селектора
+    в CSS проходит мимо него зелёным. Чистая проверка «класс есть в собранном
+    CSS» тем же свойством обладает: `.app-sidebar` в разметке есть, `.app-drawer`
+    в CSS тоже есть, а правило, которое им связывает, никто не ищет. Минификатор
+    CSS-склеивает селекторы, поэтому кавычки в значении атрибута в артефакте
+    может не быть — ищется любая из двух форм. Сверяется список: переименование
+    только в CSS роняет эту проверку, а разметка и скрипт остаются нетронутыми.
+    """
+    css = BUILT_CSS.read_text(encoding="utf-8")
+    missing = [selector for selector in MENU_SELECTORS
+               if not re.search(selector, css)]
+    assert missing == [], f"в app.css нет селекторов, на которых держится меню: {missing}"
