@@ -2,16 +2,16 @@
 {% block content %}
 <main class="max-w-4xl mx-auto p-4">
     <div class="print:hidden mb-4 flex gap-2">
-        <button onclick="window.print()" class="border px-3 py-1">Печать</button>
-        <a href="/orders/{{ order_id }}/pdf" class="border px-3 py-1">Скачать PDF</a>
+        <button onclick="window.print()" class="app-btn border px-3 py-1">Печать</button>
+        <a href="/orders/{{ order_id }}/pdf" class="app-btn border px-3 py-1">Скачать PDF</a>
         {% if can_send_notifications %}
         <form method="post" action="/orders/{{ order_id }}/send" class="inline">
             <input type="hidden" name="channel" value="email">
-            <button class="border px-3 py-1 ml-1">На email</button>
+            <button class="app-btn border px-3 py-1 ml-1">На email</button>
         </form>
         <form method="post" action="/orders/{{ order_id }}/send" class="inline">
             <input type="hidden" name="channel" value="telegram">
-            <button class="border px-3 py-1 ml-1">В Telegram</button>
+            <button class="app-btn border px-3 py-1 ml-1">В Telegram</button>
         </form>
         {% endif %}
     </div>

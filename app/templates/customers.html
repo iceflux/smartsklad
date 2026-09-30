@@ -3,7 +3,7 @@
 <main class="max-w-6xl mx-auto p-4">
     <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-bold">Клиенты</h1>
-        <a href="/customers/new" class="bg-accent text-on-accent px-3 py-1">Добавить клиента</a>
+        <a href="/customers/new" class="app-btn-accent bg-accent text-on-accent px-3 py-1">Добавить клиента</a>
     </div>
 
     {% if msg %}<p class="mb-4 bg-success-bg border border-success-border p-2">{{ msg }}</p>{% endif %}
@@ -17,8 +17,8 @@
             <input type="checkbox" name="include_deleted" value="1" {% if include_deleted %}checked{% endif %}>
             Показывать удалённые
         </label>
-        <button class="bg-line px-3 py-2">Фильтр</button>
-        <a href="/customers" class="text-sm text-accent py-2">Сбросить</a>
+        <button class="app-btn-line bg-line px-3 py-2">Фильтр</button>
+        <a href="/customers" class="app-link text-sm text-accent py-2">Сбросить</a>
     </form>
 
     <div class="overflow-x-auto">
@@ -35,19 +35,19 @@
         <tbody>
             {% for c in customers %}
             <tr class="border-b {% if c.is_deleted %}bg-surface-sunken text-muted{% endif %}">
-                <td class="p-2"><a href="/customers/{{ c.id }}" class="text-accent">{{ c.name }}</a>{% if c.is_deleted %} (удалён){% endif %}</td>
+                <td class="p-2"><a href="/customers/{{ c.id }}" class="app-link text-accent">{{ c.name }}</a>{% if c.is_deleted %} (удалён){% endif %}</td>
                 <td class="p-2">{{ c.phone or '' }}</td>
                 <td class="p-2">{{ c.inn or '' }}</td>
                 <td class="p-2">{{ c.personal_discount }}%</td>
                 <td class="p-2">
                     {% if c.is_deleted %}
                         <form method="post" action="/customers/{{ c.id }}/restore" class="inline">
-                            <button class="text-accent">Восстановить</button>
+                            <button class="app-link text-accent">Восстановить</button>
                         </form>
                     {% else %}
-                        <a href="/customers/{{ c.id }}/edit" class="text-accent mr-2">Изменить</a>
+                        <a href="/customers/{{ c.id }}/edit" class="app-link text-accent mr-2">Изменить</a>
                         <form method="post" action="/customers/{{ c.id }}/delete" class="inline" onsubmit="return confirm('Удалить клиента?');">
-                            <button class="text-danger">Удалить</button>
+                            <button class="app-btn-danger text-danger">Удалить</button>
                         </form>
                     {% endif %}
                 </td>
@@ -61,9 +61,9 @@
 
     <div class="flex items-center gap-3 mt-4 text-sm">
         <span>Всего: {{ total }}</span>
-        {% if page > 1 %}<a class="text-accent" href="/customers?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
+        {% if page > 1 %}<a class="app-link text-accent" href="/customers?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
         <span>Стр. {{ page }} из {{ pages }}</span>
-        {% if page < pages %}<a class="text-accent" href="/customers?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
+        {% if page < pages %}<a class="app-link text-accent" href="/customers?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
     </div>
 </main>
 {% endblock %}

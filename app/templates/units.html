@@ -10,7 +10,7 @@
             <label class="block text-sm">Новая единица</label>
             <input name="name" maxlength="32" class="border p-2" required>
         </div>
-        <button class="bg-accent text-on-accent px-3 py-2">Добавить</button>
+        <button class="app-btn-accent bg-accent text-on-accent px-3 py-2">Добавить</button>
     </form>
 
     <div class="overflow-x-auto">
@@ -30,10 +30,10 @@
                 <td class="p-2">
                     <form method="post" action="/units/{{ u.id }}/edit" class="inline">
                         <input name="name" value="{{ u.name }}" maxlength="32" class="border p-2">
-                        <button class="text-accent">Сохранить</button>
+                        <button class="app-link text-accent">Сохранить</button>
                     </form>
                     <form method="post" action="/units/{{ u.id }}/delete" class="inline" onsubmit="return confirm('Удалить единицу?');">
-                        <button class="text-danger">Удалить</button>
+                        <button class="app-btn-danger text-danger">Удалить</button>
                     </form>
                 </td>
             </tr>

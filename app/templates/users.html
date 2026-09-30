@@ -3,7 +3,7 @@
 <main class="max-w-4xl mx-auto p-4">
     <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-bold">Пользователи</h1>
-        <a href="/users/new" class="bg-accent text-on-accent px-3 py-1">Создать пользователя</a>
+        <a href="/users/new" class="app-btn-accent bg-accent text-on-accent px-3 py-1">Создать пользователя</a>
     </div>
     {% if msg %}<p class="text-success mb-2">{{ msg }}</p>{% endif %}
     <div class="overflow-x-auto">
@@ -28,14 +28,14 @@
                             {% for r in roles %}<option value="{{ r.id }}" {% if r.id == u.role_id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
                         </select>
                         {% if u.can_change_role %}
-                            <button class="border px-2 py-1">Сохранить</button>
+                            <button class="app-btn border px-2 py-1">Сохранить</button>
                         {% else %}
-                            <button class="border px-2 py-1 opacity-50" disabled title="Нельзя менять собственную роль">Сохранить</button>
+                            <button class="app-btn border px-2 py-1 opacity-50" disabled title="Нельзя менять собственную роль">Сохранить</button>
                         {% endif %}
                     </form>
-                    <a href="/users/{{ u.id }}/edit" class="text-accent">Редактировать</a>
+                    <a href="/users/{{ u.id }}/edit" class="app-link text-accent">Редактировать</a>
                     {% if is_super %}
-                        <button type="button" class="border px-2 py-1 ml-2" onclick="adminReset({{ u.id }})">Сбросить пароль</button>
+                        <button type="button" class="app-btn border px-2 py-1 ml-2" onclick="adminReset({{ u.id }})">Сбросить пароль</button>
                     {% endif %}
                 </td>
             </tr>

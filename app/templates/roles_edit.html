@@ -26,9 +26,9 @@
             {% endif %}
         </div>
         <p id="error" class="text-danger hidden"></p>
-        <button class="bg-accent text-on-accent px-4 py-2">Сохранить</button>
+        <button class="app-btn-accent bg-accent text-on-accent px-4 py-2">Сохранить</button>
         {% if not is_new and not role.is_system %}
-            <button type="button" class="ml-2 border px-4 py-2" onclick="confirmDelete()">Удалить роль</button>
+            <button type="button" class="app-btn ml-2 border px-4 py-2" onclick="confirmDelete()">Удалить роль</button>
         {% endif %}
     </form>
     <script>

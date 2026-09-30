@@ -4,7 +4,7 @@
     <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-bold">Категории</h1>
         {% if can_manage %}
-            <a href="/categories/new" class="bg-accent text-on-accent px-3 py-1">Создать категорию</a>
+            <a href="/categories/new" class="app-btn-accent bg-accent text-on-accent px-3 py-1">Создать категорию</a>
         {% endif %}
     </div>
 
@@ -24,8 +24,8 @@
                 <td class="p-2">{{ root.name }}</td>
                 <td class="p-2">
                     {% if can_manage %}
-                        <a href="/categories/{{ root.id }}/edit" class="text-accent mr-2">Изменить</a>
-                        <button class="text-danger delete-category" data-id="{{ root.id }}">Удалить</button>
+                        <a href="/categories/{{ root.id }}/edit" class="app-link text-accent mr-2">Изменить</a>
+                        <button class="app-btn-danger text-danger delete-category" data-id="{{ root.id }}">Удалить</button>
                     {% endif %}
                 </td>
             </tr>
@@ -34,8 +34,8 @@
                 <td class="p-2 pl-8 text-secondary">↳ {{ child.name }}</td>
                 <td class="p-2">
                     {% if can_manage %}
-                        <a href="/categories/{{ child.id }}/edit" class="text-accent mr-2">Изменить</a>
-                        <button class="text-danger delete-category" data-id="{{ child.id }}">Удалить</button>
+                        <a href="/categories/{{ child.id }}/edit" class="app-link text-accent mr-2">Изменить</a>
+                        <button class="app-btn-danger text-danger delete-category" data-id="{{ child.id }}">Удалить</button>
                     {% endif %}
                 </td>
             </tr>

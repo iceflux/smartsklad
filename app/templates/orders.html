@@ -4,7 +4,7 @@
     <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-bold">Заказы</h1>
         {% if can_create %}
-            <a href="/orders/new" class="bg-accent text-on-accent px-3 py-1">Новый заказ</a>
+            <a href="/orders/new" class="app-btn-accent bg-accent text-on-accent px-3 py-1">Новый заказ</a>
         {% endif %}
     </div>
 
@@ -49,8 +49,8 @@
             <input type="checkbox" name="include_deleted" value="1" {% if include_deleted %}checked{% endif %}>
             Показывать удалённые
         </label>
-        <button class="bg-line px-3 py-2">Фильтр</button>
-        <a href="/orders" class="text-sm text-accent py-2">Сбросить</a>
+        <button class="app-btn-line bg-line px-3 py-2">Фильтр</button>
+        <a href="/orders" class="app-link text-sm text-accent py-2">Сбросить</a>
     </form>
 
     <div class="overflow-x-auto">
@@ -67,7 +67,7 @@
         <tbody>
             {% for o in orders %}
             <tr class="border-b {% if o.is_deleted %}bg-surface-sunken text-muted{% endif %}">
-                <td class="p-2"><a href="/orders/{{ o.id }}" class="text-accent">{{ o.number }}</a>{% if o.is_deleted %} (удалён){% endif %}</td>
+                <td class="p-2"><a href="/orders/{{ o.id }}" class="app-link text-accent">{{ o.number }}</a>{% if o.is_deleted %} (удалён){% endif %}</td>
                 <td class="p-2">{{ o.customer_name }}</td>
                 <td class="p-2">{{ status_labels[o.status] }}</td>
                 <td class="p-2">{{ o.total_amount }}</td>
@@ -82,9 +82,9 @@
 
     <div class="flex items-center gap-3 mt-4 text-sm">
         <span>Всего: {{ total }}</span>
-        {% if page > 1 %}<a class="text-accent" href="/orders?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
+        {% if page > 1 %}<a class="app-link text-accent" href="/orders?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
         <span>Стр. {{ page }} из {{ pages }}</span>
-        {% if page < pages %}<a class="text-accent" href="/orders?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
+        {% if page < pages %}<a class="app-link text-accent" href="/orders?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
     </div>
 </main>
 {% endblock %}

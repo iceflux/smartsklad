@@ -5,10 +5,10 @@
         <h1 class="text-2xl font-bold">Товары</h1>
         <div>
             {% if can_export %}
-                <a href="/products/export.csv" class="border px-3 py-1 mr-2">Экспорт CSV</a>
+                <a href="/products/export.csv" class="app-btn border px-3 py-1 mr-2">Экспорт CSV</a>
             {% endif %}
             {% if can_edit %}
-                <a href="/products/new" class="bg-accent text-on-accent px-3 py-1">Добавить товар</a>
+                <a href="/products/new" class="app-btn-accent bg-accent text-on-accent px-3 py-1">Добавить товар</a>
             {% endif %}
         </div>
     </div>
@@ -36,8 +36,8 @@
             <input type="checkbox" name="include_deleted" value="1" {% if include_deleted %}checked{% endif %}>
             Показывать удалённые
         </label>
-        <button class="bg-line px-3 py-2">Фильтр</button>
-        <a href="/products" class="text-sm text-accent py-2">Сбросить</a>
+        <button class="app-btn-line bg-line px-3 py-2">Фильтр</button>
+        <a href="/products" class="app-link text-sm text-accent py-2">Сбросить</a>
     </form>
 
     {% if can_edit %}
@@ -51,7 +51,7 @@
                 {% endfor %}
             {% endfor %}
         </select>
-        <button class="border px-3 py-1">Изменить категорию</button>
+        <button class="app-btn border px-3 py-1">Изменить категорию</button>
     </form>
     {% endif %}
 
@@ -77,7 +77,7 @@
                     {% if not p.is_deleted %}<input type="checkbox" name="product_ids" value="{{ p.id }}" form="bulk-form">{% endif %}
                 </td>
                 {% endif %}
-                <td class="p-2"><a href="/products/{{ p.id }}" class="text-accent">{{ p.name }}</a>{% if p.is_deleted %} (удалён){% endif %}</td>
+                <td class="p-2"><a href="/products/{{ p.id }}" class="app-link text-accent">{{ p.name }}</a>{% if p.is_deleted %} (удалён){% endif %}</td>
                 <td class="p-2">{{ p.sku }}</td>
                 <td class="p-2">{{ p.category_name }}</td>
                 <td class="p-2">{{ p.unit }}</td>
@@ -87,16 +87,16 @@
                     {% if p.is_deleted %}
                         {% if can_edit %}
                         <form method="post" action="/products/{{ p.id }}/restore" class="inline">
-                            <button class="text-accent">Восстановить</button>
+                            <button class="app-link text-accent">Восстановить</button>
                         </form>
                         {% endif %}
                     {% else %}
                         {% if can_edit or can_price or can_stock %}
-                            <a href="/products/{{ p.id }}/edit" class="text-accent mr-2">Изменить</a>
+                            <a href="/products/{{ p.id }}/edit" class="app-link text-accent mr-2">Изменить</a>
                         {% endif %}
                         {% if can_edit %}
                         <form method="post" action="/products/{{ p.id }}/delete" class="inline" onsubmit="return confirm('Удалить товар?');">
-                            <button class="text-danger">Удалить</button>
+                            <button class="app-btn-danger text-danger">Удалить</button>
                         </form>
                         {% endif %}
                     {% endif %}
@@ -111,9 +111,9 @@
 
     <div class="flex items-center gap-3 mt-4 text-sm">
         <span>Всего: {{ total }}</span>
-        {% if page > 1 %}<a class="text-accent" href="/products?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
+        {% if page > 1 %}<a class="app-link text-accent" href="/products?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
         <span>Стр. {{ page }} из {{ pages }}</span>
-        {% if page < pages %}<a class="text-accent" href="/products?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
+        {% if page < pages %}<a class="app-link text-accent" href="/products?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
     </div>
 </main>
 {% endblock %}

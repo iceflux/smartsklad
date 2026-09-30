@@ -19,7 +19,7 @@
     <p class="text-sm">Начало: {{ maintenance.starts_at_text }}. Недоработанные изменения будут потеряны. Сохраните открытые документы и выйдите из заказов.</p>
     {% if can_manage_backups|default(false) %}
     <form method="post" action="/backups/restore/cancel" class="mt-2">
-        <button class="border px-3 py-1">Отменить восстановление</button>
+        <button class="app-btn border px-3 py-1">Отменить восстановление</button>
     </form>
     {% endif %}
 </div>
@@ -42,15 +42,15 @@
 {% endif %}
     <div class="flex min-h-screen flex-col">
         <header class="flex items-center gap-2 border-b border-line bg-surface-raised p-3">
-            <button type="button" data-menu-toggle aria-expanded="false" aria-label="Меню" class="border p-2 lg:hidden">
+            <button type="button" data-menu-toggle aria-expanded="false" aria-label="Меню" class="app-btn border p-2 lg:hidden">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
             </button>
-            <a href="/" class="text-xl font-bold"{% if nav_is_current(path, '/') %} aria-current="page"{% endif %}>СмартСклад</a>
+            <a href="/" class="app-link text-xl font-bold"{% if nav_is_current(path, '/') %} aria-current="page"{% endif %}>СмартСклад</a>
             {% if collapsed %}
             <form method="post" action="/ui/sidebar" class="ml-auto hidden lg:inline-flex">
                 <input type="hidden" name="collapsed" value="false">
                 <input type="hidden" name="next" value="{{ here }}">
-                <button class="border px-3 py-1">Показать меню</button>
+                <button class="app-btn border px-3 py-1">Показать меню</button>
             </form>
             {% endif %}
         </header>
@@ -58,7 +58,7 @@
             <aside class="app-sidebar flex flex-col gap-1 overflow-y-auto border-r border-line bg-surface-raised p-3">
                 {% if user %}
                     {% if can_create_orders|default(false) %}
-                        <a href="/orders/new" class="bg-accent text-on-accent rounded px-2 py-1 text-center">Новый заказ</a>
+                        <a href="/orders/new" class="app-btn-accent bg-accent text-on-accent rounded px-2 py-1 text-center">Новый заказ</a>
                     {% endif %}
                     {% if can_view_orders|default(false) %}
                         {% set here_orders = nav_is_current(path, '/orders') %}
@@ -79,16 +79,16 @@
                     <div class="mt-auto flex flex-col items-start gap-2 border-t border-line pt-3">
                         <span class="px-2 text-sm text-secondary">{{ user.username }} ({{ user.role.name }})</span>
                         <form method="post" action="/logout">
-                            <button class="border px-3 py-1">Выйти</button>
+                            <button class="app-btn border px-3 py-1">Выйти</button>
                         </form>
                         <form method="post" action="/ui/sidebar" class="hidden lg:inline-flex">
                             <input type="hidden" name="collapsed" value="true">
                             <input type="hidden" name="next" value="{{ here }}">
-                            <button class="border px-3 py-1">Свернуть меню</button>
+                            <button class="app-btn border px-3 py-1">Свернуть меню</button>
                         </form>
                     </div>
                 {% else %}
-                    <a href="/login" class="border px-3 py-1">Войти</a>
+                    <a href="/login" class="app-btn border px-3 py-1">Войти</a>
                 {% endif %}
             </aside>
             <div class="app-overlay" data-menu-overlay></div>

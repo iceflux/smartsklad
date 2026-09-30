@@ -15,7 +15,7 @@
             <label class="grow text-sm">Путь
                 <input name="path" value="{{ folder }}" class="border px-2 py-1 w-full">
             </label>
-            <button class="border px-3 py-1">Сохранить</button>
+            <button class="app-btn border px-3 py-1">Сохранить</button>
         </form>
     </section>
 
@@ -38,7 +38,7 @@
                 </li>
                 {% endfor %}
             </ul>
-            <button class="border px-3 py-2">Разобрать</button>
+            <button class="app-btn border px-3 py-2">Разобрать</button>
         </form>
     </section>
 
@@ -79,7 +79,7 @@
             {% for k, v in unit_map_decisions.items() %}
             <input type="hidden" name="unit_map[{{ k }}]" value="{{ v }}">
             {% endfor %}
-            <button class="border px-3 py-2">Импортировать</button>
+            <button class="app-btn border px-3 py-2">Импортировать</button>
         </form>
         {% endif %}
         {% if report.unresolved_units %}
@@ -106,7 +106,7 @@
                     </li>
                     {% endfor %}
                 </ul>
-                <button class="border px-3 py-2">Применить выбор и разобрать заново</button>
+                <button class="app-btn border px-3 py-2">Применить выбор и разобрать заново</button>
             </form>
         </div>
         {% endif %}

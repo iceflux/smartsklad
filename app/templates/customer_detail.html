@@ -4,14 +4,14 @@
     <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-bold">{{ customer.name }}</h1>
         <div>
-            <a href="/customers/{{ customer.id }}/edit" class="border px-3 py-1 mr-2">Редактировать</a>
+            <a href="/customers/{{ customer.id }}/edit" class="app-btn border px-3 py-1 mr-2">Редактировать</a>
             {% if customer.is_deleted %}
                 <form method="post" action="/customers/{{ customer.id }}/restore" class="inline">
-                    <button class="text-accent border px-3 py-1">Восстановить</button>
+                    <button class="app-btn text-accent border px-3 py-1">Восстановить</button>
                 </form>
             {% else %}
                 <form method="post" action="/customers/{{ customer.id }}/delete" class="inline" onsubmit="return confirm('Удалить клиента?');">
-                    <button class="text-danger border px-3 py-1">Удалить</button>
+                    <button class="app-btn-danger text-danger border px-3 py-1">Удалить</button>
                 </form>
             {% endif %}
         </div>
@@ -44,7 +44,7 @@
         <tbody>
             {% for o in orders %}
             <tr class="border-b">
-                <td class="border p-2"><a class="text-accent" href="/orders/{{ o.id }}">{{ o.number }}</a></td>
+                <td class="border p-2"><a class="app-link text-accent" href="/orders/{{ o.id }}">{{ o.number }}</a></td>
                 <td class="border p-2">{{ status_labels.get(o.status, o.status) }}</td>
                 <td class="border p-2">{{ o.total_amount }}</td>
                 <td class="border p-2">{{ o.created_at.strftime('%Y-%m-%d %H:%M') if o.created_at else '—' }}</td>

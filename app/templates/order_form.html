@@ -30,7 +30,7 @@
         <div>
             <div class="flex items-center justify-between mb-1">
                 <label>Позиции</label>
-                <button type="button" onclick="addItemRow()" class="border px-3 py-1">Добавить строку</button>
+                <button type="button" onclick="addItemRow()" class="app-btn border px-3 py-1">Добавить строку</button>
             </div>
             <div class="overflow-x-auto">
             <table class="w-full border-collapse">
@@ -49,7 +49,7 @@
                             <td class="p-2"><select name="product_id" class="border p-1 w-full">{{ product_options(it.product_id) }}</select></td>
                             <td class="p-2"><input name="quantity" type="number" min="1" value="{{ it.quantity }}" class="border p-1 w-24"></td>
                             <td class="p-2"><input name="line_discount" type="number" min="0" max="99" step="0.1" value="{{ it.discount_snapshot }}" class="border p-1 w-24"></td>
-                            <td class="p-2"><button type="button" onclick="this.closest('tr').remove()" class="text-danger">Удалить</button></td>
+                            <td class="p-2"><button type="button" onclick="this.closest('tr').remove()" class="app-btn-danger text-danger">Удалить</button></td>
                         </tr>
                         {% endfor %}
                     {% else %}
@@ -57,7 +57,7 @@
                             <td class="p-2"><select name="product_id" class="border p-1 w-full">{{ product_options(None) }}</select></td>
                             <td class="p-2"><input name="quantity" type="number" min="1" value="1" class="border p-1 w-24"></td>
                             <td class="p-2"><input name="line_discount" type="number" min="0" max="99" step="0.1" value="0" class="border p-1 w-24"></td>
-                            <td class="p-2"><button type="button" onclick="this.closest('tr').remove()" class="text-danger">Удалить</button></td>
+                            <td class="p-2"><button type="button" onclick="this.closest('tr').remove()" class="app-btn-danger text-danger">Удалить</button></td>
                         </tr>
                     {% endif %}
                 </tbody>
@@ -65,8 +65,8 @@
             </div>
         </div>
 
-        <button class="bg-accent text-on-accent px-4 py-2">Сохранить</button>
-        <a href="{% if order %}/orders/{{ order.id }}{% else %}/orders{% endif %}" class="ml-2 border px-4 py-2">Отмена</a>
+        <button class="app-btn-accent bg-accent text-on-accent px-4 py-2">Сохранить</button>
+        <a href="{% if order %}/orders/{{ order.id }}{% else %}/orders{% endif %}" class="app-btn ml-2 border px-4 py-2">Отмена</a>
     </form>
 </main>
 <template id="item-row">
@@ -74,7 +74,7 @@
         <td class="p-2"><select name="product_id" class="border p-1 w-full">{{ product_options(None) }}</select></td>
         <td class="p-2"><input name="quantity" type="number" min="1" value="1" class="border p-1 w-24"></td>
         <td class="p-2"><input name="line_discount" type="number" min="0" max="99" step="0.1" value="0" class="border p-1 w-24"></td>
-        <td class="p-2"><button type="button" onclick="this.closest('tr').remove()" class="text-danger">Удалить</button></td>
+        <td class="p-2"><button type="button" onclick="this.closest('tr').remove()" class="app-btn-danger text-danger">Удалить</button></td>
     </tr>
 </template>
 <script>

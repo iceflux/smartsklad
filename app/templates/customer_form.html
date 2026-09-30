@@ -33,8 +33,8 @@
             <textarea name="comment" rows="3" class="w-full border p-2">{{ (customer.comment if customer else '') or '' }}</textarea>
         </div>
         <p id="error" class="text-danger hidden"></p>
-        <button class="bg-accent text-on-accent px-4 py-2">Сохранить</button>
-        <a href="/customers" class="ml-2 border px-4 py-2">Отмена</a>
+        <button class="app-btn-accent bg-accent text-on-accent px-4 py-2">Сохранить</button>
+        <a href="/customers" class="app-btn ml-2 border px-4 py-2">Отмена</a>
     </form>
     <script>
         var customerId = {{ customer.id if customer else 'null' }};

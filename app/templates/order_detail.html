@@ -11,26 +11,26 @@
                         <option value="{{ s }}">{{ status_labels[s] }}</option>
                     {% endfor %}
                 </select>
-                <button class="bg-accent text-on-accent px-3 py-1 ml-1">Сменить статус</button>
+                <button class="app-btn-accent bg-accent text-on-accent px-3 py-1 ml-1">Сменить статус</button>
             </form>
             {% endif %}
-            <a href="/orders/{{ order.id }}/print" class="border px-3 py-1 ml-1">Печать</a>
+            <a href="/orders/{{ order.id }}/print" class="app-btn border px-3 py-1 ml-1">Печать</a>
             {% if can_create %}
                 <form method="post" action="/orders/{{ order.id }}/copy" class="inline">
-                <button class="border px-3 py-1 ml-1">Копировать</button>
+                <button class="app-btn border px-3 py-1 ml-1">Копировать</button>
             </form>
             {% endif %}
             {% if can_edit and order.status != 'done' and not is_deleted %}
-                <a href="/orders/{{ order.id }}/edit" class="border px-3 py-1 ml-1">Редактировать</a>
+                <a href="/orders/{{ order.id }}/edit" class="app-btn border px-3 py-1 ml-1">Редактировать</a>
             {% endif %}
             {% if can_delete %}
                 {% if is_deleted %}
                     <form method="post" action="/orders/{{ order.id }}/restore" class="inline">
-                        <button class="text-accent border px-3 py-1 ml-1">Восстановить</button>
+                        <button class="app-btn text-accent border px-3 py-1 ml-1">Восстановить</button>
                     </form>
                 {% else %}
                     <form method="post" action="/orders/{{ order.id }}/delete" class="inline" onsubmit="return confirm('Удалить заказ?');">
-                        <button class="text-danger border px-3 py-1 ml-1">Удалить</button>
+                        <button class="app-btn-danger text-danger border px-3 py-1 ml-1">Удалить</button>
                     </form>
                 {% endif %}
             {% endif %}

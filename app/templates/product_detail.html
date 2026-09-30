@@ -5,11 +5,11 @@
         <h1 class="text-2xl font-bold">{{ product.name }}</h1>
         <div>
             {% if can_edit or can_price or can_stock %}
-                <a href="/products/{{ product.id }}/edit" class="text-accent mr-3">Изменить</a>
+                <a href="/products/{{ product.id }}/edit" class="app-link text-accent mr-3">Изменить</a>
             {% endif %}
             {% if can_edit %}
             <form method="post" action="/products/{{ product.id }}/delete" class="inline" onsubmit="return confirm('Удалить товар?');">
-                <button class="text-danger">Удалить</button>
+                <button class="app-btn-danger text-danger">Удалить</button>
             </form>
             {% endif %}
         </div>
@@ -37,7 +37,7 @@
             <label class="block text-sm">Изменить остаток</label>
             <input name="rest" type="number" value="{{ product.rest }}" class="border p-2">
         </div>
-        <button class="border px-3 py-2">Сохранить остаток</button>
+        <button class="app-btn border px-3 py-2">Сохранить остаток</button>
     </form>
     {% endif %}
 

@@ -8,7 +8,7 @@
             <input type="checkbox" name="only_purchase" value="1" {% if only_purchase %}checked{% endif %}>
             только к закупке
         </label>
-        <button class="border px-3 py-1">Применить</button>
+        <button class="app-btn border px-3 py-1">Применить</button>
     </form>
     <p class="mb-2 text-sm text-caption">Товаров: {{ total }}</p>
     <div class="overflow-x-auto">
@@ -45,9 +45,9 @@
     </div>
     {% if pages > 1 %}
     <div class="mt-4 flex gap-2">
-        {% if page > 1 %}<a class="border px-3 py-1" href="/forecast?{{ base_qs }}{{ '&' if base_qs else '' }}page={{ page - 1 }}">Назад</a>{% endif %}
+        {% if page > 1 %}<a class="app-btn border px-3 py-1" href="/forecast?{{ base_qs }}{{ '&' if base_qs else '' }}page={{ page - 1 }}">Назад</a>{% endif %}
         <span class="px-3 py-1">{{ page }} / {{ pages }}</span>
-        {% if page < pages %}<a class="border px-3 py-1" href="/forecast?{{ base_qs }}{{ '&' if base_qs else '' }}page={{ page + 1 }}">Вперёд</a>{% endif %}
+        {% if page < pages %}<a class="app-btn border px-3 py-1" href="/forecast?{{ base_qs }}{{ '&' if base_qs else '' }}page={{ page + 1 }}">Вперёд</a>{% endif %}
     </div>
     {% endif %}
 </main>

@@ -30,10 +30,10 @@
             <span class="text-sm text-muted ml-1">{% if not user_ %}Пользователь сможет войти сразу после создания{% endif %}</span>
         </div>
         <p id="error" class="text-danger hidden"></p>
-        <button class="bg-accent text-on-accent px-4 py-2">Сохранить</button>
-        <a href="/users" class="ml-2 border px-4 py-2">Отмена</a>
+        <button class="app-btn-accent bg-accent text-on-accent px-4 py-2">Сохранить</button>
+        <a href="/users" class="app-btn ml-2 border px-4 py-2">Отмена</a>
         {% if not is_new and current_user.role.is_super %}
-            <button type="button" class="ml-2 border px-4 py-2" onclick="adminReset()">Сбросить пароль</button>
+            <button type="button" class="app-btn ml-2 border px-4 py-2" onclick="adminReset()">Сбросить пароль</button>
         {% endif %}
     </form>
     <script>

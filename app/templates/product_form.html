@@ -65,8 +65,8 @@
             <textarea name="characteristic" rows="5" class="w-full border p-2 font-mono text-sm" {% if not can_edit %}disabled{% endif %}>{{ characteristic_json }}</textarea>
         </div>
         <p id="error" class="text-danger hidden"></p>
-        <button class="bg-accent text-on-accent px-4 py-2">Сохранить</button>
-        <a href="/products" class="ml-2 border px-4 py-2">Отмена</a>
+        <button class="app-btn-accent bg-accent text-on-accent px-4 py-2">Сохранить</button>
+        <a href="/products" class="app-btn ml-2 border px-4 py-2">Отмена</a>
     </form>
     <script>
         var productId = {{ product.id if product else 'null' }};

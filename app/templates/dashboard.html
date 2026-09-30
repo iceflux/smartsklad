@@ -4,7 +4,7 @@
     <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-bold">Аналитика продаж</h1>
         {% if can_export %}
-            <a href="/dashboard/export.csv?date_from={{ metrics.date_from.isoformat() }}&date_to={{ metrics.date_to.isoformat() }}" class="border px-3 py-1">Экспорт CSV</a>
+            <a href="/dashboard/export.csv?date_from={{ metrics.date_from.isoformat() }}&date_to={{ metrics.date_to.isoformat() }}" class="app-btn border px-3 py-1">Экспорт CSV</a>
         {% endif %}
     </div>
     {% if msg %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">{{ msg }}</p>{% endif %}
@@ -41,7 +41,7 @@
                 <option value="50"></option>
             </datalist>
         </div>
-        <button class="border px-3 py-2">Показать</button>
+        <button class="app-btn border px-3 py-2">Показать</button>
     </form>
     <p class="mb-4 text-sm text-caption">Показано: {{ metrics.date_from.strftime('%d.%m.%Y') }} — {{ metrics.date_to.strftime('%d.%m.%Y') }}</p>
     {% if metrics.orders_count == 0 %}
