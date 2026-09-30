@@ -272,9 +272,10 @@ def test_the_switch_is_visible_on_a_phone(client, db_session):
     classes = re.findall(r'class="([^"]*)"', form)
     assert classes, "у формы переключателя нет ни одного класса"
     for name in classes:
-        assert "hidden" not in name.split() and not name.startswith("lg:"), (
-            f"переключатель темы спрятан на узком экране классом {name!r} — телефон его не увидит"
-        )
+        for token in name.split():
+            assert not re.fullmatch(r"(?:[\w-]+:)?hidden", token), (
+                f"переключатель темы спрятан на узком экране классом {token!r} — телефон его не увидит"
+            )
 
 
 def test_the_printed_order_stays_light_even_for_a_dark_user(client, db_session):
