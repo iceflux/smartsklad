@@ -53,9 +53,9 @@
                 <input type="hidden" name="theme" value="{{ 'light' if theme == 'dark' else 'dark' }}">
                 <button type="submit" class="app-btn border p-2" aria-label="{{ 'Светлая тема' if theme == 'dark' else 'Тёмная тема' }}">
                     {% if theme == 'dark' %}
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="4"/><path d="M10 1v2M10 17v2M19 10h-2M3 10H1M16.4 3.6l-1.4 1.4M5 15l-1.4 1.4M16.4 16.4L15 15M5 5L3.6 3.6"/></svg>
-                    {% else %}
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 12.3A7.5 7.5 0 0 1 7.7 3a7.5 7.5 0 1 0 9.3 9.3z"/></svg>
+                    {% else %}
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="4"/><path d="M10 1v2M10 17v2M19 10h-2M3 10H1M16.4 3.6l-1.4 1.4M5 15l-1.4 1.4M16.4 16.4L15 15M5 5L3.6 3.6"/></svg>
                     {% endif %}
                 </button>
             </form>

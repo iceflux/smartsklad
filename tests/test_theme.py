@@ -287,3 +287,45 @@ def test_the_printed_order_stays_light_even_for_a_dark_user(client, db_session):
 
 def test_the_anonymous_login_page_still_renders(client, db_session):
     assert client.get("/login").status_code == 200
+
+
+def _switch_markup(body: str) -> str:
+    header = _header(body)
+    form = header[header.index('action="/ui/theme"'):]
+    return form[: form.index("</form>")]
+
+
+SUN_GLYPH = 'd="M10 1v2M10 17v2'
+MOON_GLYPH = 'd="M17 12.3A7.5'
+
+
+def test_the_light_theme_shows_the_sun_and_the_dark_theme_the_moon(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+
+    light = _switch_markup(client.get("/").text)
+    assert SUN_GLYPH in light, "в светлой теме значок не солнце"
+    assert MOON_GLYPH not in light, "в светлой теме нарисован луна"
+
+    client.post("/ui/theme", data={"theme": "dark"}, follow_redirects=False)
+
+    dark = _switch_markup(client.get("/").text)
+    assert MOON_GLYPH in dark, "в тёмной теме значок не луна"
+    assert SUN_GLYPH not in dark, "в тёмной теме нарисован солнце"
+
+
+def test_the_icon_agrees_with_the_label_and_the_submitted_theme(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+
+    light = _switch_markup(client.get("/").text)
+    assert (SUN_GLYPH in light) == ('name="theme" value="dark"' in light), (
+        "в светлой теме солнце должно означать переход в тёмную"
+    )
+    assert "Тёмная тема" in light
+
+    client.post("/ui/theme", data={"theme": "dark"}, follow_redirects=False)
+
+    dark = _switch_markup(client.get("/").text)
+    assert (MOON_GLYPH in dark) == ('name="theme" value="light"' in dark), (
+        "в тёмной теме луна должна означать переход в светлую"
+    )
+    assert "Светлая тема" in dark
