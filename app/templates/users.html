@@ -6,6 +6,7 @@
         <a href="/users/new" class="bg-accent text-on-accent px-3 py-1">Создать пользователя</a>
     </div>
     {% if msg %}<p class="text-success mb-2">{{ msg }}</p>{% endif %}
+    <div class="overflow-x-auto">
     <table class="w-full border-collapse">
         <thead>
             <tr class="border-b text-left">
@@ -41,6 +42,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     <script>
         document.querySelectorAll('.role-form').forEach(function (f) {
             f.addEventListener('submit', async (e) => {

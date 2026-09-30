@@ -17,6 +17,7 @@
 
     {% if msg %}<p class="mb-4 bg-success-bg border border-success-border p-2">{{ msg }}</p>{% endif %}
 
+    <div class="overflow-x-auto">
     <table class="w-full border-collapse mb-6">
         <tbody>
             <tr class="border-b"><th class="p-2 text-left w-48">Артикул</th><td class="p-2">{{ product.sku }}</td></tr>
@@ -28,6 +29,7 @@
             <tr class="border-b"><th class="p-2 text-left">Статус</th><td class="p-2">{% if product.is_deleted %}удалён{% else %}активен{% endif %}</td></tr>
         </tbody>
     </table>
+    </div>
 
     {% if can_stock and not product.is_deleted %}
     <form method="post" action="/products/{{ product.id }}/stock" class="flex items-end gap-2 mb-6">
@@ -41,6 +43,7 @@
 
     <h2 class="text-lg font-semibold mb-2">Характеристики</h2>
     {% if characteristic %}
+    <div class="overflow-x-auto">
     <table class="w-full border-collapse mb-6">
         <tbody>
             {% for key, value in characteristic.items() %}
@@ -48,12 +51,14 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p class="text-muted mb-6">Нет характеристик</p>
     {% endif %}
 
     <h2 class="text-lg font-semibold mb-2">История цен</h2>
     {% if price_history %}
+    <div class="overflow-x-auto">
     <table class="w-full border-collapse">
         <thead>
             <tr class="border-b text-left">
@@ -74,6 +79,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p class="text-muted">Изменений цены не было</p>
     {% endif %}

@@ -31,6 +31,7 @@
 
     <h2 class="text-xl font-bold mt-8 mb-3">Заказы клиента</h2>
     {% if orders %}
+    <div class="overflow-x-auto">
     <table class="w-full border-collapse border mb-4">
         <thead>
             <tr class="border-b text-left">
@@ -51,6 +52,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p class="mb-4 text-muted">Заказов пока нет</p>
     {% endif %}

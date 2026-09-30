@@ -78,6 +78,7 @@
         <div class="grid grid-cols-2 gap-4">
             <div>
                 <h2 class="text-lg font-bold mb-2">Топ товаров</h2>
+                <div class="overflow-x-auto">
                 <table class="w-full border-collapse bg-surface-raised border">
                     <thead><tr class="border-b text-left"><th class="p-2">Товар</th><th class="p-2 text-right">Продано</th></tr></thead>
                     <tbody>
@@ -88,9 +89,11 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                </div>
             </div>
             <div>
                 <h2 class="text-lg font-bold mb-2">Топ клиентов</h2>
+                <div class="overflow-x-auto">
                 <table class="w-full border-collapse bg-surface-raised border">
                     <thead><tr class="border-b text-left"><th class="p-2">Клиент</th><th class="p-2 text-right">Сумма</th></tr></thead>
                     <tbody>
@@ -101,6 +104,7 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
     {% endif %}

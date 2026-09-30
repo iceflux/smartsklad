@@ -10,6 +10,7 @@
 
     {% if msg %}<p class="mb-4 bg-success-bg border border-success-border p-2">{{ msg }}</p>{% endif %}
 
+    <div class="overflow-x-auto">
     <table class="w-full border-collapse">
         <thead>
             <tr class="border-b text-left">
@@ -44,6 +45,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 
     {% if can_manage %}
     <script id="categories-data" type="application/json">{{ tree | tojson }}</script>

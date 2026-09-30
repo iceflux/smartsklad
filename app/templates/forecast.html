@@ -11,6 +11,7 @@
         <button class="border px-3 py-1">Применить</button>
     </form>
     <p class="mb-2 text-sm text-caption">Товаров: {{ total }}</p>
+    <div class="overflow-x-auto">
     <table class="w-full bg-surface-raised border">
         <thead>
             <tr class="border-b">
@@ -41,6 +42,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% if pages > 1 %}
     <div class="mt-4 flex gap-2">
         {% if page > 1 %}<a class="border px-3 py-1" href="/forecast?{{ base_qs }}{{ '&' if base_qs else '' }}page={{ page - 1 }}">Назад</a>{% endif %}

@@ -16,6 +16,7 @@
         <button type="submit" class="border px-3 py-1">Фильтровать</button>
         <a href="/audit" class="border px-3 py-1">Сбросить</a>
     </form>
+    <div class="overflow-x-auto">
     <table class="w-full border border-line-strong">
         <thead class="bg-surface-sunken text-left">
             <tr>
@@ -44,6 +45,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     <div class="mt-4 flex gap-2 items-center">
         {% if page > 1 %}
             <a href="/audit?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ page - 1 }}" class="border px-3 py-1">← Назад</a>

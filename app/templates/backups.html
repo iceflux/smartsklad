@@ -84,6 +84,7 @@
     <section class="bg-surface-raised border p-4 mb-4">
         <h2 class="text-lg font-bold mb-2">Резервные копии</h2>
         <p class="text-sm text-caption mb-2">Папка: {{ settings_row.local_path }} · срок хранения {{ settings_row.retention_days }} дн.</p>
+        <div class="overflow-x-auto">
         <table class="w-full border-collapse">
             <thead><tr class="border-b text-left"><th class="p-2">Файл</th><th class="p-2">Размер</th><th class="p-2">Действия</th></tr></thead>
             <tbody>
@@ -105,10 +106,12 @@
             {% endfor %}
             </tbody>
         </table>
+        </div>
     </section>
 
     <section class="bg-surface-raised border p-4 mb-4">
         <h2 class="text-lg font-bold mb-2">Последние запуски</h2>
+        <div class="overflow-x-auto">
         <table class="w-full border-collapse">
             <thead><tr class="border-b text-left"><th class="p-2">Когда</th><th class="p-2">Вид</th><th class="p-2">Файл</th><th class="p-2">Размер</th><th class="p-2">Статус</th><th class="p-2">Ошибка</th></tr></thead>
             <tbody>
@@ -126,6 +129,7 @@
             {% endfor %}
             </tbody>
         </table>
+        </div>
         <p class="text-sm text-caption mt-2">Последняя рассылка: {{ scheduler.last_report_at or "нет" }}, отправлено {{ scheduler.last_report_sent }}, пропущено {{ scheduler.last_report_skipped }}.</p>
     </section>
 </main>
