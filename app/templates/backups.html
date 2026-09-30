@@ -44,7 +44,7 @@
 
     <section class="bg-surface-raised border p-4 mb-4">
         <h2 class="text-lg font-bold mb-2">Настройки</h2>
-        <form method="post" action="/backups/settings" class="grid grid-cols-2 gap-3">
+        <form method="post" action="/backups/settings" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label class="flex items-center gap-2"><input type="checkbox" name="enabled" {% if settings_row.enabled %}checked{% endif %}> Автоматическое копирование</label>
             <div><label class="block mb-1">Время запуска</label><input type="time" name="schedule_time" value="{{ settings_row.schedule_time.strftime("%H:%M") }}" class="w-full border p-2"></div>
             <div><label class="block mb-1">Период проверки, мин</label><input type="number" name="check_interval_minutes" min="1" max="1440" value="{{ settings_row.check_interval_minutes }}" class="w-full border p-2"></div>
@@ -57,7 +57,7 @@
 
     <section class="bg-surface-raised border p-4 mb-4">
         <h2 class="text-lg font-bold mb-2">Отчёт по email</h2>
-        <form method="post" action="/backups/report" class="grid grid-cols-2 gap-3">
+        <form method="post" action="/backups/report" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label class="flex items-center gap-2"><input type="checkbox" name="enabled" {% if report.enabled %}checked{% endif %}> Отправлять отчёт по расписанию</label>
             <div><label class="block mb-1">Как часто и период данных</label>
                 <select name="period" class="w-full border p-2">
@@ -67,7 +67,7 @@
                 </select>
             </div>
             <div><label class="block mb-1">Время отправки</label><input type="time" name="send_time" value="{{ report.send_time }}" class="w-full border p-2"></div>
-            <div class="col-span-2">
+            <div class="sm:col-span-2">
                 <label class="block mb-1">Получатели</label>
                 <select name="recipient_ids" multiple class="w-full border p-2 h-32">
                     {% for candidate in candidates %}
