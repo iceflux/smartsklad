@@ -31,7 +31,7 @@ from app.modules.dashboard.service import (
 )
 from app.modules.auth.dependencies import (
     SESSION_COOKIE, ensure_permissions, get_page_user as _page_user,
-    page_context as _page_context, user_has_permission,
+    nav_is_current, page_context as _page_context, user_has_permission,
 )
 from app.modules.auth.models import Role, User
 from app.modules.auth.permissions import Permission
@@ -267,6 +267,7 @@ def create_app() -> FastAPI:
     app.middleware("http")(maintenance_middleware)
     templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
     templates.env.globals["maintenance_state"] = maintenance_state
+    templates.env.globals["nav_is_current"] = nav_is_current
     app.state.templates = templates
 
     app.include_router(auth_router)

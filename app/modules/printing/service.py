@@ -18,6 +18,7 @@ from app.modules.customers.models import Customer
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 JINJA = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
 JINJA.globals["maintenance_state"] = lambda: {"mode": "idle", "starts_at": None, "starts_at_text": None, "seconds_left": 0}
+JINJA.globals["nav_is_current"] = lambda path, href: False
 
 
 def _register_cyrillic_font() -> dict | None:

@@ -1,6 +1,7 @@
 import pytest
 
 from app.modules.audit.models import AuditLog
+from app.modules.auth.dependencies import nav_is_current
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.settings.models import Setting
@@ -25,7 +26,6 @@ OLD_NAV_LINKS = [
 ]
 
 SIDEBAR_ORDER = [
-    ("/", "СмартСклад"),
     ("/orders/new", "Новый заказ"),
     ("/orders", "Заказы"),
     ("/customers", "Клиенты"),
@@ -82,7 +82,14 @@ def test_the_sidebar_lists_exactly_the_old_links_plus_the_new_order_button(clien
     found = _visible_links(_sidebar(client.get("/").text))
     assert found == SIDEBAR_ORDER
     assert sorted(href for href, _label in found) == sorted(
-        [href for _label, href in OLD_NAV_LINKS] + ["/", "/orders/new"])
+        [href for _label, href in OLD_NAV_LINKS] + ["/orders/new"])
+
+
+def test_the_brand_moved_from_the_sidebar_into_the_header(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    body = client.get("/").text
+    header = body[body.index("<header"): body.index("</header>")]
+    assert ("/", "СмартСклад") in _visible_links(header)
 
 
 def test_the_sidebar_still_carries_the_logout_and_the_login_link(client, db_session):
@@ -202,3 +209,81 @@ def test_an_anonymous_page_renders_the_menu_without_a_sidebar_state(client):
     body = client.get("/login").text
     assert 'data-sidebar="expanded"' in body
     assert "Продажи" not in body
+
+
+def _header(body: str) -> str:
+    return body[body.index("<header"): body.index("</header>")]
+
+
+def test_the_menu_button_sits_in_the_header_as_three_horizontal_bars(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    header = _header(client.get("/").text)
+    button = header[header.index("data-menu-toggle"):]
+    button = button[: button.index("</button>")]
+    assert "СмартСклад" in header, "бренд должен стоять рядом с кнопкой меню"
+    path = button[button.index(' d="') + 4: button.index('"', button.index(' d="') + 4)]
+    assert path == "M3 5h14M3 10h14M3 15h14", (
+        f"кнопка обязана рисовать три горизонтальные полосы, а рисует {path!r}"
+    )
+
+
+def test_no_full_height_column_of_markup_sits_left_of_the_content(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    body = client.get("/").text
+    assert "app-menu-toggle" not in body, (
+        "div без правила растягивался на всю высоту и красил белую полосу слева"
+    )
+    layout = body[body.index('class="flex min-h-screen flex-col"'): body.index("<aside")]
+    layout = layout[layout.index(">") + 1:]
+    assert layout.count("<div") == 1 and "<div" in layout, (
+        f"слева от сайдбара лишние блоки растягиваются на всю высоту: {layout!r}"
+    )
+    assert "<header" in layout and layout.index("<header") < layout.index("<div")
+
+
+@pytest.mark.parametrize(
+    "path, href, expected",
+    [
+        ("/", "/", True),
+        ("/orders", "/orders", True),
+        ("/orders/17", "/orders", True),
+        ("/orders", "/orders-archive", False),
+        ("/users-archive", "/users", False),
+        ("/orders/17", "/", False),
+        ("/login", "/orders", False),
+    ],
+)
+def test_the_active_rule_matches_on_a_segment_boundary(path, href, expected):
+    assert nav_is_current(path, href) is expected
+
+
+def _current_links(markup: str) -> list[tuple[str, str]]:
+    import re
+    return [
+        (href, label)
+        for href, label in re.findall(
+            r'href="([^"]+)"[^>]*aria-current="page"[^>]*>([^<]*)</a>', markup
+        )
+    ]
+
+
+def test_the_menu_marks_the_section_of_a_nested_page(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    markup = _sidebar(client.get("/orders").text)
+    assert _current_links(markup) == [("/orders", "Заказы")], markup
+    assert 'class="app-nav-link app-nav-current"' in markup or (
+        'font-semibold app-nav-current' in markup
+    ), "отмеченный пункт обязан носить класс app-nav-current"
+
+
+def test_the_menu_marks_nothing_on_a_path_that_matches_no_link(client):
+    body = client.get("/reset-password").text
+    assert _current_links(_sidebar(body)) == []
+    assert _current_links(_header(body)) == []
+
+
+def test_the_root_marks_the_brand_and_no_menu_item(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    body = client.get("/").text
+    assert _current_links(_header(body)) == [("/", "СмартСклад")]
+    assert _current_links(_sidebar(body)) == []

@@ -41,6 +41,12 @@ def sidebar_nav(flags: dict[str, bool]) -> list[tuple[str, list[tuple[str, str]]
     ]
 
 
+def nav_is_current(path: str, href: str) -> bool:
+    if href == "/":
+        return path == "/"
+    return path == href or path.startswith(href + "/")
+
+
 def get_current_user(
     session_cookie: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
     db: Annotated[Session, Depends(get_db)] = None,

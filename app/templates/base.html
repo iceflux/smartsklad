@@ -1,6 +1,7 @@
 <!doctype html>
 {% set collapsed = (request.state.sidebar_collapsed|default(false)) if request is defined else false %}
 {% set here = (request.url.path ~ ('?' ~ request.url.query if request.url.query else '')) if request is defined else '/' %}
+{% set path = request.url.path if request is defined else '/' %}
 <html lang="ru">
 <head>
     <meta charset="utf-8">
@@ -39,55 +40,60 @@
 })();
 </script>
 {% endif %}
-    <div class="flex min-h-screen">
-        <div class="app-menu-toggle items-center gap-2 p-3">
-            <button type="button" data-menu-toggle aria-expanded="false" class="lg:hidden border px-3 py-1">Меню</button>
+    <div class="flex min-h-screen flex-col">
+        <header class="flex items-center gap-2 border-b border-line bg-surface-raised p-3">
+            <button type="button" data-menu-toggle aria-expanded="false" aria-label="Меню" class="border p-2 lg:hidden">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
+            </button>
+            <a href="/" class="text-xl font-bold"{% if nav_is_current(path, '/') %} aria-current="page"{% endif %}>СмартСклад</a>
             {% if collapsed %}
-            <form method="post" action="/ui/sidebar" class="hidden lg:inline-flex">
+            <form method="post" action="/ui/sidebar" class="ml-auto hidden lg:inline-flex">
                 <input type="hidden" name="collapsed" value="false">
                 <input type="hidden" name="next" value="{{ here }}">
                 <button class="border px-3 py-1">Показать меню</button>
             </form>
             {% endif %}
-        </div>
-        <aside class="app-sidebar flex flex-col gap-1 overflow-y-auto border-r border-line bg-surface-raised p-3">
-            <a href="/" class="px-2 py-1 text-xl font-bold">СмартСклад</a>
-            {% if user %}
-                {% if can_create_orders|default(false) %}
-                    <a href="/orders/new" class="bg-accent text-on-accent rounded px-2 py-1 text-center">Новый заказ</a>
+        </header>
+        <div class="flex min-h-0 flex-1">
+            <aside class="app-sidebar flex flex-col gap-1 overflow-y-auto border-r border-line bg-surface-raised p-3">
+                {% if user %}
+                    {% if can_create_orders|default(false) %}
+                        <a href="/orders/new" class="bg-accent text-on-accent rounded px-2 py-1 text-center">Новый заказ</a>
+                    {% endif %}
+                    {% if can_view_orders|default(false) %}
+                        {% set here_orders = nav_is_current(path, '/orders') %}
+                        <a href="/orders" class="app-nav-link font-semibold{% if here_orders %} app-nav-current{% endif %}"{% if here_orders %} aria-current="page"{% endif %}>Заказы</a>
+                    {% endif %}
+                    <nav class="flex flex-col">
+                        {% for title, items in nav|default([]) %}
+                            {% if items %}
+                            <div>
+                                <p class="app-group-title">{{ title }}</p>
+                                {% for label, href in items %}
+                                    <a href="{{ href }}" class="app-nav-link{% if nav_is_current(path, href) %} app-nav-current{% endif %}"{% if nav_is_current(path, href) %} aria-current="page"{% endif %}>{{ label }}</a>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                    </nav>
+                    <div class="mt-auto flex flex-col items-start gap-2 border-t border-line pt-3">
+                        <span class="px-2 text-sm text-secondary">{{ user.username }} ({{ user.role.name }})</span>
+                        <form method="post" action="/logout">
+                            <button class="border px-3 py-1">Выйти</button>
+                        </form>
+                        <form method="post" action="/ui/sidebar" class="hidden lg:inline-flex">
+                            <input type="hidden" name="collapsed" value="true">
+                            <input type="hidden" name="next" value="{{ here }}">
+                            <button class="border px-3 py-1">Свернуть меню</button>
+                        </form>
+                    </div>
+                {% else %}
+                    <a href="/login" class="border px-3 py-1">Войти</a>
                 {% endif %}
-                {% if can_view_orders|default(false) %}
-                    <a href="/orders" class="app-nav-link font-semibold">Заказы</a>
-                {% endif %}
-                <nav class="flex flex-col">
-                    {% for title, items in nav|default([]) %}
-                        {% if items %}
-                        <div>
-                            <p class="app-group-title">{{ title }}</p>
-                            {% for label, href in items %}
-                                <a href="{{ href }}" class="app-nav-link">{{ label }}</a>
-                            {% endfor %}
-                        </div>
-                        {% endif %}
-                    {% endfor %}
-                </nav>
-                <div class="mt-auto flex flex-col items-start gap-2 border-t border-line pt-3">
-                    <span class="px-2 text-sm text-secondary">{{ user.username }} ({{ user.role.name }})</span>
-                    <form method="post" action="/logout">
-                        <button class="border px-3 py-1">Выйти</button>
-                    </form>
-                    <form method="post" action="/ui/sidebar" class="hidden lg:inline-flex">
-                        <input type="hidden" name="collapsed" value="true">
-                        <input type="hidden" name="next" value="{{ here }}">
-                        <button class="border px-3 py-1">Свернуть меню</button>
-                    </form>
-                </div>
-            {% else %}
-                <a href="/login" class="border px-3 py-1">Войти</a>
-            {% endif %}
-        </aside>
-        <div class="app-overlay" data-menu-overlay></div>
-        <div class="flex-1 min-w-0">{% block content %}{% endblock %}</div>
+            </aside>
+            <div class="app-overlay" data-menu-overlay></div>
+            <div class="flex-1 min-w-0">{% block content %}{% endblock %}</div>
+            </div>
     </div>
 <script>
 (function () {

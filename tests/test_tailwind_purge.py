@@ -33,6 +33,7 @@ MENU_SELECTORS = [
     r'body\[data-nav=("?)closed\1\] \.app-overlay',
     r"\.app-sidebar\{",
     r"\.app-overlay\{",
+    r"\.app-nav-current\{",
 ]
 
 
@@ -88,6 +89,19 @@ def test_templates_do_not_load_the_tailwind_play_cdn():
     base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
     assert "cdn.tailwindcss.com" not in base
     assert '/static/app.css' in base
+
+
+def test_the_current_item_looks_different_from_a_hovered_one():
+    """Текущий пункт и наведение обязаны различаться, иначе «где я» не видно.
+
+    Следующий шаг дописывает сюда состояния фокуса, поэтому проверка сравнивает
+    текущее правило с уже существующим :hover, а не с их полным набором.
+    """
+    css = BUILT_CSS.read_text(encoding="utf-8")
+    current = re.search(r"\.app-nav-current\{([^}]*)\}", css).group(1)
+    hover = re.search(r"\.app-nav-link:hover\{([^}]*)\}", css).group(1)
+    assert current != hover, "текущий пункт и наведение выглядят одинаково"
+    assert "var(--color-" in current, "правило текущего пункта обязано быть на токенах"
 
 
 def test_the_shipped_css_carries_the_selectors_the_menu_markup_and_script_depend_on():

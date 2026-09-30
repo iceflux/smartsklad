@@ -38,6 +38,14 @@
         background-color: rgb(var(--color-surface-sunken));
         color: rgb(var(--color-primary));
     }
+    /* Текущий раздел отличается и от обычного пункта, и от наведения: свой фон
+       оттенка акцента, свой цвет текста и вес. Правила наведения и фокуса
+       следующего шага дописываются рядом и не должны совпасть с этим. */
+    .app-nav-current {
+        background-color: rgb(var(--color-accent) / 0.12);
+        color: rgb(var(--color-accent));
+        font-weight: 600;
+    }
     .app-group-title {
         padding: 0.75rem 0.5rem 0.25rem;
         font-size: 0.75rem;
@@ -56,14 +64,8 @@
         .app-overlay {
             display: none;
         }
-        .app-menu-toggle {
-            display: none;
-        }
         body[data-sidebar="collapsed"] .app-sidebar {
             display: none;
-        }
-        body[data-sidebar="collapsed"] .app-menu-toggle {
-            display: inline-flex;
         }
     }
 }
