@@ -2,7 +2,7 @@ import pytest
 
 from app.modules.audit.models import AuditLog
 from app.modules.auth.models import User
-from app.modules.auth.service import get_role_by_name, hash_password
+from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.settings.service import (
     DEFAULT_THEME,
     THEME_KEY,
@@ -17,14 +17,21 @@ from app.modules.settings.service import (
 PASSWORD = "password123"
 
 
-def _user(db_session, username="boss"):
+def _user(db_session, username="boss", role="admin"):
     u = User(
         username=username,
         password_hash=hash_password(PASSWORD),
-        role_id=get_role_by_name(db_session, "admin").id,
+        role_id=get_role_by_name(db_session, role).id,
     )
     db_session.add(u)
     db_session.commit()
+    return u
+
+
+def _login_as(client, db_session, username, role):
+    u = _user(db_session, username, role)
+    session = login(db_session, username, PASSWORD)
+    client.cookies.set("session", session.token)
     return u
 
 
@@ -77,3 +84,20 @@ def test_the_theme_key_is_treated_as_a_per_user_key():
     assert is_user_setting("ui.theme:7") is True
     assert is_user_setting("ui.theme") is False
     assert is_user_setting("ui.appearance") is False
+
+
+def test_the_settings_api_hides_the_written_theme_choice(client, db_session):
+    u = _login_as(client, db_session, "boss", "admin")
+    set_user_theme(db_session, u.id, "dark", user=u)
+    keys = [row["key"] for row in client.get("/api/settings").json()]
+    assert not [key for key in keys if key.startswith("ui.")], (
+        f"пользовательский ключ попал в общий список: {keys}"
+    )
+    assert "ui.theme" not in keys
+    expected = {
+        "min_stock_days", "report_email_enabled", "report_email_period",
+        "report_email_recipients", "report_email_time", "stock_track_default",
+        "telegram_bot_token", "telegram_chat_id", "user_password_charset",
+        "user_password_length",
+    }
+    assert set(keys) == expected, f"из списка настроек выпали или лишние глобалки: {sorted(keys)}"
