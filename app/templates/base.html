@@ -2,7 +2,8 @@
 {% set collapsed = (request.state.sidebar_collapsed|default(false)) if request is defined else false %}
 {% set here = (request.url.path ~ ('?' ~ request.url.query if request.url.query else '')) if request is defined else '/' %}
 {% set path = request.url.path if request is defined else '/' %}
-<html lang="ru">
+{% set theme = (request.state.theme|default('light')) if request is defined else 'light' %}
+<html lang="ru"{% if theme == 'dark' %} class="dark"{% endif %}>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -46,6 +47,19 @@
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
             </button>
             <a href="/" class="app-link text-xl font-bold"{% if nav_is_current(path, '/') %} aria-current="page"{% endif %}>СмартСклад</a>
+            {% if user %}
+            <form method="post" action="/ui/theme" class="ml-auto">
+                <input type="hidden" name="next" value="{{ here }}">
+                <input type="hidden" name="theme" value="{{ 'light' if theme == 'dark' else 'dark' }}">
+                <button type="submit" class="app-btn border p-2" aria-label="{{ 'Светлая тема' if theme == 'dark' else 'Тёмная тема' }}">
+                    {% if theme == 'dark' %}
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="4"/><path d="M10 1v2M10 17v2M19 10h-2M3 10H1M16.4 3.6l-1.4 1.4M5 15l-1.4 1.4M16.4 16.4L15 15M5 5L3.6 3.6"/></svg>
+                    {% else %}
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 12.3A7.5 7.5 0 0 1 7.7 3a7.5 7.5 0 1 0 9.3 9.3z"/></svg>
+                    {% endif %}
+                </button>
+            </form>
+            {% endif %}
             {% if collapsed %}
             <form method="post" action="/ui/sidebar" class="ml-auto hidden lg:inline-flex">
                 <input type="hidden" name="collapsed" value="false">

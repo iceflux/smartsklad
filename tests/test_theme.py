@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from starlette.requests import Request
 
@@ -5,6 +7,10 @@ from app.modules.audit.models import AuditLog
 from app.modules.auth.dependencies import get_page_user
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
+from app.modules.customers.models import Customer
+from app.modules.inventory.models import Product
+from app.modules.inventory.service import get_unit_by_name
+from app.modules.orders.service import create_order
 from app.modules.settings.service import (
     DEFAULT_THEME,
     THEME_KEY,
@@ -192,3 +198,92 @@ def test_the_page_request_carries_the_theme(db_session):
     request = _page_request(token)
     get_page_user(request, db_session)
     assert request.state.theme == "dark"
+
+
+def _unit_id(db_session):
+    return get_unit_by_name(db_session, "шт").id
+
+
+def _mk_order(db_session):
+    p = Product(name="Гвозди", sku="NAIL-1", unit_id=_unit_id(db_session), price=100.0, rest=50)
+    c = Customer(name="ООО Строй")
+    db_session.add_all([p, c])
+    db_session.commit()
+    return create_order(db_session, customer_id=c.id, items=[{"product_id": p.id, "quantity": 2, "discount": 0}])
+
+
+def _html_tag(body: str) -> str:
+    start = body.index("<html")
+    return body[start: body.index(">", start) + 1]
+
+
+def _header(body: str) -> str:
+    return body[body.index("<header"): body.index("</header>")]
+
+
+def test_the_page_carries_no_theme_class_by_default(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    assert "dark" not in _html_tag(client.get("/").text)
+
+
+def test_the_dark_theme_puts_the_class_on_the_html_tag(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    client.post("/ui/theme", data={"theme": "dark"}, follow_redirects=False)
+    assert 'class="dark"' in _html_tag(client.get("/").text)
+
+
+def test_the_theme_survives_a_new_navigation(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    client.post("/ui/theme", data={"theme": "dark"}, follow_redirects=False)
+    for path in ("/", "/products", "/settings", "/orders"):
+        assert 'class="dark"' in _html_tag(client.get(path).text), path
+
+
+def test_the_theme_belongs_to_the_user_and_not_to_the_browser(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    client.post("/ui/theme", data={"theme": "dark"}, follow_redirects=False)
+    client.cookies.clear()
+    _login_as(client, db_session, "second", "admin")
+    assert "dark" not in _html_tag(client.get("/").text)
+
+
+def test_the_switch_offers_the_other_theme_and_names_itself(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    body = client.get("/").text
+    assert 'action="/ui/theme"' in body
+    assert 'name="theme" value="dark"' in body
+    assert "Тёмная тема" in body
+    client.post("/ui/theme", data={"theme": "dark"}, follow_redirects=False)
+    assert 'name="theme" value="light"' in client.get("/").text
+    assert "Светлая тема" in client.get("/").text
+
+
+def test_the_switch_sends_the_user_back_where_they_were(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    body = client.get("/products?page=2").text
+    assert 'name="next" value="/products?page=2"' in body
+
+
+def test_the_switch_is_visible_on_a_phone(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    header = _header(client.get("/").text)
+    form = header[header.index('action="/ui/theme"'):]
+    form = form[: form.index("</form>")]
+    classes = re.findall(r'class="([^"]*)"', form)
+    assert classes, "у формы переключателя нет ни одного класса"
+    for name in classes:
+        assert "hidden" not in name.split() and not name.startswith("lg:"), (
+            f"переключатель темы спрятан на узком экране классом {name!r} — телефон его не увидит"
+        )
+
+
+def test_the_printed_order_stays_light_even_for_a_dark_user(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    order = _mk_order(db_session)
+    client.post("/ui/theme", data={"theme": "dark"}, follow_redirects=False)
+    body = client.get(f"/orders/{order.id}/print").text
+    assert 'class="dark"' not in body, "тёмная тема протекла в печатный документ"
+
+
+def test_the_anonymous_login_page_still_renders(client, db_session):
+    assert client.get("/login").status_code == 200
