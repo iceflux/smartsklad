@@ -1,4 +1,6 @@
 <!doctype html>
+{% set collapsed = (request.state.sidebar_collapsed|default(false)) if request is defined else false %}
+{% set here = (request.url.path ~ ('?' ~ request.url.query if request.url.query else '')) if request is defined else '/' %}
 <html lang="ru">
 <head>
     <meta charset="utf-8">
@@ -6,7 +8,9 @@
     <title>{% block title %}{{ title }}{% endblock %}</title>
     <link rel="stylesheet" href="/static/app.css">
 </head>
-<body class="bg-surface text-primary">
+<body class="bg-surface text-primary"
+      data-sidebar="{{ 'collapsed' if collapsed else 'expanded' }}"
+      data-nav="closed">
 {% set maintenance = maintenance_state() %}
 {% if maintenance.mode == "countdown" %}
 <div class="bg-warning-strong-bg border-b border-warning-strong-border p-3 text-center" data-starts-at="{{ maintenance.starts_at }}">
@@ -35,57 +39,76 @@
 })();
 </script>
 {% endif %}
-    <header class="flex items-center justify-between p-4 border-b">
-        <a href="/" class="text-xl font-bold">СмартСклад</a>
-        <nav>
+    <div class="flex min-h-screen">
+        <div class="app-menu-toggle items-center gap-2 p-3">
+            <button type="button" data-menu-toggle class="lg:hidden border px-3 py-1">Меню</button>
+            {% if collapsed %}
+            <form method="post" action="/ui/sidebar" class="hidden lg:inline-flex">
+                <input type="hidden" name="collapsed" value="false">
+                <input type="hidden" name="next" value="{{ here }}">
+                <button class="border px-3 py-1">Показать меню</button>
+            </form>
+            {% endif %}
+        </div>
+        <aside class="app-sidebar flex flex-col gap-1 overflow-y-auto border-r border-line bg-surface-raised p-3">
+            <a href="/" class="px-2 py-1 text-xl font-bold">СмартСклад</a>
             {% if user %}
-                {% if can_view_products|default(false) %}
-                    <a href="/products" class="mr-4">Товары</a>
-                    <a href="/categories" class="mr-4">Категории</a>
-                {% endif %}
-                {% if can_view_customers|default(false) %}
-                    <a href="/customers" class="mr-4">Клиенты</a>
+                {% if can_create_orders|default(false) %}
+                    <a href="/orders/new" class="bg-accent text-on-accent rounded px-2 py-1 text-center">Новый заказ</a>
                 {% endif %}
                 {% if can_view_orders|default(false) %}
-                    <a href="/orders" class="mr-4">Заказы</a>
+                    <a href="/orders" class="app-nav-link font-semibold">Заказы</a>
                 {% endif %}
-                {% if can_view_analytics|default(false) %}
-                    <a href="/forecast" class="mr-4">Прогноз</a>
-                {% endif %}
-                {% if can_view_analytics|default(false) %}
-                    <a href="/dashboard" class="mr-4">Аналитика</a>
-                {% endif %}
-                {% if can_manage_backups|default(false) %}
-                    <a href="/backups" class="mr-4">Резервные копии</a>
-                {% endif %}
-                {% if can_manage_import|default(false) %}
-                    <a href="/import" class="mr-4">Импорт</a>
-                {% endif %}
-                {% if can_view_roles|default(false) %}
-                    <a href="/roles" class="mr-4">Роли</a>
-                    <a href="/users" class="mr-4">Пользователи</a>
-                {% endif %}
-                {% if can_manage_units|default(false) %}
-                    <a href="/units" class="mr-4">Единицы измерения</a>
-                {% endif %}
-                {% if can_view_audit|default(false) %}
-                    <a href="/audit" class="mr-4">Журнал аудита</a>
-                {% endif %}
-                {% if can_view_notifications|default(false) %}
-                    <a href="/notifications" class="mr-4">Уведомления</a>
-                {% endif %}
-                {% if can_change_settings|default(false) %}
-                    <a href="/settings" class="mr-4">Настройки</a>
-                {% endif %}
-                <span class="mr-4">{{ user.username }} ({{ user.role.name }})</span>
-                <form method="post" action="/logout" class="inline">
-                    <button class="border px-3 py-1">Выйти</button>
-                </form>
+                <nav class="flex flex-col">
+                    {% for title, items in nav|default([]) %}
+                        {% if items %}
+                        <div>
+                            <p class="app-group-title">{{ title }}</p>
+                            {% for label, href in items %}
+                                <a href="{{ href }}" class="app-nav-link">{{ label }}</a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    {% endfor %}
+                </nav>
+                <div class="mt-auto flex flex-col items-start gap-2 border-t border-line pt-3">
+                    <span class="px-2 text-sm text-secondary">{{ user.username }} ({{ user.role.name }})</span>
+                    <form method="post" action="/logout">
+                        <button class="border px-3 py-1">Выйти</button>
+                    </form>
+                    <form method="post" action="/ui/sidebar" class="hidden lg:inline-flex">
+                        <input type="hidden" name="collapsed" value="true">
+                        <input type="hidden" name="next" value="{{ here }}">
+                        <button class="border px-3 py-1">Свернуть меню</button>
+                    </form>
+                </div>
             {% else %}
                 <a href="/login" class="border px-3 py-1">Войти</a>
             {% endif %}
-        </nav>
-    </header>
-    {% block content %}{% endblock %}
+        </aside>
+        <div class="app-overlay" data-menu-overlay></div>
+        <div class="flex-1 min-w-0">{% block content %}{% endblock %}</div>
+    </div>
+<script>
+(function () {
+    var body = document.body;
+    function show(open) {
+        body.setAttribute("data-nav", open ? "open" : "closed");
+    }
+    var toggle = document.querySelector("[data-menu-toggle]");
+    if (toggle) {
+        toggle.addEventListener("click", function () {
+            show(body.getAttribute("data-nav") !== "open");
+        });
+    }
+    var overlay = document.querySelector("[data-menu-overlay]");
+    if (overlay) {
+        overlay.addEventListener("click", function () { show(false); });
+    }
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") show(false);
+    });
+})();
+</script>
 </body>
 </html>

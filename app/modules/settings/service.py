@@ -15,6 +15,16 @@ REPORT_PERIOD_KEY = "report_email_period"
 REPORT_TIME_KEY = "report_email_time"
 REPORT_RECIPIENTS_KEY = "report_email_recipients"
 REPORT_PERIODS = ("day", "week", "month")
+USER_KEY_PREFIX = "ui."
+SIDEBAR_COLLAPSED_KEY = "ui.sidebar_collapsed"
+
+
+def user_setting_key(key: str, user_id: int) -> str:
+    return f"{key}:{user_id}"
+
+
+def is_user_setting(key: str) -> bool:
+    return key.startswith(USER_KEY_PREFIX)
 
 
 def _defaults() -> dict[str, str]:
@@ -72,3 +82,12 @@ def get_int_setting(db: Session, key: str, default: int) -> int:
         return int(raw)
     except (TypeError, ValueError):
         return default
+
+
+def sidebar_collapsed(db: Session, user_id: int) -> bool:
+    return get_setting(db, user_setting_key(SIDEBAR_COLLAPSED_KEY, user_id)) == "true"
+
+
+def set_sidebar_collapsed(db: Session, user_id: int, collapsed: bool, *, user=None) -> None:
+    set_setting(db, user_setting_key(SIDEBAR_COLLAPSED_KEY, user_id),
+                "true" if collapsed else "false", user=user)

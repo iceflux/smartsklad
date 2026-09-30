@@ -8,6 +8,7 @@ from app.modules.settings.models import Setting
 from app.modules.settings.service import (
     STOCK_TRACK_DEFAULT_KEY,
     get_setting,
+    is_user_setting,
     mask_telegram_token,
     set_setting,
 )
@@ -24,6 +25,7 @@ def _all_settings(db):
     return [
         {"key": r.key, "value": mask_telegram_token(r.value) if r.key == "telegram_bot_token" else r.value}
         for r in rows
+        if not is_user_setting(r.key)
     ]
 
 

@@ -125,6 +125,7 @@ from app.modules.settings.service import (
     get_int_setting,
     get_setting,
     set_setting,
+    set_sidebar_collapsed,
 )
 from app.modules.printing.service import render_order_pdf
 
@@ -204,6 +205,12 @@ def _to_int(raw, default):
 
 def _page_param(raw):
     return min(10000, max(1, _to_int(raw, 1)))
+
+
+def _safe_next(raw: str) -> str:
+    if raw.startswith("/") and not raw.startswith("//"):
+        return raw
+    return "/"
 
 
 def _category_label(category: Category | None) -> str:
@@ -306,6 +313,19 @@ def create_app() -> FastAPI:
         response = RedirectResponse("/login", status_code=303)
         response.delete_cookie(SESSION_COOKIE)
         return response
+
+    @app.post("/ui/sidebar")
+    async def sidebar_page_post(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        form = parse_qs((await request.body()).decode())
+        collapsed = (form.get("collapsed") or ["true"])[0] == "true"
+        set_sidebar_collapsed(db, user.id, collapsed, user=user)
+        return RedirectResponse(_safe_next((form.get("next") or [""])[0]), status_code=303)
 
     @app.get("/settings")
     def settings_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):

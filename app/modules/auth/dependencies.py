@@ -7,8 +7,38 @@ from app.db import get_db
 from app.modules.auth.models import User
 from app.modules.auth.permissions import Permission
 from app.modules.auth.service import get_user_by_token
+from app.modules.settings.service import sidebar_collapsed
 
 SESSION_COOKIE = "session"
+
+NAV_GROUPS = (
+    ("Продажи", (("Клиенты", "/customers", "can_view_customers"),)),
+    ("Склад", (
+        ("Товары", "/products", "can_view_products"),
+        ("Категории", "/categories", "can_view_categories"),
+        ("Единицы измерения", "/units", "can_manage_units"),
+    )),
+    ("Анализ", (
+        ("Аналитика", "/dashboard", "can_view_analytics"),
+        ("Прогноз", "/forecast", "can_view_analytics"),
+    )),
+    ("Система", (
+        ("Импорт", "/import", "can_manage_import"),
+        ("Резервные копии", "/backups", "can_manage_backups"),
+        ("Журнал аудита", "/audit", "can_view_audit"),
+        ("Роли", "/roles", "can_view_roles"),
+        ("Пользователи", "/users", "can_view_roles"),
+        ("Настройки", "/settings", "can_change_settings"),
+        ("Уведомления", "/notifications", "can_view_notifications"),
+    )),
+)
+
+
+def sidebar_nav(flags: dict[str, bool]) -> list[tuple[str, list[tuple[str, str]]]]:
+    return [
+        (title, [(label, href) for label, href, flag in items if flags.get(flag)])
+        for title, items in NAV_GROUPS
+    ]
 
 
 def get_current_user(
@@ -44,14 +74,19 @@ def get_page_user(
     request: Request,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> User | None:
+    request.state.sidebar_collapsed = False
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None
-    return get_user_by_token(db, token)
+    user = get_user_by_token(db, token)
+    if user is None:
+        return None
+    request.state.sidebar_collapsed = sidebar_collapsed(db, user.id)
+    return user
 
 
 def page_context(user: User) -> dict[str, bool]:
-    return {
+    flags = {
         "can_view_products": user_has_permission(user, Permission.products_view),
         "can_view_categories": user_has_permission(user, Permission.products_view),
         "can_view_roles": user_has_permission(user, Permission.users_manage),
@@ -59,6 +94,7 @@ def page_context(user: User) -> dict[str, bool]:
         "can_view_audit": user_has_permission(user, Permission.audit_view),
         "can_view_customers": user_has_permission(user, Permission.customers_manage),
         "can_view_orders": user_has_permission(user, Permission.orders_view),
+        "can_create_orders": user_has_permission(user, Permission.orders_create),
         "can_change_settings": user_has_permission(user, Permission.settings_change),
         "can_send_notifications": user_has_permission(user, Permission.notifications_send),
         "can_view_notifications": user_has_permission(user, Permission.notifications_view),
@@ -67,3 +103,4 @@ def page_context(user: User) -> dict[str, bool]:
         "can_manage_import": user_has_permission(user, Permission.import_manage),
         "can_manage_units": user_has_permission(user, Permission.units_manage),
     }
+    return {**flags, "nav": sidebar_nav(flags)}
