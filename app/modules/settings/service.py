@@ -16,7 +16,10 @@ REPORT_TIME_KEY = "report_email_time"
 REPORT_RECIPIENTS_KEY = "report_email_recipients"
 REPORT_PERIODS = ("day", "week", "month")
 SIDEBAR_COLLAPSED_KEY = "ui.sidebar_collapsed"
-USER_KEYS = (SIDEBAR_COLLAPSED_KEY,)
+THEME_KEY = "ui.theme"
+THEME_VALUES = ("light", "dark")
+DEFAULT_THEME = "light"
+USER_KEYS = (SIDEBAR_COLLAPSED_KEY, THEME_KEY)
 
 
 def user_setting_key(key: str, user_id: int) -> str:
@@ -102,3 +105,14 @@ def sidebar_collapsed(db: Session, user_id: int) -> bool:
 def set_sidebar_collapsed(db: Session, user_id: int, collapsed: bool, *, user=None) -> None:
     set_setting(db, user_setting_key(SIDEBAR_COLLAPSED_KEY, user_id),
                 "true" if collapsed else "false", user=user)
+
+
+def user_theme(db: Session, user_id: int) -> str:
+    value = get_setting(db, user_setting_key(THEME_KEY, user_id))
+    return value if value in THEME_VALUES else DEFAULT_THEME
+
+
+def set_user_theme(db: Session, user_id: int, value: str, *, user=None) -> None:
+    if value not in THEME_VALUES:
+        raise ValueError("неизвестная тема")
+    set_setting(db, user_setting_key(THEME_KEY, user_id), value, user=user)
