@@ -21,6 +21,14 @@ NOT_STYLED_BY_TAILWIND = {
 
 CLASS_ATTR = re.compile(r"""class=(["'])(.*?)\1""", re.DOTALL)
 
+SVG_LITERAL_COLOUR = re.compile(r'\b(?:fill|stroke)="(#[0-9a-fA-F]{3,8})"')
+
+# Пусто: печатный шаблон `documents/order_print.html` своего SVG не содержит
+# (проверено), печать всегда светлая, и исключать там нечего. Список пустой, а
+# не с именем «на всякий случай»: имя в allowlist скрывает ровно то, ради чего
+# проверка затевалась.
+ALLOWED_SVG_LITERAL_COLOUR = frozenset()
+
 LEGACY_SHADES = re.compile(
     r"^(?:bg|text|border|ring|divide|placeholder|from|to|via|outline|decoration"
     r"|accent|caret|fill|stroke|shadow)-"
@@ -89,6 +97,26 @@ def test_no_template_uses_a_literal_palette_shade():
     assert found == {}, (
         "в разметке вернулся литеральный оттенок Tailwind вместо токена: "
         f"{found}. Соответствие «оттенок → токен» в AGENTS.md, раздел про токены."
+    )
+
+
+def test_no_svg_presentation_attribute_carries_a_literal_colour():
+    """Атрибут презентации SVG не видит `class`, поэтому сторож выше по цвету его не ловит.
+
+    `var()` в `fill=` не подставляется, отсюда и был захардкоженный hex графика.
+    Выход — класс `fill-*`/`stroke-*`: приоритет авторского правила выше
+    атрибута, а сборщик выдаёт всю семью утилит из `theme.extend.colors`."""
+    found = [
+        f"{path.relative_to(ROOT)}:{n} {match.group(0)}"
+        for path in sorted(TEMPLATES.rglob("*.html"))
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        for match in SVG_LITERAL_COLOUR.finditer(line)
+        if path.name not in ALLOWED_SVG_LITERAL_COLOUR
+    ]
+    assert found == [], (
+        "литеральный цвет в атрибуте презентации SVG: "
+        + "; ".join(found)
+        + ". Цветом рисунка должен быть класс fill-*/stroke-* по токену."
     )
 
 
