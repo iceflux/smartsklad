@@ -1,6 +1,8 @@
 import pytest
+from starlette.requests import Request
 
 from app.modules.audit.models import AuditLog
+from app.modules.auth.dependencies import get_page_user
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.settings.service import (
@@ -101,3 +103,92 @@ def test_the_settings_api_hides_the_written_theme_choice(client, db_session):
         "user_password_length",
     }
     assert set(keys) == expected, f"из списка настроек выпали или лишние глобалки: {sorted(keys)}"
+
+
+def _page_request(token=None) -> Request:
+    headers = [(b"cookie", f"session={token}".encode())] if token else []
+    return Request({"type": "http", "headers": headers})
+
+
+def test_switching_the_theme_redirects_back_to_the_page(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    r = client.post("/ui/theme", data={"theme": "dark", "next": "/products"},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/products"
+
+
+def test_switching_the_theme_writes_the_user_setting(client, db_session):
+    u = _login_as(client, db_session, "boss", "admin")
+    client.post("/ui/theme", data={"theme": "dark"}, follow_redirects=False)
+    assert user_theme(db_session, u.id) == "dark"
+
+
+def test_an_unknown_theme_is_refused_and_stores_nothing(client, db_session):
+    u = _login_as(client, db_session, "boss", "admin")
+    r = client.post("/ui/theme", data={"theme": "sepia", "next": "/products"},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    assert user_theme(db_session, u.id) == DEFAULT_THEME
+
+
+def test_every_accepted_theme_lands(client, db_session):
+    u = _login_as(client, db_session, "boss", "admin")
+    for value in THEME_VALUES:
+        r = client.post("/ui/theme", data={"theme": value}, follow_redirects=False)
+        assert "msg=" not in r.headers["location"], value
+        assert user_theme(db_session, u.id) == value, value
+
+
+def test_a_refused_theme_still_says_why(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    r = client.post("/ui/theme", data={"theme": "sepia", "next": "/products"},
+                    follow_redirects=False)
+    assert "msg=" in r.headers["location"]
+
+
+def test_a_refused_theme_keeps_the_query_string_of_the_page(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    r = client.post("/ui/theme", data={"theme": "", "next": "/products?page=2"},
+                    follow_redirects=False)
+    assert r.headers["location"].startswith("/products?page=2&msg=")
+
+
+def test_the_theme_switch_needs_a_session(client):
+    r = client.post("/ui/theme", data={"theme": "dark"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/login"
+
+
+def test_the_theme_switch_refuses_to_redirect_off_site(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    for hostile in ("//evil.example", "https://evil.example"):
+        r = client.post("/ui/theme", data={"theme": "dark", "next": hostile},
+                        follow_redirects=False)
+        assert r.headers["location"] == "/", hostile
+
+
+def test_switching_the_theme_leaves_an_audit_trail(client, db_session):
+    u = _login_as(client, db_session, "boss", "admin")
+    client.post("/ui/theme", data={"theme": "dark"}, follow_redirects=False)
+    rows = db_session.query(AuditLog).filter(
+        AuditLog.action == "settings.update", AuditLog.new_value == "dark").all()
+    assert len(rows) == 1
+    assert rows[0].user_id == u.id
+
+
+def test_the_page_request_carries_the_theme(db_session):
+    anonymous = _page_request()
+    assert get_page_user(anonymous, db_session) is None
+    assert anonymous.state.theme == DEFAULT_THEME
+
+    u = _user(db_session)
+    token = login(db_session, "boss", PASSWORD).token
+    request = _page_request(token)
+    assert get_page_user(request, db_session).id == u.id
+    assert request.state.theme == DEFAULT_THEME
+
+    set_user_theme(db_session, u.id, "dark")
+    request = _page_request(token)
+    get_page_user(request, db_session)
+    assert request.state.theme == "dark"

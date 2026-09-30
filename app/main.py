@@ -119,6 +119,7 @@ from app.modules.settings.service import (
     DEFAULT_PASSWORD_LENGTH,
     MIN_STOCK_DAYS_KEY,
     STOCK_TRACK_DEFAULT_KEY,
+    THEME_VALUES,
     USER_PASSWORD_CHARSET_KEY,
     USER_PASSWORD_LENGTH_KEY,
     ensure_default_settings,
@@ -126,6 +127,7 @@ from app.modules.settings.service import (
     get_setting,
     set_setting,
     set_sidebar_collapsed,
+    set_user_theme,
 )
 from app.modules.printing.service import render_order_pdf
 
@@ -211,6 +213,10 @@ def _safe_next(raw: str) -> str:
     if raw.startswith("/") and not raw.startswith("//"):
         return raw
     return "/"
+
+
+def _with_msg(target: str, msg: str) -> str:
+    return f"{target}{'&' if '?' in target else '?'}msg={msg}"
 
 
 def _category_label(category: Category | None) -> str:
@@ -327,6 +333,22 @@ def create_app() -> FastAPI:
         collapsed = (form.get("collapsed") or ["true"])[0] == "true"
         set_sidebar_collapsed(db, user.id, collapsed, user=user)
         return RedirectResponse(_safe_next((form.get("next") or [""])[0]), status_code=303)
+
+    @app.post("/ui/theme")
+    async def theme_page_post(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        form = parse_qs((await request.body()).decode())
+        theme = (form.get("theme") or [""])[0]
+        nxt = _safe_next((form.get("next") or [""])[0])
+        if theme not in THEME_VALUES:
+            return RedirectResponse(_with_msg(nxt, "неизвестная тема"), status_code=303)
+        set_user_theme(db, user.id, theme, user=user)
+        return RedirectResponse(nxt, status_code=303)
 
     @app.get("/settings")
     def settings_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
