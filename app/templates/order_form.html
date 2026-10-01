@@ -2,7 +2,7 @@
 {% macro product_options(selected_id) -%}
     <option value="">— выбрать —</option>
     {% for pr in products %}
-        <option value="{{ pr.id }}" {% if pr.id == selected_id %}selected{% endif %}>{{ pr.name }} ({{ pr.price }} ₽, ост. {{ pr.rest }}){% if pr.deleted %} — удалён{% endif %}</option>
+        <option value="{{ pr.id }}" {% if pr.id == selected_id %}selected{% endif %}>{{ pr.name }} ({{ pr.price|num }} ₽, ост. {{ pr.rest|num }}){% if pr.deleted %} — удалён{% endif %}</option>
     {% endfor %}
 {%- endmacro %}
 {% block content %}

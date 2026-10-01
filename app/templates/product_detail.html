@@ -23,8 +23,8 @@
             <tr class="border-b"><th class="p-2 text-left w-48">Артикул</th><td class="p-2">{{ product.sku }}</td></tr>
             <tr class="border-b"><th class="p-2 text-left">Категория</th><td class="p-2">{{ category_name or '—' }}</td></tr>
             <tr class="border-b"><th class="p-2 text-left">Единица измерения</th><td class="p-2">{{ product.unit }}</td></tr>
-            <tr class="border-b"><th class="p-2 text-left">Цена</th><td class="p-2">{{ product.price }}</td></tr>
-            <tr class="border-b"><th class="p-2 text-left">Остаток</th><td class="p-2">{{ product.rest }}</td></tr>
+            <tr class="border-b"><th class="p-2 text-left">Цена</th><td class="p-2">{{ product.price|num }}</td></tr>
+            <tr class="border-b"><th class="p-2 text-left">Остаток</th><td class="p-2">{{ product.rest|num }}</td></tr>
             <tr class="border-b"><th class="p-2 text-left">Учёт остатков</th><td class="p-2">{% if product.track_rest %}да{% else %}нет{% endif %}</td></tr>
             <tr class="border-b"><th class="p-2 text-left">Статус</th><td class="p-2">{% if product.is_deleted %}удалён{% else %}активен{% endif %}</td></tr>
         </tbody>
@@ -71,8 +71,8 @@
         <tbody>
             {% for h in price_history %}
             <tr class="border-b">
-                <td class="p-2">{{ h.old_price }}</td>
-                <td class="p-2">{{ h.new_price }}</td>
+                <td class="p-2">{{ h.old_price|num }}</td>
+                <td class="p-2">{{ h.new_price|num }}</td>
                 <td class="p-2">{{ h.changed_by or '—' }}</td>
                 <td class="p-2">{{ h.changed_at }}</td>
             </tr>

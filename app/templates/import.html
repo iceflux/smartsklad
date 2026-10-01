@@ -33,7 +33,7 @@
                     <label class="flex items-center gap-2">
                         <input type="checkbox" name="filenames" value="{{ f.name }}"
                                {% if f.name in selected %}checked{% endif %}>
-                        {{ f.name }} <span class="text-muted">({{ f.size }} байт)</span>
+                        {{ f.name }} <span class="text-muted">({{ f.size|num }} байт)</span>
                     </label>
                 </li>
                 {% endfor %}
@@ -46,15 +46,15 @@
     <section class="bg-surface-raised border p-4 mb-4">
         <h2 class="text-lg font-bold mb-2">Разбор</h2>
         <dl class="grid grid-cols-2 gap-2 text-sm">
-            <dt>Товаров создать</dt><dd>{{ report.products.created }}</dd>
-            <dt>Товаров найдено</dt><dd>{{ report.products.matched }}</dd>
-            <dt>Клиентов создать</dt><dd>{{ report.customers.created }}</dd>
-            <dt>Клиентов найдено</dt><dd>{{ report.customers.matched }}</dd>
-            <dt>Заказов создать</dt><dd>{{ report.orders.created }}</dd>
-            <dt>Заказов пропустить</dt><dd>{{ report.orders.skipped }}</dd>
-            <dt>Позиций склеено</dt><dd>{{ report.orders.items_merged }}</dd>
-            <dt>Заказов без позиций</dt><dd>{{ report.orders.empty_orders }}</dd>
-            <dt>ИНН отброшено</dt><dd>{{ report.customers.inn_dropped }}</dd>
+            <dt>Товаров создать</dt><dd>{{ report.products.created|num }}</dd>
+            <dt>Товаров найдено</dt><dd>{{ report.products.matched|num }}</dd>
+            <dt>Клиентов создать</dt><dd>{{ report.customers.created|num }}</dd>
+            <dt>Клиентов найдено</dt><dd>{{ report.customers.matched|num }}</dd>
+            <dt>Заказов создать</dt><dd>{{ report.orders.created|num }}</dd>
+            <dt>Заказов пропустить</dt><dd>{{ report.orders.skipped|num }}</dd>
+            <dt>Позиций склеено</dt><dd>{{ report.orders.items_merged|num }}</dd>
+            <dt>Заказов без позиций</dt><dd>{{ report.orders.empty_orders|num }}</dd>
+            <dt>ИНН отброшено</dt><dd>{{ report.customers.inn_dropped|num }}</dd>
             <dt>Служебный клиент</dt><dd>{{ "нужен" if report.service_customer_planned else "не нужен" }}</dd>
         </dl>
         {% if report.warnings %}

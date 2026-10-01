@@ -60,7 +60,7 @@
     </div>
 
     <div class="flex items-center gap-3 mt-4 text-sm">
-        <span>Всего: {{ total }}</span>
+        <span>Всего: {{ total|num }}</span>
         {% if page > 1 %}<a class="app-link text-accent" href="/customers?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
         <span>Стр. {{ page }} из {{ pages }}</span>
         {% if page < pages %}<a class="app-link text-accent" href="/customers?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}

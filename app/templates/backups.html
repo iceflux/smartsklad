@@ -12,7 +12,7 @@
             <dt>Статус копии</dt><dd>{{ scheduler.last_status or "—" }}</dd>
             <dt>Ошибка</dt><dd>{{ scheduler.last_error or "—" }}</dd>
             <dt>Время запуска</dt><dd>{{ settings_row.schedule_time.strftime("%H:%M") }}</dd>
-            <dt>Период проверки</dt><dd>{{ settings_row.check_interval_minutes }} мин</dd>
+            <dt>Период проверки</dt><dd>{{ settings_row.check_interval_minutes|num }} мин</dd>
             <dt>Планировщик</dt><dd>{{ "работает" if scheduler.live else "не отвечает или ещё не запускался" }}</dd>
             <dt>Следующая копия</dt><dd>{{ scheduler.next_backup_at or "выключена" }}</dd>
             <dt>Следующий отчёт</dt><dd>{{ scheduler.next_report_at or "выключен" }}</dd>
@@ -83,7 +83,7 @@
 
     <section class="bg-surface-raised border p-4 mb-4">
         <h2 class="text-lg font-bold mb-2">Резервные копии</h2>
-        <p class="text-sm text-caption mb-2">Папка: {{ settings_row.local_path }} · срок хранения {{ settings_row.retention_days }} дн.</p>
+        <p class="text-sm text-caption mb-2">Папка: {{ settings_row.local_path }} · срок хранения {{ settings_row.retention_days|num }} дн.</p>
         <div class="overflow-x-auto">
         <table class="w-full border-collapse">
             <thead><tr class="border-b text-left"><th class="p-2">Файл</th><th class="p-2">Размер</th><th class="p-2">Действия</th></tr></thead>
@@ -91,7 +91,7 @@
             {% for archive in archives %}
                 <tr class="border-b">
                     <td class="p-2">{{ archive.name }}</td>
-                    <td class="p-2">{{ archive.size_bytes }} б</td>
+                    <td class="p-2">{{ archive.size_bytes|num }} б</td>
                     <td class="p-2">
                         <a class="app-link underline" href="/backups/download/{{ archive.name }}">Скачать</a>
                         <form method="post" action="/backups/restore" class="inline">
@@ -120,7 +120,7 @@
                     <td class="p-2">{{ entry.created_at }}</td>
                     <td class="p-2">{{ entry.kind }}</td>
                     <td class="p-2">{{ entry.filename or "—" }}</td>
-                    <td class="p-2">{{ entry.size_bytes if entry.size_bytes is not none else "—" }}</td>
+                    <td class="p-2">{{ entry.size_bytes|num }}</td>
                     <td class="p-2">{{ entry.status }}</td>
                     <td class="p-2">{{ entry.error or "—" }}</td>
                 </tr>
@@ -130,7 +130,7 @@
             </tbody>
         </table>
         </div>
-        <p class="text-sm text-caption mt-2">Последняя рассылка: {{ scheduler.last_report_at or "нет" }}, отправлено {{ scheduler.last_report_sent }}, пропущено {{ scheduler.last_report_skipped }}.</p>
+        <p class="text-sm text-caption mt-2">Последняя рассылка: {{ scheduler.last_report_at or "нет" }}, отправлено {{ scheduler.last_report_sent|num }}, пропущено {{ scheduler.last_report_skipped|num }}.</p>
     </section>
 </main>
 {% endblock %}

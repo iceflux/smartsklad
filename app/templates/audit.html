@@ -54,7 +54,7 @@
         {% if page < pages %}
             <a href="/audit?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ page + 1 }}" class="app-btn border px-3 py-1">Вперёд →</a>
         {% endif %}
-        <span class="py-1">Стр. {{ page }} из {{ pages }} ({{ total }})</span>
+        <span class="py-1">Стр. {{ page }} из {{ pages }} ({{ total|num }})</span>
     </div>
 </div>
 {% endblock %}

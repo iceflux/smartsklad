@@ -24,7 +24,7 @@
                     {% if r.is_super %}<span class="ml-1 text-xs bg-warning-bg px-1">Суперроль</span>{% endif %}
                 </td>
                 <td class="p-2">{% if r.is_system %}да{% else %}нет{% endif %}</td>
-                <td class="p-2">{{ r.user_count }}</td>
+                <td class="p-2">{{ r.user_count|num }}</td>
                 <td class="p-2">
                     {% if r.is_super %}
                         <span class="text-xs text-muted">Все права</span>

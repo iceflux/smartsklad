@@ -33,18 +33,18 @@
             {% for it in items %}
             <tr class="border-b">
                 <td class="p-2">{{ it.name }}</td>
-                <td class="p-2">{{ it.quantity }}</td>
+                <td class="p-2">{{ it.quantity|num }}</td>
                 <td class="p-2">{{ it.unit }}</td>
-                <td class="p-2">{{ "%.2f"|format(it.price) }}</td>
+                <td class="p-2">{{ it.price|num(2) }}</td>
                 <td class="p-2">{{ "%.0f"|format(it.discount) }}</td>
-                <td class="p-2">{{ "%.2f"|format(it.sum) }}</td>
+                <td class="p-2">{{ it.sum|num(2) }}</td>
             </tr>
             {% endfor %}
         </tbody>
         <tfoot>
             <tr class="border-t">
                 <td colspan="5" class="p-2 font-bold">Итого:</td>
-                <td class="p-2 font-bold">{{ "%.2f"|format(total_amount) }}</td>
+                <td class="p-2 font-bold">{{ total_amount|num(2) }}</td>
             </tr>
         </tfoot>
     </table>

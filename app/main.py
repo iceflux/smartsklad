@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.db import SessionLocal, get_db
+from app.formatting import group_number
 from app.modules.audit.router import router as audit_router
 from app.modules.audit.models import AuditLog
 from app.modules.ai.router import router as ai_router
@@ -274,6 +275,7 @@ def create_app() -> FastAPI:
     templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
     templates.env.globals["maintenance_state"] = maintenance_state
     templates.env.globals["nav_is_current"] = nav_is_current
+    templates.env.filters["num"] = group_number
     app.state.templates = templates
 
     app.include_router(auth_router)

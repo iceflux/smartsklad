@@ -10,7 +10,7 @@
         </label>
         <button class="app-btn border px-3 py-1">Применить</button>
     </form>
-    <p class="mb-2 text-sm text-caption">Товаров: {{ total }}</p>
+    <p class="mb-2 text-sm text-caption">Товаров: {{ total|num }}</p>
     <div class="overflow-x-auto">
     <table class="w-full bg-surface-raised border">
         <thead>
@@ -31,13 +31,13 @@
             <tr class="border-b">
                 <td class="p-2">{{ row.name }}</td>
                 <td class="p-2">{{ row.sku }}</td>
-                <td class="p-2 text-right">{{ row.rest }} {{ row.unit }}</td>
-                <td class="p-2 text-right">{{ row.min_stock }}</td>
-                <td class="p-2 text-right">{{ '%.2f'|format(row.avg_daily_sold) }}</td>
-                <td class="p-2 text-right">{% if not row.has_data %}<span class="text-muted">мало данных</span>{% elif row.forecast_7 is not none %}{{ row.forecast_7 }}{% else %}—{% endif %}</td>
-                <td class="p-2 text-right">{% if row.forecast_14 is not none %}{{ row.forecast_14 }}{% else %}—{% endif %}</td>
-                <td class="p-2 text-right">{% if row.forecast_30 is not none %}{{ row.forecast_30 }}{% else %}—{% endif %}</td>
-                <td class="p-2 text-right">{% if row.recommended_qty is not none %}<span class="font-bold">{{ row.recommended_qty }}</span>{% else %}—{% endif %}</td>
+                <td class="p-2 text-right">{{ row.rest|num }} {{ row.unit }}</td>
+                <td class="p-2 text-right">{{ row.min_stock|num }}</td>
+                <td class="p-2 text-right">{{ row.avg_daily_sold|num(2) }}</td>
+                <td class="p-2 text-right">{% if not row.has_data %}<span class="text-muted">мало данных</span>{% elif row.forecast_7 is not none %}{{ row.forecast_7|num }}{% else %}—{% endif %}</td>
+                <td class="p-2 text-right">{% if row.forecast_14 is not none %}{{ row.forecast_14|num }}{% else %}—{% endif %}</td>
+                <td class="p-2 text-right">{% if row.forecast_30 is not none %}{{ row.forecast_30|num }}{% else %}—{% endif %}</td>
+                <td class="p-2 text-right">{% if row.recommended_qty is not none %}<span class="font-bold">{{ row.recommended_qty|num }}</span>{% else %}—{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>

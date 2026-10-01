@@ -50,7 +50,7 @@
     <div class="mt-4 flex gap-2 items-center">
         {% if page > 1 %}<a href="/notifications?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ page - 1 }}" class="app-btn border px-3 py-1">← Назад</a>{% endif %}
         {% if page < pages %}<a href="/notifications?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ page + 1 }}" class="app-btn border px-3 py-1">Вперёд →</a>{% endif %}
-        <span class="py-1">Стр. {{ page }} из {{ pages }} ({{ total }})</span>
+        <span class="py-1">Стр. {{ page }} из {{ pages }} ({{ total|num }})</span>
     </div>
 </div>
 {% endblock %}

@@ -46,7 +46,7 @@
             <tr class="border-b">
                 <td class="border p-2"><a class="app-link text-accent" href="/orders/{{ o.id }}">{{ o.number }}</a></td>
                 <td class="border p-2">{{ status_labels.get(o.status, o.status) }}</td>
-                <td class="border p-2">{{ o.total_amount }}</td>
+                <td class="border p-2">{{ o.total_amount|num }}</td>
                 <td class="border p-2">{{ o.created_at.strftime('%Y-%m-%d %H:%M') if o.created_at else '—' }}</td>
             </tr>
             {% endfor %}
@@ -56,6 +56,6 @@
     {% else %}
     <p class="mb-4 text-muted">Заказов пока нет</p>
     {% endif %}
-    <p>Сумма заказов: {{ stats.total_sum }} | Средний чек: {{ stats.avg_check }}</p>
+    <p>Сумма заказов: {{ stats.total_sum|num }} | Средний чек: {{ stats.avg_check|num }}</p>
 </main>
 {% endblock %}

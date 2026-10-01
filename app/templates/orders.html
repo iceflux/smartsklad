@@ -70,7 +70,7 @@
                 <td class="p-2"><a href="/orders/{{ o.id }}" class="app-link text-accent">{{ o.number }}</a>{% if o.is_deleted %} (удалён){% endif %}</td>
                 <td class="p-2">{{ o.customer_name }}</td>
                 <td class="p-2">{{ status_labels[o.status] }}</td>
-                <td class="p-2">{{ o.total_amount }}</td>
+                <td class="p-2">{{ o.total_amount|num }}</td>
                 <td class="p-2">{{ o.created_at }}</td>
             </tr>
             {% else %}
@@ -81,7 +81,7 @@
     </div>
 
     <div class="flex items-center gap-3 mt-4 text-sm">
-        <span>Всего: {{ total }}</span>
+        <span>Всего: {{ total|num }}</span>
         {% if page > 1 %}<a class="app-link text-accent" href="/orders?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
         <span>Стр. {{ page }} из {{ pages }}</span>
         {% if page < pages %}<a class="app-link text-accent" href="/orders?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
