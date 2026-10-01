@@ -25,9 +25,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILT_CSS = ROOT / "app" / "static" / "app.css"
+SOURCE_CSS = ROOT / "app" / "static" / "tailwind.css"
 
 CONTROLS = ("input", "select", "textarea")
 OPTION = "option"
+SCHEME = re.compile(r"^\s*(light|dark|normal)\s*$")
+COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 
 RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
 TOKEN_VALUE = re.compile(r"rgb\(\s*var\(\s*--color-[a-z-]+\s*\)(?:\s*/[^)]*)?\s*\)")
@@ -35,6 +38,108 @@ TOKEN_VALUE = re.compile(r"rgb\(\s*var\(\s*--color-[a-z-]+\s*\)(?:\s*/[^)]*)?\s*
 
 def _built():
     return BUILT_CSS.read_text(encoding="utf-8")
+
+
+def _source():
+    return SOURCE_CSS.read_text(encoding="utf-8")
+
+
+def _screen_css():
+    """Собранный CSS без блока @media print.
+
+    Блок печати объявляет `:root, .dark` одним списком селекторов, поэтому он
+    удовлетворяет проверку ЛЮБОГО из этих имён: тест «`.dark` задаёт color-scheme»
+    проходил на объявлении из блока печати, а тест «`:root` задаёт» — тем более.
+    Первая версия этих тестов была зелёной при удалённом `color-scheme: light` из
+    `:root` именно поэтому. Экранная часть проверяется отдельно от печатной.
+    """
+    built = _built()
+    at = built.find("@media print")
+    return built if at == -1 else built[:at]
+
+
+def _screen_rules(selector_names):
+    return _rules_from(_screen_css(), selector_names)
+
+
+def _scheme_in(selector_names):
+    """Значение `color-scheme` из ЭКРАННОГО правила — непустое и не `normal`.
+
+    Пустое значение и `normal` прошли бы проверку «правило упомянуло
+    color-scheme», не задав ничего: `normal` — это ровно то состояние, из-за
+    которого глиф календаря остался чёрным на тёмном поле.
+    """
+    found = []
+    for body in _screen_rules(selector_names):
+        value = _declarations(body).get("color-scheme")
+        if value and SCHEME.fullmatch(value) and value != "normal":
+            found.append(value)
+    return found
+
+
+def test_color_scheme_is_set_on_both_schemes_so_native_widgets_follow_the_theme():
+    # Три предыдущих теста этого файла читают app.css КАК ТЕКСТ и не рисуют ни
+    # одного пикселя. Именно поэтому регрессия с глифом их прошла: `color-scheme`
+    # не токен и в правиле полей не участвует — нативный виджет рисует его сам.
+    # Проверка ловит отсутствие объявления; того, что виджет реально
+    # перекрасился, она не видит и видеть не может (см. замер в отчёте).
+    for selector in (":root", ".dark"):
+        assert _scheme_in((selector,)), (
+            f"{selector} не задаёт color-scheme: нативные виджеты (глиф календаря, "
+            f"стрелки числа) рисуются палитрой схемы normal и на тёмном поле "
+            f"почти сливаются с фоном"
+        )
+
+
+def test_color_scheme_differs_between_the_light_and_the_dark_scheme():
+    # Без `light` в :root зеркальная ошибка: светлое поле рисует виджеты
+    # тёмной палитрой. Значение, совпавшее с тёмным, — ровно тот же дефект.
+    light, dark = _scheme_in((":root",)), _scheme_in((".dark",))
+    assert light[0] != dark[0], "обе схемы получили одно значение color-scheme"
+
+
+def test_print_forces_the_light_color_scheme_so_the_dark_one_does_not_reach_paper():
+    # Проверено рендером в PDF: без этого `color-scheme: dark` из .dark доходит
+    # до печати и Chrome заливает страницу чёрным вместо --color-surface.
+    source = _source()
+    print_block = source[source.index("@media print") :]
+    assert _scheme_in_from(print_block, (":root", ".dark")), (
+        "@media print не возвращает color-scheme: light: тёмная схема утекает на бумагу"
+    )
+
+
+def _scheme_in_from(text, selector_names):
+    found = []
+    for body in _rules_from(COMMENT.sub(" ", text), selector_names):
+        value = _declarations(body).get("color-scheme")
+        if value and SCHEME.fullmatch(value):
+            found.append(value)
+    return found
+
+
+def _rules_from(text, selector_names):
+    found = []
+    for selectors, body in RULE.findall(text):
+        names = {part.strip() for part in selectors.split(",")}
+        if all(name in names for name in selector_names):
+            found.append(body)
+    return found
+
+
+def test_color_scheme_survives_the_build_inside_its_rule():
+    # Отдельно от прочих: сборщик однажды вынес `color-scheme: light` из тела
+    # :root наружу декларацией без селектора — она не досталась ни одному
+    # элементу, и в app.css значение было, а на странице схемы не было. Проверка
+    # по тексту артефакта ловит именно эту форму поломки.
+    built = _built()
+    for value in _scheme_in((":root",)) + _scheme_in((".dark",)):
+        assert f"color-scheme:{value}" in built.replace(" ", ""), (
+            f"color-scheme:{value} не доехал до app.css"
+        )
+    stray = re.findall(r"[;}]\s*color-scheme\s*:", built)
+    assert not stray or built.count("color-scheme") == len(
+        re.findall(r"\{[^}]*color-scheme", built)
+    ), "в app.css есть color-scheme вне тела правила — он ни к чему не применён"
 
 
 def _rules(selector_names):
