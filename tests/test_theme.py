@@ -264,6 +264,54 @@ def test_the_switch_sends_the_user_back_where_they_were(client, db_session):
     assert 'name="next" value="/products?page=2"' in body
 
 
+def _header_forms(header: str):
+    forms = []
+    for match in re.finditer(r"<form\b.*?</form>", header, re.DOTALL):
+        tag = match.group(0)
+        action = re.search(r'action="([^"]*)"', tag).group(1)
+        classes = " ".join(re.findall(r'class="([^"]*)"', tag))
+        forms.append((action, classes, match.start(), match.end()))
+    return forms
+
+
+@pytest.mark.parametrize("collapsed", [False, True])
+def test_exactly_one_header_element_absorbs_the_free_space_and_the_theme_button_is_last(
+        client, db_session, collapsed):
+    """`ml-auto` на двух детях flex-строки делит свободное место пополам.
+
+    Свёрнутый сайдбар добавляет в шапку вторую форму, и без проверки кнопка темы
+    оказывалась посреди шапки — ровно в том состоянии, которого почти не бывает.
+    Геометрия измерена в headless Chrome: поглотитель свободного места в шапке
+    ровно один, и кнопка темы в нём последняя.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    if collapsed:
+        client.post("/ui/sidebar", data={"collapsed": "true"}, follow_redirects=False)
+    header = _header(client.get("/products").text)
+    forms = _header_forms(header)
+    assert [action for action, _c, _s, _e in forms] == (
+        ["/ui/sidebar", "/ui/theme"] if collapsed else ["/ui/theme"]), forms
+    spacers = [m.start() for m in re.finditer(r'class="[^"]*\bml-auto\b[^"]*"', header)]
+    assert len(spacers) == 1, (
+        f"свободное место в шапке поглощают {len(spacers)} элементов, а обязан ровно один — "
+        "иначе кнопка темы уезжает в середину шапки"
+    )
+    assert spacers[0] < forms[-1][2], (
+        "поглотитель свободного места обязан стоять перед формой темы, иначе она не прижата вправо"
+    )
+    assert spacers[0] < forms[0][2], (
+        "поглотитель свободного места обязан открываться до всех форм шапки, "
+        "иначе кнопка темы окажется не рядом со «Показать меню»"
+    )
+    assert header[spacers[0]: forms[-1][2]].count("</div>") == 0, (
+        "форма сворачивания обязана лежать в том же блоке, что и форма темы, "
+        "иначе кнопка темы окажется не рядом с ней"
+    )
+    assert forms[-1][3] == header.rindex("</form>") + len("</form>"), (
+        "форма темы обязана быть последней в шапке"
+    )
+
+
 def test_the_switch_is_visible_on_a_phone(client, db_session):
     _login_as(client, db_session, "boss", "admin")
     header = _header(client.get("/").text)

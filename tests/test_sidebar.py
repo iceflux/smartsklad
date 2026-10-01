@@ -233,12 +233,16 @@ def test_no_full_height_column_of_markup_sits_left_of_the_content(client, db_ses
     assert "app-menu-toggle" not in body, (
         "div без правила растягивался на всю высоту и красил белую полосу слева"
     )
-    layout = body[body.index('class="flex min-h-screen flex-col"'): body.index("<aside")]
-    layout = layout[layout.index(">") + 1:]
+    head = body[body.index('class="flex min-h-screen flex-col"'): body.index("<aside")]
+    head = head[head.index(">") + 1:]
+    assert "<header" in head, "шапка обязана стоять первой в колонке"
+    assert head.index("<header") < head.index("<div"), (
+        f"шапку отодвинул посторонний блок: {head[:head.index('<header')]!r}"
+    )
+    layout = head[head.index("</header>") + len("</header>"):]
     assert layout.count("<div") == 1 and "<div" in layout, (
         f"слева от сайдбара лишние блоки растягиваются на всю высоту: {layout!r}"
     )
-    assert "<header" in layout and layout.index("<header") < layout.index("<div")
 
 
 @pytest.mark.parametrize(

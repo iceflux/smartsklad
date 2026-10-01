@@ -47,8 +47,16 @@
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
             </button>
             <a href="/" class="app-link text-xl font-bold"{% if nav_is_current(path, '/') %} aria-current="page"{% endif %}>СмартСклад</a>
+            <div class="ml-auto flex items-center gap-2">
+            {% if collapsed %}
+            <form method="post" action="/ui/sidebar" class="hidden lg:inline-flex">
+                <input type="hidden" name="collapsed" value="false">
+                <input type="hidden" name="next" value="{{ here }}">
+                <button class="app-btn border px-3 py-1">Показать меню</button>
+            </form>
+            {% endif %}
             {% if user %}
-            <form method="post" action="/ui/theme" class="ml-auto">
+            <form method="post" action="/ui/theme">
                 <input type="hidden" name="next" value="{{ here }}">
                 <input type="hidden" name="theme" value="{{ 'light' if theme == 'dark' else 'dark' }}">
                 <button type="submit" class="app-btn border p-2" aria-label="{{ 'Светлая тема' if theme == 'dark' else 'Тёмная тема' }}">
@@ -60,13 +68,7 @@
                 </button>
             </form>
             {% endif %}
-            {% if collapsed %}
-            <form method="post" action="/ui/sidebar" class="ml-auto hidden lg:inline-flex">
-                <input type="hidden" name="collapsed" value="false">
-                <input type="hidden" name="next" value="{{ here }}">
-                <button class="app-btn border px-3 py-1">Показать меню</button>
-            </form>
-            {% endif %}
+            </div>
         </header>
         <div class="flex min-h-0 flex-1">
             <aside class="app-sidebar flex flex-col gap-1 overflow-y-auto border-r border-line bg-surface-raised p-3">
