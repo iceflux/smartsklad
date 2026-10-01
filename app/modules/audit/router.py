@@ -92,6 +92,7 @@ def audit_page(
     return templates.TemplateResponse(request, "audit.html", {
         "title": "Журнал аудита", "user": user, "logs": logs, "total": total,
         "page": page, "pages": pages, "page_size": page_size, "base_qs": base_qs,
+        "msg": request.query_params.get("msg"),
         "users_choices": [{"id": u.id, "username": u.username} for u in users],
         "filters": {
             "user_id": user_id, "action": action or "", "entity_type": entity_type or "",

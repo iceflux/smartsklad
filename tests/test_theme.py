@@ -347,6 +347,32 @@ def test_the_anonymous_login_page_still_renders(client, db_session):
     assert client.get("/login").status_code == 200
 
 
+PAGE_ROUTES = [
+    "/", "/settings", "/notifications", "/roles", "/roles/new", "/users", "/users/new",
+    "/products", "/products/new", "/dashboard", "/backups", "/import", "/forecast",
+    "/audit", "/categories", "/categories/new", "/units", "/customers", "/customers/new",
+    "/orders", "/orders/new",
+]
+
+
+@pytest.mark.parametrize("path", PAGE_ROUTES)
+def test_a_refused_theme_is_visible_on_every_page_the_switch_can_return_to(
+        client, db_session, path):
+    """Отказ темы возвращает на `next` — страница обязана его показать.
+
+    Отказ единственный, кто пишет `?msg=` в шапке: пять страниц сначала
+    выкидывали его молча, и владельцу говорили «неизвестная тема», не показывая
+    ничего. Список маршрутов зафиксирован, чтобы новая страница не приехала
+    без слота `msg` молча.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    r = client.post("/ui/theme", data={"theme": "sepia", "next": path},
+                    follow_redirects=False)
+    assert "msg=" in r.headers["location"], path
+    body = client.get(r.headers["location"]).text
+    assert "неизвестная тема" in body, f"{path} молча выкинула отказ"
+
+
 SUN_GLYPH = 'd="M10 1v2M10 17v2'
 MOON_GLYPH = 'd="M17 12.3A7.5'
 

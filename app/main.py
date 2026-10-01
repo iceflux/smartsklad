@@ -296,7 +296,9 @@ def create_app() -> FastAPI:
         if user is None:
             return RedirectResponse("/login", status_code=303)
         return templates.TemplateResponse(
-            request, "index.html", {"title": "СмартСклад", "user": user, **_page_context(user)}
+            request, "index.html",
+            {"title": "СмартСклад", "user": user, "msg": request.query_params.get("msg"),
+             **_page_context(user)},
         )
 
     @app.get("/login")
@@ -456,7 +458,7 @@ def create_app() -> FastAPI:
             }
             for r in rows
         ]
-        return templates.TemplateResponse(request, "roles.html", {"title": "Роли", "user": user, "roles": roles, **_page_context(user)})
+        return templates.TemplateResponse(request, "roles.html", {"title": "Роли", "user": user, "roles": roles, "msg": request.query_params.get("msg"), **_page_context(user)})
 
     @app.get("/roles/new")
     def roles_new_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None):
@@ -465,7 +467,7 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.users_manage)
         return templates.TemplateResponse(
             request, "roles_edit.html",
-            {"title": "Создание роли", "user": user, "role": None, "is_new": True, "groups": _perms_groups([]), **_page_context(user)},
+            {"title": "Создание роли", "user": user, "role": None, "is_new": True, "groups": _perms_groups([]), "msg": request.query_params.get("msg"), **_page_context(user)},
         )
 
     @app.get("/roles/{role_id}/edit")
@@ -478,7 +480,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Роль не найдена")
         return templates.TemplateResponse(
             request, "roles_edit.html",
-            {"title": f"Роль {role.name}", "user": user, "role": role, "is_new": False, "groups": _perms_groups(role.permissions or []), **_page_context(user)},
+            {"title": f"Роль {role.name}", "user": user, "role": role, "is_new": False, "groups": _perms_groups(role.permissions or []), "msg": request.query_params.get("msg"), **_page_context(user)},
         )
 
     @app.get("/users")
@@ -586,7 +588,7 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "product_form.html", {
             "title": "Новый товар", "user": user, "product": None, "is_new": True,
             "tree": get_category_tree(db), "units": list_units(db), "characteristic_json": "",
-            "can_edit": True, "can_price": True,
+            "can_edit": True, "can_price": True, "msg": request.query_params.get("msg"),
             "can_stock": user_has_permission(user, Permission.stock_change),
             "stock_track_default": get_setting(db, STOCK_TRACK_DEFAULT_KEY),
             "min_stock_days_hint": get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),
@@ -1020,6 +1022,7 @@ def create_app() -> FastAPI:
             "characteristic_json": json.dumps(product.characteristic, ensure_ascii=False) if product.characteristic else "",
             "can_edit": can_edit, "can_price": can_price, "can_stock": can_stock,
             "min_stock_days_hint": get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),
+            "msg": request.query_params.get("msg"),
             **_page_context(user),
         })
 
@@ -1105,7 +1108,7 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.categories_manage)
         return templates.TemplateResponse(request, "category_form.html", {
             "title": "Новая категория", "user": user, "category": None, "is_new": True,
-            "tree": get_category_tree(db),
+            "tree": get_category_tree(db), "msg": request.query_params.get("msg"),
             **_page_context(user),
         })
 
@@ -1119,7 +1122,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Категория не найдена")
         return templates.TemplateResponse(request, "category_form.html", {
             "title": f"Категория {category.name}", "user": user, "category": category, "is_new": False,
-            "tree": get_category_tree(db),
+            "tree": get_category_tree(db), "msg": request.query_params.get("msg"),
             **_page_context(user),
         })
 
@@ -1207,7 +1210,7 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.customers_manage)
         return templates.TemplateResponse(request, "customer_form.html", {
             "title": "Новый клиент", "user": user, "customer": None, "is_new": True,
-            "can_edit": True, **_page_context(user),
+            "can_edit": True, "msg": request.query_params.get("msg"), **_page_context(user),
         })
 
     @app.get("/customers/{customer_id}")
@@ -1238,7 +1241,8 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Клиент не найден")
         return templates.TemplateResponse(request, "customer_form.html", {
             "title": f"Клиент {customer.name}", "user": user, "customer": customer,
-            "is_new": False, "can_edit": True, **_page_context(user),
+            "is_new": False, "can_edit": True, "msg": request.query_params.get("msg"),
+            **_page_context(user),
         })
 
     @app.post("/customers/{customer_id}/delete")

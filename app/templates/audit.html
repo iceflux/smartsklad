@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="p-4">
+    {% if msg %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">{{ msg }}</p>{% endif %}
     <h1 class="text-2xl mb-4">Журнал аудита</h1>
     <form method="get" class="flex flex-wrap gap-2 mb-4">
         <select name="user_id" class="border p-2">
