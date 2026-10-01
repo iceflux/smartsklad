@@ -478,8 +478,19 @@ def test_every_group_item_marks_its_own_section(client, db_session, path, href, 
     assert markup.count("app-nav-current") == len(expected), markup
 
 
-def test_the_root_marks_the_brand_and_no_menu_item(client, db_session):
+def test_no_page_sits_at_the_root_so_only_the_landing_marks_itself(client, db_session):
+    """`GET /` больше не рисует страницу, поэтому отмечать там нечего.
+
+    Проверка на корень была написана, пока `/` рендерил `index.html`. Теперь
+    корень отдаёт 303 на `/orders`, и утверждение «на `/` отмечен бренд, а в меню
+    ничего» проверяло бы несуществующую страницу. Правило `nav_is_current` само
+    по себе не менялось, поэтому оно и проверяется отдельно: отметка корня
+    работает, просто на `/` никто не рисует.
+    """
     _login_as(client, db_session, "boss", "admin")
-    body = client.get("/").text
-    assert _current_links(_header(body)) == [("/", "СмартСклад")]
-    assert _current_links(_sidebar(body)) == []
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/orders"
+    body = client.get("/orders").text
+    assert _current_links(_header(body)) == [], "бренд не должен отмечаться на странице раздела"
+    assert _current_links(_sidebar(body)) == [("/orders", "Заказы")]
+    assert nav_is_current("/", "/") is True

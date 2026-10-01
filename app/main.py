@@ -297,11 +297,8 @@ def create_app() -> FastAPI:
     def index(request: Request, user: Annotated[User | None, Depends(_page_user)] = None):
         if user is None:
             return RedirectResponse("/login", status_code=303)
-        return templates.TemplateResponse(
-            request, "index.html",
-            {"title": "СмартСклад", "user": user, "msg": request.query_params.get("msg"),
-             **_page_context(user)},
-        )
+        query = request.url.query
+        return RedirectResponse(f"/orders?{query}" if query else "/orders", status_code=303)
 
     @app.get("/login")
     def login_page(request: Request):
