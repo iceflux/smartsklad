@@ -229,7 +229,9 @@ def test_print_forces_the_light_palette_over_the_dark_one():
     head, print_part = _head_and_print()
     dark_rule = _rule(head, ".dark")
     assert _depth_at(head, dark_rule.start()) == 0
-    assert dark_rule.start() < source.index("@media print")
+    print_rule = PRINT_RULE.search(source)
+    assert print_rule, "в tailwind.css нет @media print: тёмная тема дойдёт до бумаги"
+    assert dark_rule.start() < print_rule.start()
     printed = _values(print_part, ".dark")
     assert set(printed) == set(LIGHT_SHADES)
     wrong = {name: printed[name] for name in LIGHT_SHADES if _hex(printed[name]) != LIGHT_SHADES[name][1]}

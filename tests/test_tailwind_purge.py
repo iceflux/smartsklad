@@ -21,7 +21,40 @@ NOT_STYLED_BY_TAILWIND = {
 
 CLASS_ATTR = re.compile(r"""class=(["'])(.*?)\1""", re.DOTALL)
 
-SVG_LITERAL_COLOUR = re.compile(r'\b(?:fill|stroke)="(#[0-9a-fA-F]{3,8})"')
+SVG_LITERAL_COLOUR = re.compile(
+    r"\b(?:fill|stroke|stop-color|flood-color|lighting-color)\s*=\s*([\"'])([^\"']*)\1"
+    r"|\bstyle\s*=\s*([\"'])([^\"']*)\3",
+    re.IGNORECASE,
+)
+
+CSS_PAINT_PROPERTY = re.compile(
+    r"(?:^|[;{\s])(?:fill|stroke|color|stop-color|flood-color|lighting-color)\s*:\s*([^;}]*)",
+    re.IGNORECASE,
+)
+
+# Ключевые слова CSS, которые в графике набирают руками. `none`, `currentColor`,
+# `inherit`, `transparent` и `url(#…)` цветами не считаются: ими рисуют контур
+# иконок в самих шаблонах, запрещать их нельзя.
+NAMED_COLOURS = (
+    "aqua|black|blue|brown|coral|crimson|cyan|darkblue|darkgray|darkgreen|darkgrey|"
+    "darkred|fuchsia|gold|gray|green|grey|indigo|ivory|khaki|lime|linen|magenta|"
+    "maroon|navy|olive|orange|orchid|peru|pink|plum|purple|red|salmon|sienna|"
+    "silver|teal|tomato|turquoise|violet|wheat|white|yellow"
+)
+
+HEX_COLOUR = re.compile(r"#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})")
+FUNC_COLOUR = re.compile(r"(?:rgb|rgba|hsl|hsla)\(", re.IGNORECASE)
+NAMED_COLOUR = re.compile(f"^(?:{NAMED_COLOURS})$", re.IGNORECASE)
+NOT_A_COLOUR = frozenset({"", "none", "currentcolor", "inherit", "transparent", "unset"})
+
+
+def _is_literal_colour(value: str) -> bool:
+    value = value.strip()
+    if value.lower() in NOT_A_COLOUR or value.lower().startswith("url("):
+        return False
+    return bool(HEX_COLOUR.fullmatch(value)
+                or FUNC_COLOUR.match(value)
+                or NAMED_COLOUR.match(value))
 
 # Пусто: печатный шаблон `documents/order_print.html` своего SVG не содержит
 # (проверено), печать всегда светлая, и исключать там нечего. Список пустой, а
@@ -101,20 +134,32 @@ def test_no_template_uses_a_literal_palette_shade():
 
 
 def test_no_svg_presentation_attribute_carries_a_literal_colour():
-    """Атрибут презентации SVG не видит `class`, поэтому сторож выше по цвету его не ловит.
+    """Литеральный цвет в разметке рисунка запрещён: у него нет тёмного соответствия.
 
-    `var()` в `fill=` не подставляется, отсюда и был захардкоженный hex графика.
-    Выход — класс `fill-*`/`stroke-*`: приоритет авторского правила выше
-    атрибута, а сборщик выдаёт всю семью утилит из `theme.extend.colors`."""
-    found = [
-        f"{path.relative_to(ROOT)}:{n} {match.group(0)}"
-        for path in sorted(TEMPLATES.rglob("*.html"))
-        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
-        for match in SVG_LITERAL_COLOUR.finditer(line)
-        if path.name not in ALLOWED_SVG_LITERAL_COLOUR
-    ]
+    `class` сторож выше по цвету не видит, а `var()` в атрибут презентации не
+    подставляется — отсюда и был захардкоженный hex графика. Выход — класс
+    `fill-*`/`stroke-*`: приоритет авторского правила выше атрибута, а сборщик
+    выдаёт всю семью утилит из `theme.extend.colors`.
+
+    Ловится всё, чем цвет реально можно задать: hex (обе кавычки), `rgb()`/
+    `hsl()`, именованный цвет из `NAMED_COLOURS` и `style="fill:…;stroke:…"`.
+    Не ловится и не должен ловиться `fill="none"` и `stroke="currentColor"` —
+    ими нарисованы иконки в самих шаблонах. Список имёнованных цветов закрытый:
+    `slategray` в него не входит, и такой цвет пройдёт мимо проверки.
+    """
+    found = []
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        if path.name in ALLOWED_SVG_LITERAL_COLOUR:
+            continue
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for match in SVG_LITERAL_COLOUR.finditer(line):
+                values = ([match.group(2)] if match.group(2) is not None
+                          else CSS_PAINT_PROPERTY.findall(match.group(4)))
+                for value in values:
+                    if _is_literal_colour(value):
+                        found.append(f"{path.relative_to(ROOT)}:{n} {match.group(0)[:90]}")
     assert found == [], (
-        "литеральный цвет в атрибуте презентации SVG: "
+        "литеральный цвет в разметке рисунка: "
         + "; ".join(found)
         + ". Цветом рисунка должен быть класс fill-*/stroke-* по токену."
     )

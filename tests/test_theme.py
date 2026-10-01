@@ -221,6 +221,12 @@ def _header(body: str) -> str:
     return body[body.index("<header"): body.index("</header>")]
 
 
+def _switch_markup(body: str) -> str:
+    header = _header(body)
+    form = header[header.index('action="/ui/theme"'):]
+    return form[: form.index("</form>")]
+
+
 def test_the_page_carries_no_theme_class_by_default(client, db_session):
     _login_as(client, db_session, "boss", "admin")
     assert "dark" not in _html_tag(client.get("/").text)
@@ -260,8 +266,11 @@ def test_the_switch_offers_the_other_theme_and_names_itself(client, db_session):
 
 def test_the_switch_sends_the_user_back_where_they_were(client, db_session):
     _login_as(client, db_session, "boss", "admin")
-    body = client.get("/products?page=2").text
-    assert 'name="next" value="/products?page=2"' in body
+    switch = _switch_markup(client.get("/products?page=2").text)
+    assert 'name="next" value="/products?page=2"' in switch, (
+        "форма переключателя темы обязана нести адрес текущей страницы: "
+        f"{switch[:200]!r}"
+    )
 
 
 def _header_forms(header: str):
@@ -336,12 +345,6 @@ def test_the_printed_order_stays_light_even_for_a_dark_user(client, db_session):
 
 def test_the_anonymous_login_page_still_renders(client, db_session):
     assert client.get("/login").status_code == 200
-
-
-def _switch_markup(body: str) -> str:
-    header = _header(body)
-    form = header[header.index('action="/ui/theme"'):]
-    return form[: form.index("</form>")]
 
 
 SUN_GLYPH = 'd="M10 1v2M10 17v2'
