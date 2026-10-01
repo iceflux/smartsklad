@@ -65,7 +65,7 @@ ALLOWED_SVG_LITERAL_COLOUR = frozenset()
 LEGACY_SHADES = re.compile(
     r"^(?:bg|text|border|ring|divide|placeholder|from|to|via|outline|decoration"
     r"|accent|caret|fill|stroke|shadow)-"
-    r"(?:(?:gray|blue|green|red|amber|yellow)-(?:50|100|200|300|400|500|600|700|800|900)"
+    r"(?:(?:gray|blue|green|red|amber|yellow|violet)-(?:50|100|200|300|400|500|600|700|800|900)"
     r"|white|black)$"
 )
 

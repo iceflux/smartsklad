@@ -189,8 +189,12 @@
         --color-muted: 107 114 128;
         --color-subtle: 156 163 175;
         --color-on-accent: 255 255 255;
-        /* Акцент: кнопки и ссылки */
-        --color-accent: 37 99 235;
+        /* Акцент: кнопки и ссылки. Фиолетовый (violet-600) выбрал владелец вместо
+           синего; в `.dark` оттенок светлее, потому что тёмная заливка на тёмной
+           поверхности не читается. Старых значений в этом файле нет — их ищет
+           test_the_retired_blue_accent_appears_nowhere_in_the_shipped_sources,
+           и упоминание здесь было бы возвратом, который сам же тест и ловит. */
+        --color-accent: 124 58 237;
         /* Ошибка: текст, плашка, рамка */
         --color-danger: 220 38 38;
         --color-danger-bg: 254 242 242;
@@ -250,7 +254,7 @@
     --color-muted: 161 161 170;
     --color-subtle: 145 145 155;
     --color-on-accent: 17 24 39;
-    --color-accent: 125 158 235;
+    --color-accent: 167 139 250;
     --color-danger: 248 113 113;
     --color-danger-bg: 69 26 26;
     --color-danger-border: 127 29 29;
@@ -301,7 +305,7 @@
         --color-muted: 107 114 128;
         --color-subtle: 156 163 175;
         --color-on-accent: 255 255 255;
-        --color-accent: 37 99 235;
+        --color-accent: 124 58 237;
         --color-danger: 220 38 38;
         --color-danger-bg: 254 242 242;
         --color-danger-border: 254 202 202;
