@@ -8,7 +8,7 @@ from app.modules.auth.dependencies import get_page_user
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.customers.models import Customer
-from app.modules.inventory.models import Product
+from app.modules.inventory.models import Category, Product
 from app.modules.inventory.service import get_unit_by_name
 from app.modules.orders.service import create_order
 from app.modules.settings.service import (
@@ -352,7 +352,40 @@ PAGE_ROUTES = [
     "/products", "/products/new", "/dashboard", "/backups", "/import", "/forecast",
     "/audit", "/categories", "/categories/new", "/units", "/customers", "/customers/new",
     "/orders", "/orders/new",
+    "/roles/{role_id}/edit", "/products/{product_id}/edit",
+    "/categories/{category_id}/edit", "/customers/{customer_id}/edit",
 ]
+
+
+def _with_ids(path: str, db_session) -> str:
+    def _product():
+        row = Product(name="Гвозди", sku="NAIL-1", unit_id=_unit_id(db_session), price=100.0)
+        db_session.add(row)
+        db_session.commit()
+        return row.id
+
+    def _category():
+        row = Category(name="Крепёж")
+        db_session.add(row)
+        db_session.commit()
+        return row.id
+
+    def _customer():
+        row = Customer(name="ООО Строй")
+        db_session.add(row)
+        db_session.commit()
+        return row.id
+
+    makers = {
+        "{role_id}": lambda: get_role_by_name(db_session, "admin").id,
+        "{product_id}": _product,
+        "{category_id}": _category,
+        "{customer_id}": _customer,
+    }
+    for token, make in makers.items():
+        if token in path:
+            return path.replace(token, str(make()))
+    return path
 
 
 @pytest.mark.parametrize("path", PAGE_ROUTES)
@@ -360,12 +393,18 @@ def test_a_refused_theme_is_visible_on_every_page_the_switch_can_return_to(
         client, db_session, path):
     """Отказ темы возвращает на `next` — страница обязана его показать.
 
-    Отказ единственный, кто пишет `?msg=` в шапке: пять страниц сначала
-    выкидывали его молча, и владельцу говорили «неизвестная тема», не показывая
-    ничего. Список маршрутов зафиксирован, чтобы новая страница не приехала
-    без слота `msg` молча.
+    Отказ не единственный носитель `?msg=`: в `main.py` 22 редиректа пишут его
+    явно, а слот `{% if msg %}` есть на 24 страницах из 28. Но девять шаблонов
+    рисуют слот как `bg-danger-bg`, и всякое сообщение на них — отказ: от
+    переключателя либо от собственных POST-ов (`/orders/new` возвращает
+    «Выберите клиента» и «Добавьте хотя бы одну позицию»). Зелёный на них был бы
+    враньём, потому что успеха туда не приходит ниоткуда.
+
+    Список зафиксирован целиком, включая четыре `{id}/edit`: у каждого своя
+    страница и свой слот, и без записи они приехали бы без `msg` молча.
     """
     _login_as(client, db_session, "boss", "admin")
+    path = _with_ids(path, db_session)
     r = client.post("/ui/theme", data={"theme": "sepia", "next": path},
                     follow_redirects=False)
     assert "msg=" in r.headers["location"], path
