@@ -65,7 +65,6 @@ def _sidebar(body: str) -> str:
 
 
 def _visible_links(markup: str) -> list[tuple[str, str]]:
-    import re
     return [
         (href, re.sub(r"<[^>]+>", "", label).strip())
         for href, label in re.findall(r'href="([^"]+)"[^>]*>([^<]*)</a>', markup)
@@ -300,6 +299,27 @@ def test_the_header_block_holds_theme_then_collapse_then_add_order(client, db_se
     assert block.count("<form") == 2 and block.count("<a ") == 1, block
 
 
+def test_the_collapse_control_in_the_header_stays_hidden_on_a_phone(client, db_session):
+    """Сворачивание — серверная настройка, бургер — клиентский ящик: два разных дела.
+
+    Снятый с формы `hidden lg:inline-flex` показал бы на телефоне вторую кнопку
+    «Свернуть меню» рядом с бургером, и два контроля на одну работу отвечали бы
+    двум разным состояниям: `data-nav` у бургера и `ui.sidebar_collapsed` у формы.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    header = _header(client.get("/").text)
+    form = header[header.index('action="/ui/sidebar"'):]
+    form = form[: form.index("</form>")]
+    classes = re.findall(r'class="([^"]*)"', form)
+    assert classes, "у формы сворачивания нет ни одного класса, телефон её не спрячет"
+    tokens = [token for group in classes for token in group.split()]
+    assert "hidden" in tokens, (
+        f"форма сворачивания не спрятата на узком экране: {tokens} — телефон получит "
+        "вторую кнопку меню рядом с бургером, и два контроля будут писать разное состояние"
+    )
+    assert "lg:inline-flex" in tokens, f"форма обязана вернуться на широком экране: {tokens}"
+
+
 def test_the_add_order_control_in_the_header_opens_the_new_order_page(client, db_session):
     _login_as(client, db_session, "boss", "admin")
     header = _header(client.get("/").text)
@@ -325,7 +345,7 @@ def test_the_add_order_control_is_absent_without_the_permission(client, db_sessi
 
 
 def test_every_icon_only_control_in_the_header_is_named(client, db_session):
-    """Четыре значковые кнопки в ряд, и у каждой должно быть имя.
+    """Три значковые кнопки в ряд и одна ссылка, и у каждой должно быть имя.
 
     Внутри кнопки только SVG с `aria-hidden`, то есть имя на самой кнопке —
     единственное, что её называет. Пустое имя хуже отсутствующего: значок у
@@ -399,7 +419,6 @@ def test_the_active_rule_matches_on_a_segment_boundary(path, href, expected):
 
 
 def _current_links(markup: str) -> list[tuple[str, str]]:
-    import re
     return [
         (href, label)
         for href, label in re.findall(

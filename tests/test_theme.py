@@ -291,8 +291,13 @@ def test_exactly_one_header_element_absorbs_the_free_space(client, db_session, c
     оказывалась посреди шапки — ровно в том состоянии, которого почти не бывает.
     Теперь форм две всегда (тема и сворачивание) и стоит ссылка «Новый заказ»,
     то есть повод вернуться ровно тот же. Проверка ловит сам класс дефекта:
-    поглотитель свободного места в шапке ровно один, и он открывается до всех
-    форм. Саму геометрию без браузера не проверить — она измерена отдельно.
+    поглотитель свободного места в шапке ровно один, он открывается до всех форм
+    и остаётся flex-строкой. Без последнего `ml-auto` в блоке, который не flex,
+    работает ни на что, и блок кнопок уезжает в середину шапки — ровно тот дефект,
+    который в прошлый раз прошёл весь прогон зелёным, потому что
+    `test_tailwind_purge` проверяет, что класс есть в собранном CSS, а не что
+    разметка им пользуется. Саму геометрию без браузера не проверить — она
+    измерена отдельно.
     """
     _login_as(client, db_session, "boss", "admin")
     if collapsed:
@@ -300,16 +305,22 @@ def test_exactly_one_header_element_absorbs_the_free_space(client, db_session, c
     header = _header(client.get("/products").text)
     forms = _header_forms(header)
     assert [action for action, _c, _s, _e in forms] == ["/ui/theme", "/ui/sidebar"], forms
-    spacers = [m.start() for m in re.finditer(r'class="[^"]*\bml-auto\b[^"]*"', header)]
+    spacers = list(re.finditer(r'class="([^"]*\bml-auto\b[^"]*)"', header))
     assert len(spacers) == 1, (
         f"свободное место в шапке поглощают {len(spacers)} элементов, а обязан ровно один — "
         "иначе блок кнопок разъедется и уедет в середину шапки"
     )
-    assert spacers[0] < forms[0][2], (
+    tokens = spacers[0].group(1).split()
+    for required in ("flex", "items-center"):
+        assert required in tokens, (
+            f"поглотитель свободного места потерял класс {required!r}: {tokens} — "
+            "без `flex` `ml-auto` не работает, и блок кнопок уезжает в середину шапки"
+        )
+    assert spacers[0].start() < forms[0][2], (
         "поглотитель свободного места обязан открываться до всех форм шапки, "
         "иначе блок кнопок окажется не прижат вправо"
     )
-    assert header[spacers[0]: forms[-1][3]].count("</div>") == 0, (
+    assert header[spacers[0].start(): forms[-1][3]].count("</div>") == 0, (
         "обе формы обязаны лежать в том же блоке, что и поглотитель, "
         "иначе блок кнопок развалится на две группы"
     )
