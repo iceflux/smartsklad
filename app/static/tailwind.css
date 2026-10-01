@@ -124,6 +124,12 @@
    перестало бы быть последним словом каскада: утилита `outline-none` перебила
    бы его специфичностью. Правило без слоя — это правило, которое ничего не
    перебивает и его не перебивают.
+   Смещения измерены на собранном app.css (Tailwind 3.4.19) и сдвинутся вместе
+   с ним: при добавлении правил выше по файлу поплывут оба. Проверяется так —
+   `python -c "import pathlib;c=pathlib.Path('app/static/app.css').read_text(encoding='utf-8');print(c.find(':where(a,button,input,select,textarea):focus-visible'), c.find('.app-sidebar'))"`.
+   Важен ПОРЯДОК двух чисел, а не сами числа. Внимание: в этом комментарии
+   нельзя писать фигурные скобки — сторож test_print_forces_the_light_palette_
+   over_the_dark_one считает их глубиной и решит, что .dark уехал в слой.
    Подавление обводки здесь не используется: в браузере без :focus-visible
    останется собственная обводка пользовательского агента. */
 :where(a, button, input, select, textarea):focus-visible {

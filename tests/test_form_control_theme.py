@@ -44,18 +44,24 @@ def _source():
     return SOURCE_CSS.read_text(encoding="utf-8")
 
 
-def _screen_css():
-    """Собранный CSS без блока @media print.
+def _print_css():
+    """Собранный CSS начиная с блока @media print с палитрой токенов.
 
-    Блок печати объявляет `:root, .dark` одним списком селекторов, поэтому он
-    удовлетворяет проверку ЛЮБОГО из этих имён: тест «`.dark` задаёт color-scheme»
-    проходил на объявлении из блока печати, а тест «`:root` задаёт» — тем более.
-    Первая версия этих тестов была зелёной при удалённом `color-scheme: light` из
-    `:root` именно поэтому. Экранная часть проверяется отдельно от печатной.
+    Отрезать по ПЕРВОМУ вхождению `@media print` нельзя: сборщик выводит ещё
+    один, служебный (`.print\\:hidden`), и если бы он оказался раньше, отрезок
+    «экран» тихо удлинился бы или укоротился, а проверки экрана стали бы
+    проверками пустоты. Поэтому берём именно тот блок, где печатаются токены:
+    следующий после первого `@media print`, если он содержит `--color-`.
     """
     built = _built()
-    at = built.find("@media print")
-    return built if at == -1 else built[:at]
+    first = built.find("@media print")
+    assert first != -1, "в app.css нет @media print"
+    after = built[first + 1 :]
+    for match in re.finditer(r"@media print\{", after):
+        body = after[match.end() : after.index("}", match.end())]
+        if "--color-" in body:
+            return after[match.start() :]
+    return after
 
 
 def _screen_rules(selector_names):
@@ -101,10 +107,19 @@ def test_color_scheme_differs_between_the_light_and_the_dark_scheme():
 def test_print_forces_the_light_color_scheme_so_the_dark_one_does_not_reach_paper():
     # Проверено рендером в PDF: без этого `color-scheme: dark` из .dark доходит
     # до печати и Chrome заливает страницу чёрным вместо --color-surface.
-    source = _source()
-    print_block = source[source.index("@media print") :]
-    assert _scheme_in_from(print_block, (":root", ".dark")), (
-        "@media print не возвращает color-scheme: light: тёмная схема утекает на бумагу"
+    #
+    # Проверяется АРТЕФАКТ, а не исходник. Читавшая исходник версия была слепа к
+    # устаревшему или правившемуся руками app.css: удаление объявления из
+    # собранного блока печати при нетронутом исходнике давало 7 passed, то есть
+    # чёрная бумага могла уехать в коммит при зелёном прогоне.
+    print_half = _print_css()
+    values = _scheme_in_from(print_half, (":root", ".dark"))
+    assert values, (
+        "в собранном @media print нет color-scheme: тёмная схема утекает на бумагу "
+        "и страница печатается залитой чёрным"
+    )
+    assert all(value == "light" for value in values), (
+        f"в печати схема не светлая: {values}"
     )
 
 
@@ -115,6 +130,25 @@ def _scheme_in_from(text, selector_names):
         if value and SCHEME.fullmatch(value):
             found.append(value)
     return found
+
+
+def _screen_css():
+    """Собранный CSS до печатного блока с токенами.
+
+    Отрезается по НАЧАЛУ найденного печатного блока, а не по первому
+    `@media print`: служебный блок `.print\\:hidden` может прийти раньше, и
+    отрезок по первому вхождению тогда не совпал бы с этим — проверки экрана
+    стали бы проверками другой половины файла.
+
+    Блок печати объявляет `:root, .dark` одним списком селекторов, поэтому он
+    удовлетворяет проверку ЛЮБОГО из этих имён: тест «`.dark` задаёт color-scheme»
+    проходил на объявлении из блока печати, а тест «`:root` задаёт» — тем более.
+    Первая версия этих тестов была зелёной при удалённом `color-scheme: light` из
+    `:root` именно поэтому. Экранная часть проверяется отдельно от печатной.
+    """
+    built = _built()
+    print_at = built.find(_print_css())
+    return built if print_at == -1 else built[:print_at]
 
 
 def _rules_from(text, selector_names):
@@ -136,10 +170,29 @@ def test_color_scheme_survives_the_build_inside_its_rule():
         assert f"color-scheme:{value}" in built.replace(" ", ""), (
             f"color-scheme:{value} не доехал до app.css"
         )
-    stray = re.findall(r"[;}]\s*color-scheme\s*:", built)
-    assert not stray or built.count("color-scheme") == len(
-        re.findall(r"\{[^}]*color-scheme", built)
-    ), "в app.css есть color-scheme вне тела правила — он ни к чему не применён"
+    # Подсчёт сам по себе проверку не закрывал: он требовал лишь равенства числа
+    # вхождений числу правил с color-scheme внутри, и на файле, где экранные
+    # объявления на месте, этого хватало, чтобы пропустить выброшенную наружу
+    # декларацию в блоке печати. Поэтому требуем по ИМЕНИ: каждое из трёх
+    # обязательных правил должно нести объявление внутри своей скобки, а не
+    # где-то ещё в файле.
+    for label, selector_names in (
+        ("экранный :root", (":root",)),
+        ("экранный .dark", (".dark",)),
+        ("блок @media print", (":root", ".dark")),
+    ):
+        region = _screen_css() if label.startswith("экранный") else _print_css()
+        found = [
+            value
+            for body in _rules_from(region, selector_names)
+            if (value := _declarations(body).get("color-scheme"))
+            and SCHEME.fullmatch(value)
+        ]
+        assert found, (
+            f"{label} не несёт color-scheme ВНУТРИ своего тела: сборщик выносит "
+            f"такое объявление наружу декларацией без селектора, и оно не "
+            f"достаётся ни одному элементу"
+        )
 
 
 def _rules(selector_names):
@@ -184,6 +237,44 @@ def _declaration_from_tokens(selector_names, prop, token):
         f"(найдено правил: {len(_rules(selector_names))})"
     )
     return values[0]
+
+
+def test_the_screen_half_is_cut_before_the_token_print_block_not_a_later_one():
+    # Страховка на отрезок. Tailwind выводит служебный `@media print` для
+    # `.print\:hidden`; сегодня он идёт ПОСЛЕ блока с токенами, и потому срез
+    # по первому вхождению случайно попадал туда же. Если служебный блок
+    # окажется раньше, срез по первому вхождению тихо отрежет другую половину
+    # файла, и проверки экрана станут проверками пустоты — зелёными и
+    # ничего не проверяющими. Здесь это закреплено явно.
+    built = _built()
+    print_half = _print_css()
+    # _print_css() отдаёт хвост, начинающийся с `media print{…` (без `@`), поэтому
+    # ищем начало на минус один символ: иначе индекс уезжает на байт и блок
+    # сравнивается сам с собой.
+    token_print = built.find("@" + print_half)
+    assert token_print != -1, "печатный отрезок не найден в app.css"
+    # Блок с токенами — тот, где реально печатается палитра; служебный
+    # (`.print\:hidden`) токенов не содержит и в срез не попадает.
+    service = [
+        m.start()
+        for m in re.finditer(r"@media print\{", built)
+        if m.start() != token_print
+    ]
+    earlier = [at for at in service if at < token_print]
+    assert not earlier or all(
+        "--color-" not in built[at : built.index("}", at)] for at in earlier
+    ), (
+        "служебный @media print стоит раньше блока с токенами: срез экрана надо "
+        "искать по содержимому, а не по первому вхождению"
+    )
+    # и экранная половина непуста и содержит правила, о которых идёт речь
+    screen = _screen_css()
+    assert ":root{" in screen and ".dark{" in screen, (
+        "экранный отрезок не содержит :root/.dark — проверки экрана проверяют пустоту"
+    )
+    assert _scheme_in((":root",)) and _scheme_in((".dark",)), (
+        "экранный отрезок не содержит color-scheme у :root/.dark"
+    )
 
 
 def test_form_controls_paint_their_surface_and_text_from_the_tokens():
