@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from app.modules.audit.models import AuditLog
@@ -225,6 +227,141 @@ def test_the_menu_button_sits_in_the_header_as_three_horizontal_bars(client, db_
     assert path == "M3 5h14M3 10h14M3 15h14", (
         f"кнопка обязана рисовать три горизонтальные полосы, а рисует {path!r}"
     )
+
+
+def test_the_sidebar_footer_no_longer_carries_the_collapse_form(client, db_session):
+    """Кнопка сворачивания переехала в шапку, в подвале сайдбара её больше нет.
+
+    Раньше копий было две: «Свернуть меню» в подвале панели и «Показать меню» в
+    шапке, и обе рендерились по разным условиям — состояние сайдбара читалось
+    с двух сторон. Оставлена одна, в шапке.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    sidebar = _sidebar(client.get("/").text)
+    assert 'action="/ui/sidebar"' not in sidebar, "в подвале сайдбара осталась форма сворачивания"
+    assert "Свернуть меню" not in sidebar
+    assert 'action="/ui/sidebar"' in _header(client.get("/").text)
+
+
+@pytest.mark.parametrize("collapsed, sent", [(False, "true"), (True, "false")])
+def test_the_collapse_control_in_the_header_posts_the_opposite_state(
+        client, db_session, collapsed, sent):
+    """Кнопка одна и шлёт противоположное текущему состояние.
+
+    Раньше состояние читалось двумя разными формами, каждая со своим условием.
+    Теперь форма одна и `collapsed` считается из текущего состояния, поэтому
+    свёрнутое меню обязано возвращаться разворотом, а не второй копией кнопки.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    if collapsed:
+        client.post("/ui/sidebar", data={"collapsed": "true"}, follow_redirects=False)
+    header = _header(client.get("/").text)
+    form = header[header.index('action="/ui/sidebar"'):]
+    form = form[: form.index("</form>")]
+    assert f'name="collapsed" value="{sent}"' in form, form
+
+
+@pytest.mark.parametrize("collapsed, label", [
+    (False, "Свернуть меню"),
+    (True, "Развернуть меню"),
+])
+def test_the_collapse_button_keeps_its_aria_label(client, db_session, collapsed, label):
+    """Значок без подписи читается вслух как «кнопка», и у кнопки это ничего не значит.
+
+    У иконки `aria-hidden`, поэтому имя кнопки — единственное, что её называет.
+    Оно же сообщает, что кнопка сделает, а не что нарисовано.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    if collapsed:
+        client.post("/ui/sidebar", data={"collapsed": "true"}, follow_redirects=False)
+    header = _header(client.get("/").text)
+    form = header[header.index('action="/ui/sidebar"'):]
+    form = form[: form.index("</form>")]
+    found = re.findall(r'aria-label="([^"]*)"', form)
+    assert found == [label], found
+
+
+def test_the_header_block_holds_theme_then_collapse_then_add_order(client, db_session):
+    """Порядок в блоке кнопок задан владельцем и проверяется на разметке.
+
+    Порядок виден глазом сразу, поэтому ловится без браузера: тема, сворачивание,
+    «Новый заказ». Формы и ссылка обязаны лежать внутри блока-поглотителя, иначе
+    блок развалится на несколько групп.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    header = _header(client.get("/").text)
+    start = header.index("<header")
+    spacer = header.index('class="ml-auto', start)
+    theme = header.index('action="/ui/theme"', spacer)
+    collapse = header.index('action="/ui/sidebar"', spacer)
+    add = header.index('href="/orders/new"', spacer)
+    assert spacer < theme < collapse < add, header[spacer:]
+    block = header[spacer: header.index("</div>", add)]
+    assert block.count("<form") == 2 and block.count("<a ") == 1, block
+
+
+def test_the_add_order_control_in_the_header_opens_the_new_order_page(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    header = _header(client.get("/").text)
+    assert 'href="/orders/new"' in header
+    assert 'aria-label="Новый заказ"' in header, (
+        "ссылка без подписи называется только адресом, а значок скрыт от чтения"
+    )
+    assert client.get("/orders/new").status_code == 200
+
+
+def test_the_add_order_control_is_absent_without_the_permission(client, db_session):
+    """Складу заказ не создать, поэтому кнопки у него быть не должно.
+
+    Кнопка шлёт на `/orders/new`, а страница без права `orders.create` отвечает
+    403 — то есть безусловная кнопка была бы ссылкой в стену.
+    """
+    _login_as(client, db_session, "wh", "warehouseman")
+    header = _header(client.get("/").text)
+    assert 'action="/ui/theme"' in header, "тема остаётся доступной всем вошедшим"
+    assert 'href="/orders/new"' not in header
+    assert "Новый заказ" not in header
+    assert client.get("/orders/new").status_code == 403
+
+
+def test_every_icon_only_control_in_the_header_is_named(client, db_session):
+    """Четыре значковые кнопки в ряд, и у каждой должно быть имя.
+
+    Внутри кнопки только SVG с `aria-hidden`, то есть имя на самой кнопке —
+    единственное, что её называет. Пустое имя хуже отсутствующего: значок у
+    чтеца всё равно молчит, а имя на месте.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    header = _header(client.get("/").text)
+    buttons = re.findall(r"<button\b[^>]*>", header)
+    assert len(buttons) == 3, buttons
+    for tag in buttons:
+        label = re.search(r'aria-label="([^"]*)"', tag)
+        assert label and label.group(1).strip(), f"кнопка без имени: {tag}"
+    assert header.count('role="group"') == 1
+    assert 'aria-label="Панель действий"' in header
+
+
+def test_the_hamburger_stays_at_the_far_left_and_stays_hidden_on_a_wide_screen(
+        client, db_session):
+    """Бургер — единственный способ открыть меню на телефоне, поэтому его трогать нельзя.
+
+    На широком экране он уходит по `lg:hidden`, и тогда блок кнопок справа —
+    единственный путь к сворачиванию. Неверная геометрия этого блока прятала
+    единственный контроль; сам бургер при этом оставался исправным.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    header = _header(client.get("/").text)
+    hamburger = re.search(r"<button\b[^>]*data-menu-toggle[^>]*>", header)
+    assert hamburger, header
+    tag = hamburger.group(0)
+    assert tag.count("lg:hidden") == 1, tag
+    assert 'aria-label="Меню"' in tag
+    assert 'aria-expanded="false"' in tag
+    brand = header.index("СмартСклад")
+    assert hamburger.start() < brand, "бургер обязан стоять левее бренда"
+    inside = header[hamburger.start(): header.index("</button>", hamburger.start())]
+    assert 'd="M3 5h14M3 10h14M3 15h14"' in inside, inside
 
 
 def test_no_full_height_column_of_markup_sits_left_of_the_content(client, db_session):

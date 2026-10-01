@@ -43,23 +43,16 @@
 {% endif %}
     <div class="flex min-h-screen flex-col">
         <header class="flex items-center gap-2 border-b border-line bg-surface-raised p-3">
-            <button type="button" data-menu-toggle aria-expanded="false" aria-label="Меню" class="app-btn border p-2 lg:hidden">
+            <button type="button" data-menu-toggle aria-expanded="false" aria-label="Меню" class="app-btn border p-0 h-11 w-11 inline-flex items-center justify-center lg:hidden">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
             </button>
             <a href="/" class="app-link text-xl font-bold"{% if nav_is_current(path, '/') %} aria-current="page"{% endif %}>СмартСклад</a>
-            <div class="ml-auto flex items-center gap-2">
-            {% if collapsed %}
-            <form method="post" action="/ui/sidebar" class="hidden lg:inline-flex">
-                <input type="hidden" name="collapsed" value="false">
-                <input type="hidden" name="next" value="{{ here }}">
-                <button class="app-btn border px-3 py-1">Показать меню</button>
-            </form>
-            {% endif %}
+            <div class="ml-auto flex items-center gap-1" role="group" aria-label="Панель действий">
             {% if user %}
             <form method="post" action="/ui/theme">
                 <input type="hidden" name="next" value="{{ here }}">
                 <input type="hidden" name="theme" value="{{ 'light' if theme == 'dark' else 'dark' }}">
-                <button type="submit" class="app-btn border p-2" aria-label="{{ 'Светлая тема' if theme == 'dark' else 'Тёмная тема' }}">
+                <button type="submit" class="app-btn border p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="{{ 'Светлая тема' if theme == 'dark' else 'Тёмная тема' }}">
                     {% if theme == 'dark' %}
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 12.3A7.5 7.5 0 0 1 7.7 3a7.5 7.5 0 1 0 9.3 9.3z"/></svg>
                     {% else %}
@@ -67,6 +60,18 @@
                     {% endif %}
                 </button>
             </form>
+            <form method="post" action="/ui/sidebar" class="hidden lg:inline-flex">
+                <input type="hidden" name="collapsed" value="{{ 'false' if collapsed else 'true' }}">
+                <input type="hidden" name="next" value="{{ here }}">
+                <button type="submit" class="app-btn border p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="{{ 'Развернуть меню' if collapsed else 'Свернуть меню' }}">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M6.5 6.5v7"/></svg>
+                </button>
+            </form>
+            {% if can_create_orders|default(false) %}
+            <a href="/orders/new" class="app-btn-accent bg-accent text-on-accent rounded p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="Новый заказ">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M10 6.5v7M6.5 10h7"/></svg>
+            </a>
+            {% endif %}
             {% endif %}
             </div>
         </header>
@@ -96,11 +101,6 @@
                         <span class="px-2 text-sm text-secondary">{{ user.username }} ({{ user.role.name }})</span>
                         <form method="post" action="/logout">
                             <button class="app-btn border px-3 py-1">Выйти</button>
-                        </form>
-                        <form method="post" action="/ui/sidebar" class="hidden lg:inline-flex">
-                            <input type="hidden" name="collapsed" value="true">
-                            <input type="hidden" name="next" value="{{ here }}">
-                            <button class="app-btn border px-3 py-1">Свернуть меню</button>
                         </form>
                     </div>
                 {% else %}

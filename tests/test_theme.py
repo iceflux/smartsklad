@@ -284,40 +284,34 @@ def _header_forms(header: str):
 
 
 @pytest.mark.parametrize("collapsed", [False, True])
-def test_exactly_one_header_element_absorbs_the_free_space_and_the_theme_button_is_last(
-        client, db_session, collapsed):
+def test_exactly_one_header_element_absorbs_the_free_space(client, db_session, collapsed):
     """`ml-auto` на двух детях flex-строки делит свободное место пополам.
 
-    Свёрнутый сайдбар добавляет в шапку вторую форму, и без проверки кнопка темы
+    Свёрнутый сайдбар добавлял в шапку вторую форму, и без проверки кнопка темы
     оказывалась посреди шапки — ровно в том состоянии, которого почти не бывает.
-    Геометрия измерена в headless Chrome: поглотитель свободного места в шапке
-    ровно один, и кнопка темы в нём последняя.
+    Теперь форм две всегда (тема и сворачивание) и стоит ссылка «Новый заказ»,
+    то есть повод вернуться ровно тот же. Проверка ловит сам класс дефекта:
+    поглотитель свободного места в шапке ровно один, и он открывается до всех
+    форм. Саму геометрию без браузера не проверить — она измерена отдельно.
     """
     _login_as(client, db_session, "boss", "admin")
     if collapsed:
         client.post("/ui/sidebar", data={"collapsed": "true"}, follow_redirects=False)
     header = _header(client.get("/products").text)
     forms = _header_forms(header)
-    assert [action for action, _c, _s, _e in forms] == (
-        ["/ui/sidebar", "/ui/theme"] if collapsed else ["/ui/theme"]), forms
+    assert [action for action, _c, _s, _e in forms] == ["/ui/theme", "/ui/sidebar"], forms
     spacers = [m.start() for m in re.finditer(r'class="[^"]*\bml-auto\b[^"]*"', header)]
     assert len(spacers) == 1, (
         f"свободное место в шапке поглощают {len(spacers)} элементов, а обязан ровно один — "
-        "иначе кнопка темы уезжает в середину шапки"
-    )
-    assert spacers[0] < forms[-1][2], (
-        "поглотитель свободного места обязан стоять перед формой темы, иначе она не прижата вправо"
+        "иначе блок кнопок разъедется и уедет в середину шапки"
     )
     assert spacers[0] < forms[0][2], (
         "поглотитель свободного места обязан открываться до всех форм шапки, "
-        "иначе кнопка темы окажется не рядом со «Показать меню»"
+        "иначе блок кнопок окажется не прижат вправо"
     )
-    assert header[spacers[0]: forms[-1][2]].count("</div>") == 0, (
-        "форма сворачивания обязана лежать в том же блоке, что и форма темы, "
-        "иначе кнопка темы окажется не рядом с ней"
-    )
-    assert forms[-1][3] == header.rindex("</form>") + len("</form>"), (
-        "форма темы обязана быть последней в шапке"
+    assert header[spacers[0]: forms[-1][3]].count("</div>") == 0, (
+        "обе формы обязаны лежать в том же блоке, что и поглотитель, "
+        "иначе блок кнопок развалится на две группы"
     )
 
 
