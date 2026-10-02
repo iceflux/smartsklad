@@ -53,6 +53,20 @@ def _register_cyrillic_font() -> dict | None:
     return {"family": family, "family_bold": family_bold}
 
 
+def _para(text: str, style, *values) -> Paragraph:
+    """Единственный способ собрать абзац для PDF.
+
+    ReportLab разбирает текст абзаца как подмножество HTML: `<` с латинской
+    буквой открывает «тег», который потом не закрывается, и сборка падает
+    `ValueError`. Значит любое значение, пришедшее из базы, обязано быть
+    экранировано, а экранировать его вручную в каждой строке — значит забыть
+    один раз. Здесь значение подставляется в форматную строку и экранируется
+    само: подпись пишется в формате, значение — аргументом. Литерал без
+    подстановок `format` не трогает.
+    """
+    return Paragraph(text.format(*(escape(str(value)) for value in values)), style)
+
+
 def _item_sum(item) -> float:
     return round(item.quantity * item.product_price_snapshot * (1 - item.discount_snapshot / 100.0), 2)
 
@@ -107,14 +121,14 @@ def render_order_pdf(order, db) -> bytes:
         styles["Normal"].fontName = font["family"]
     story = []
     if ctx["seller"]:
-        story.append(Paragraph("Продавец", styles["Heading2"]))
+        story.append(_para("Продавец", styles["Heading2"]))
         for label, value in ctx["seller"]:
-            story.append(Paragraph(f"{label}: {escape(value)}", styles["Normal"]))
+            story.append(_para("{}: {}", styles["Normal"], label, value))
         story.append(Spacer(1, 6 * mm))
-    story.append(Paragraph("Заказ покупателя", styles["Title"]))
-    story.append(Paragraph(f'№ {ctx["number"]}', styles["Heading2"]))
-    story.append(Paragraph(f'Клиент: {ctx["customer_name"]}', styles["Normal"]))
-    story.append(Paragraph(f'Дата: {human_date(ctx["created_at"])}', styles["Normal"]))
+    story.append(_para("Заказ покупателя", styles["Title"]))
+    story.append(_para("№ {}", styles["Heading2"], ctx["number"]))
+    story.append(_para("Клиент: {}", styles["Normal"], ctx["customer_name"]))
+    story.append(_para("Дата: {}", styles["Normal"], human_date(ctx["created_at"])))
     story.append(Spacer(1, 8 * mm))
 
     header = ["Наименование", "Кол-во", "Ед.", "Цена", "Скидка%", "Сумма"]
