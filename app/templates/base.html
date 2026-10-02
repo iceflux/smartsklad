@@ -80,7 +80,7 @@
                 </form>
             </details>
             {% if can_create_orders|default(false) %}
-            <a href="/orders/new" class="app-btn-accent bg-accent text-on-accent rounded p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="Новый заказ">
+            <a href="/orders/new" class="app-btn-accent bg-accent text-on-accent p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="Новый заказ">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M10 6.5v7M6.5 10h7"/></svg>
             </a>
             {% endif %}
@@ -92,7 +92,7 @@
                 {% if user %}
                     {% if can_create_orders|default(false) %}
 
-                        <a href="/orders/new" class="app-btn-accent bg-accent text-on-accent rounded px-2 py-1 text-center">Новый заказ</a>
+                        <a href="/orders/new" class="app-btn-accent bg-accent text-on-accent px-2 py-1 text-center">Новый заказ</a>
                     {% endif %}
                     {% if can_view_orders|default(false) %}
                         {% set here_orders = nav_is_current(path, '/orders') %}

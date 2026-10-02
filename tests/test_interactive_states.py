@@ -57,10 +57,25 @@ ROW_HOVER_RULE = r"tbody tr:hover\{([^}]*)\}"
 мягко удалённая строка, и последний стоит в разметке классом-утилитой."""
 ROW_BACKGROUNDS = ("surface", "surface-raised", "surface-sunken")
 
-"""Свойства, которые цвета не несут: подчёркивание у ссылки и затемнение у
-акцентной кнопки. Всё остальное обязано быть на токене — иначе состояние
-поедет в тёмной теме, где значения токенов другие."""
-NON_COLOUR_DECLARATIONS = {"text-decoration", "filter"}
+"""Классы состояний, за которыми стоит кнопка. Скругление добавляется к ним
+же, а не отдельным классом в разметке: отдельный класс означал бы второе
+место, где сказано «кнопка круглая», и правку в каждом шаблоне при смене
+радиуса. Четыре класса покрывают все 86 кнопок проекта."""
+BUTTON_STATE_CLASSES = ("app-btn", "app-btn-accent", "app-btn-line", "app-btn-danger")
+"""Базовые (без :hover) правила тех же четырёх классов: скругление живёт в них,
+а наведение его не повторяет, поэтому нужен именно этот селектор, а не тот,
+что уже проверяет состояние."""
+BUTTON_BASE_RULES = {
+    "app-btn": r"\.app-btn\{([^}]*)\}",
+    "app-btn-accent": r"\.app-btn-accent\{([^}]*)\}",
+    "app-btn-line": r"\.app-btn-line\{([^}]*)\}",
+    "app-btn-danger": r"\.app-btn-danger\{([^}]*)\}",
+}
+
+"""Свойства, которые цвета не несут: подчёркивание у ссылки, затемнение у
+акцентной кнопки и скругление у кнопки. Всё остальное обязано быть на токене —
+иначе состояние поедет в тёмной теме, где значения токенов другие."""
+NON_COLOUR_DECLARATIONS = {"text-decoration", "filter", "border-radius"}
 
 TAG = re.compile(r"<(a|button)\b([^>]*)>", re.S)
 CLASS = re.compile(r"""class=(["'])(.*?)\1""", re.S)
@@ -248,6 +263,32 @@ def _over(foreground, background, alpha):
     top = [int(part) for part in foreground.split()]
     under = [int(part) for part in background.split()]
     return " ".join(str(round(top[i] * alpha + under[i] * (1 - alpha))) for i in range(3))
+
+
+def test_every_button_is_rounded_by_its_state_class_rather_than_by_markup():
+    """Скругление живёт в классах состояний, а не в разметке.
+
+    Класс-утилита `rounded` в разметке означала бы, что радиус назван дважды —
+    здесь и в CSS — и что новую кнопку легко забыть скруглить. Поэтому
+    проверка двусторонняя: каждый из четырёх классов кнопки несёт радиус в
+    собранном CSS, и ни одна кнопка в разметке радиус не повторяет.
+    """
+    css = _built()
+    missing = []
+    for name in BUTTON_STATE_CLASSES:
+        radius = re.search(r"border-radius:\s*([^;}]+)", _body(css, BUTTON_BASE_RULES[name]))
+        if radius is None:
+            missing.append(f"{name}: скругления нет вовсе")
+        elif float(radius.group(1).rstrip("rem")) == 0:
+            missing.append(f"{name}: скругление нулевое, кнопка снова квадратная")
+    assert missing == [], f"{missing}"
+
+    repeated = [f"{path.relative_to(ROOT)}: {tag[:80]}" for path, tag, _markup, classes
+                in _interactive() if "rounded" in classes]
+    assert repeated == [], (
+        "скругление повторено в разметке, а оно уже есть в классе состояния: "
+        f"{repeated}"
+    )
 
 
 def test_a_table_row_reacts_on_hover_in_both_themes():
