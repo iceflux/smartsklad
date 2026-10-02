@@ -79,7 +79,7 @@ def test_page_shows_the_change_date_of_each_unit(client, db_session):
     _admin(client, db_session)
     unit_id = get_unit_by_name(db_session, "кг").id
     db_session.expire_all()
-    stamp = db_session.get(Unit, unit_id).updated_at.strftime("%Y-%m-%d %H:%M")
+    stamp = db_session.get(Unit, unit_id).updated_at.strftime("%d.%m.%Y %H:%M:%S")
     cells = _row(client, unit_id)
     assert cells[0] == "кг"
     assert cells[1] == stamp
@@ -90,10 +90,10 @@ def test_page_change_date_follows_a_rename(client, db_session):
     unit_id = get_unit_by_name(db_session, "кг").id
     db_session.get(Unit, unit_id).updated_at = datetime(2031, 3, 4, 5, 6)
     db_session.commit()
-    assert _row(client, unit_id)[1] == "2031-03-04 05:06"
+    assert _row(client, unit_id)[1] == "04.03.2031 05:06:00"
     client.post(f"/units/{unit_id}/edit", data={"name": "Килограмм-новый"},
                 follow_redirects=False)
-    assert _row(client, unit_id)[1] != "2031-03-04 05:06"
+    assert _row(client, unit_id)[1] != "04.03.2031 05:06:00"
 
 
 def test_page_rename_of_a_soft_deleted_unit_says_it_in_russian(client, db_session):

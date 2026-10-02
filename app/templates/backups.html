@@ -117,7 +117,7 @@
             <tbody>
             {% for entry in log_entries %}
                 <tr class="border-b">
-                    <td class="p-2">{{ entry.created_at }}</td>
+                    <td class="p-2">{{ entry.created_at|dt }}</td>
                     <td class="p-2">{{ entry.kind }}</td>
                     <td class="p-2">{{ entry.filename or "—" }}</td>
                     <td class="p-2">{{ entry.size_bytes|num }}</td>

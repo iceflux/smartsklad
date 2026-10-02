@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.db import SessionLocal, get_db
-from app.formatting import group_number
+from app.formatting import group_number, human_date
 from app.modules.audit.router import router as audit_router
 from app.modules.audit.models import AuditLog
 from app.modules.ai.router import router as ai_router
@@ -278,6 +278,7 @@ def create_app() -> FastAPI:
     templates.env.globals["maintenance_state"] = maintenance_state
     templates.env.globals["nav_is_current"] = nav_is_current
     templates.env.filters["num"] = group_number
+    templates.env.filters["dt"] = human_date
     app.state.templates = templates
 
     app.include_router(auth_router)
@@ -430,7 +431,7 @@ def create_app() -> FastAPI:
                 "channel": r.channel, "recipient": r.recipient, "status": r.status,
                 "error": r.error or "", "document_id": r.document_id,
                 "username": usernames.get(r.user_id) or "—",
-                "created_at": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "",
+                "created_at": r.created_at,
             }
             for r in rows
         ]
@@ -988,7 +989,7 @@ def create_app() -> FastAPI:
             {
                 "old_price": h.old_price, "new_price": h.new_price,
                 "changed_by": h.changer.username if h.changer else None,
-                "changed_at": h.changed_at.strftime("%Y-%m-%d %H:%M") if h.changed_at else "",
+                "changed_at": h.changed_at,
             }
             for h in history
         ]
@@ -1301,7 +1302,7 @@ def create_app() -> FastAPI:
             "customer_name": (db.get(Customer, o.customer_id).name
                               if db.get(Customer, o.customer_id) else ""),
             "status": o.status, "total_amount": o.total_amount, "is_deleted": o.deleted_at is not None,
-            "created_at": o.created_at.strftime("%Y-%m-%d") if o.created_at else "",
+            "created_at": o.created_at,
         } for o in items]
         base_qs = urlencode({k: v for k, v in {
             "search": search, "customer_id": customer_id, "status": status,
@@ -1388,7 +1389,7 @@ def create_app() -> FastAPI:
             {
                 "action": h.action,
                 "username": usernames.get(h.user_id) or "—",
-                "created_at": h.created_at.strftime("%Y-%m-%d %H:%M") if h.created_at else "",
+                "created_at": h.created_at,
                 "old_value": h.old_value or "",
                 "new_value": h.new_value or "",
             }

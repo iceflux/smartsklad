@@ -33,7 +33,7 @@
         <tbody>
             {% for l in logs %}
             <tr class="border-t">
-                <td class="p-2">{{ l.created_at }}</td>
+                <td class="p-2">{{ l.created_at|dt }}</td>
                 <td class="p-2">{{ l.channel }}</td>
                 <td class="p-2">{{ l.recipient }}</td>
                 <td class="p-2">{{ l.status }}</td>

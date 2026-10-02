@@ -13,7 +13,7 @@ from reportlab.platypus import (
     PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
-from app.formatting import group_number
+from app.formatting import group_number, human_date
 from app.modules.customers.models import Customer
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
@@ -21,6 +21,7 @@ JINJA = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True
 JINJA.globals["maintenance_state"] = lambda: {"mode": "idle", "starts_at": None, "starts_at_text": None, "seconds_left": 0}
 JINJA.globals["nav_is_current"] = lambda path, href: False
 JINJA.filters["num"] = group_number
+JINJA.filters["dt"] = human_date
 
 
 def _register_cyrillic_font() -> dict | None:
@@ -59,7 +60,7 @@ def build_order_context(order, db) -> dict:
     return {
         "number": order.number,
         "customer_name": customer.name if customer and not customer.is_deleted else "",
-        "created_at": order.created_at.strftime("%d.%m.%Y") if order.created_at else "",
+        "created_at": order.created_at,
         "discount": order.discount,
         "total_amount": order.total_amount,
         "items": [
@@ -94,7 +95,7 @@ def render_order_pdf(order, db) -> bytes:
     story.append(Paragraph("Заказ покупателя", styles["Title"]))
     story.append(Paragraph(f'№ {ctx["number"]}', styles["Heading2"]))
     story.append(Paragraph(f'Клиент: {ctx["customer_name"]}', styles["Normal"]))
-    story.append(Paragraph(f'Дата: {ctx["created_at"]}', styles["Normal"]))
+    story.append(Paragraph(f'Дата: {human_date(ctx["created_at"])}', styles["Normal"]))
     story.append(Spacer(1, 8 * mm))
 
     header = ["Наименование", "Кол-во", "Ед.", "Цена", "Скидка%", "Сумма"]

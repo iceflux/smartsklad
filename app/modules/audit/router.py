@@ -73,7 +73,7 @@ def audit_page(
     logs = [
         {
             "id": l.id,
-            "created_at": l.created_at.strftime("%Y-%m-%d %H:%M:%S") if l.created_at else "",
+            "created_at": l.created_at,
             "username": usernames.get(l.user_id) or "система",
             "action": l.action,
             "entity": f"{l.entity_type} #{l.entity_id}" if l.entity_id is not None else l.entity_type,

@@ -74,7 +74,7 @@
                 <td class="p-2">{{ h.old_price|num }}</td>
                 <td class="p-2">{{ h.new_price|num }}</td>
                 <td class="p-2">{{ h.changed_by or '—' }}</td>
-                <td class="p-2">{{ h.changed_at }}</td>
+                <td class="p-2">{{ h.changed_at|dt }}</td>
             </tr>
             {% endfor %}
         </tbody>

@@ -1,6 +1,7 @@
 import re
 
 from app.config import settings
+from app.formatting import human_date
 from app.modules.audit.service import log_action
 from app.modules.notifications.models import NotificationLog
 from app.modules.printing.service import render_order_pdf
@@ -11,7 +12,7 @@ def message_text(order, db) -> str:
     from app.modules.customers.models import Customer
     customer = db.get(Customer, order.customer_id)
     name = customer.name if customer else ""
-    date = order.created_at.strftime("%d.%m.%Y") if order.created_at else ""
+    date = human_date(order.created_at)
     return f"Заказ № {order.number} от {date}\nКлиент: {name}\nСумма: {order.total_amount}"
 
 

@@ -1,3 +1,5 @@
+from datetime import date, datetime
+
 GROUP_SEPARATOR = "\u00a0"
 NO_VALUE = "\u2014"
 
@@ -28,3 +30,13 @@ def group_number(value, decimals=None):
     chunks.insert(0, whole)
     tail = dot + fraction if dot else ""
     return sign + GROUP_SEPARATOR.join(chunks) + tail
+
+
+def human_date(value):
+    if value is None:
+        return NO_VALUE
+    if isinstance(value, datetime):
+        return value.strftime("%d.%m.%Y %H:%M:%S")
+    if isinstance(value, date):
+        return value.strftime("%d.%m.%Y")
+    return str(value)

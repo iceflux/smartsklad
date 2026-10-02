@@ -43,7 +43,7 @@
         </div>
         <button class="app-btn border px-3 py-2">Показать</button>
     </form>
-    <p class="mb-4 text-sm text-caption">Показано: {{ metrics.date_from.strftime('%d.%m.%Y') }} — {{ metrics.date_to.strftime('%d.%m.%Y') }}</p>
+    <p class="mb-4 text-sm text-caption">Показано: {{ metrics.date_from|dt }} — {{ metrics.date_to|dt }}</p>
     {% if metrics.orders_count == 0 %}
         <p class="p-4 bg-surface-raised border text-muted">За выбранный период продаж нет</p>
     {% else %}
@@ -67,7 +67,7 @@
                 <line x1="{{ chart.left }}" y1="{{ chart.axis_y }}" x2="{{ chart.width }}" y2="{{ chart.axis_y }}" class="stroke-line-strong" />
                 {% for bar in chart.bars %}
                 <rect x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.w }}" height="{{ bar.h }}" class="fill-accent">
-                    <title>{{ bar.date.isoformat() }}: {{ bar.amount|num(2) }}</title>
+                    <title>{{ bar.date|dt }}: {{ bar.amount|num(2) }}</title>
                 </rect>
                 {% if bar.label %}
                 <text x="{{ bar.x }}" y="{{ chart.label_y }}" font-size="9" class="fill-muted">{{ bar.label }}</text>

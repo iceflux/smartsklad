@@ -57,7 +57,7 @@
         <div><dt class="inline font-semibold">Статус:</dt> <dd class="inline">{{ status_label }}</dd></div>
         <div><dt class="inline font-semibold">Скидка:</dt> <dd class="inline">{{ order.discount }}%</dd></div>
         <div><dt class="inline font-semibold">Сумма:</dt> <dd class="inline">{{ order.total_amount|num }}</dd></div>
-        <div><dt class="inline font-semibold">Создан:</dt> <dd class="inline">{{ order.created_at.strftime('%Y-%m-%d %H:%M') if order.created_at else '—' }}</dd></div>
+        <div><dt class="inline font-semibold">Создан:</dt> <dd class="inline">{{ order.created_at|dt }}</dd></div>
     </dl>
 
     <div class="overflow-x-auto">
@@ -104,7 +104,7 @@
             <tr class="border-b">
                 <td class="border p-2">{{ h.action }}</td>
                 <td class="border p-2">{{ h.username }}</td>
-                <td class="border p-2">{{ h.created_at }}</td>
+                <td class="border p-2">{{ h.created_at|dt }}</td>
                 <td class="border p-2">{{ h.old_value }}</td>
                 <td class="border p-2">{{ h.new_value }}</td>
             </tr>

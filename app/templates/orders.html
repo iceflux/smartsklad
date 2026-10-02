@@ -71,7 +71,7 @@
                 <td class="p-2">{{ o.customer_name }}</td>
                 <td class="p-2">{{ status_labels[o.status] }}</td>
                 <td class="p-2">{{ o.total_amount|num }}</td>
-                <td class="p-2">{{ o.created_at }}</td>
+                <td class="p-2">{{ o.created_at|dt }}</td>
             </tr>
             {% else %}
             <tr><td colspan="5" class="p-4 text-center text-muted">Заказы не найдены</td></tr>

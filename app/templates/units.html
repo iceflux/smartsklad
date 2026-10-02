@@ -26,7 +26,7 @@
             {% for u in units %}
             <tr class="border-b" data-unit-id="{{ u.id }}">
                 <td class="p-2">{{ u.name }}</td>
-                <td class="p-2">{{ u.updated_at.strftime('%Y-%m-%d %H:%M') if u.updated_at else '—' }}</td>
+                <td class="p-2">{{ u.updated_at|dt }}</td>
                 <td class="p-2">
                     <form method="post" action="/units/{{ u.id }}/edit" class="inline">
                         <input name="name" value="{{ u.name }}" maxlength="32" class="border p-2">
