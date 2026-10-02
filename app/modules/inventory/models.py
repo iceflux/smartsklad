@@ -41,6 +41,7 @@ class Product(Base):
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
     unit_id: Mapped[int] = mapped_column(ForeignKey("units.id"))
     price: Mapped[float] = mapped_column(default=0.0)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     characteristic: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     rest: Mapped[int] = mapped_column(Integer, default=0)
     min_stock: Mapped[int | None] = mapped_column(Integer, nullable=True)

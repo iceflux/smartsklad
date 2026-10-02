@@ -62,8 +62,13 @@
         </div>
         {% endif %}
         <div>
+            <label class="block mb-1">Описание</label>
+            <textarea name="description" rows="4" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>{{ product.description or '' }}</textarea>
+        </div>
+        <div>
             <label class="block mb-1">Характеристики (JSON)</label>
             <textarea name="characteristic" rows="5" class="w-full border p-2 font-mono text-sm" {% if not can_edit %}disabled{% endif %}>{{ characteristic_json }}</textarea>
+            <p class="text-sm text-muted">Заполняют редко — поэтому поле в самом конце формы.</p>
         </div>
         <p id="error" class="text-danger hidden"></p>
         <button class="app-btn-accent bg-accent text-on-accent px-4 py-2">Сохранить</button>
@@ -92,6 +97,7 @@
                 body.sku = f.sku.value;
                 body.unit_id = f.unit_id.value ? parseInt(f.unit_id.value) : null;
                 body.category_id = f.category_id.value ? parseInt(f.category_id.value) : null;
+                body.description = f.description.value;
                 var msRaw = f.min_stock.value.trim();
                 if (msRaw === '') {
                     body.min_stock = null;

@@ -42,6 +42,7 @@ class ProductIn(BaseModel):
     category_id: Optional[int] = None
     unit_id: Optional[int] = None
     price: float = 0.0
+    description: Optional[str] = None
     characteristic: Optional[dict] = None
     rest: int = 0
     track_rest: Optional[bool] = None
@@ -54,6 +55,7 @@ class ProductPatch(BaseModel):
     category_id: Optional[int] = None
     unit_id: Optional[int] = None
     price: Optional[float] = None
+    description: Optional[str] = None
     characteristic: Optional[dict] = None
     rest: Optional[int] = None
     track_rest: Optional[bool] = None
@@ -192,7 +194,8 @@ def api_create_product(payload: ProductIn, user=Depends(get_current_user), db=De
         product = create_product(db, payload.name, payload.sku, payload.category_id,
                                  payload.unit_id, payload.price, payload.characteristic,
                                  payload.rest, track_rest=payload.track_rest,
-                                 min_stock=payload.min_stock, user=user)
+                                 min_stock=payload.min_stock,
+                                 description=payload.description, user=user)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return _product_out(product)
@@ -272,6 +275,7 @@ def _product_out(product: Product) -> dict:
         "unit": product.unit,
         "unit_id": product.unit_id,
         "price": product.price,
+        "description": product.description,
         "characteristic": product.characteristic,
         "rest": product.rest,
         "min_stock": product.min_stock,

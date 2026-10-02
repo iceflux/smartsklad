@@ -194,6 +194,7 @@ def create_product(
     *,
     track_rest: bool | None = None,
     min_stock: int | None = None,
+    description: str | None = None,
     user=None,
 ) -> Product:
     name = name.strip()
@@ -215,6 +216,7 @@ def create_product(
         unit_id=unit.id,
         price=price,
         characteristic=characteristic,
+        description=(description or "").strip() or None,
         rest=rest,
         min_stock=min_stock,
         track_rest=track_rest if track_rest is not None else (get_setting(db, STOCK_TRACK_DEFAULT_KEY) != "false"),
@@ -260,6 +262,8 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
     for key in ("category_id", "unit_id", "characteristic", "rest", "track_rest", "min_stock"):
         if key in data:
             setattr(product, key, data[key])
+    if "description" in data:
+        product.description = (data["description"] or "").strip() or None
     old_value = json.dumps(old_dict, ensure_ascii=False)
     db.commit()
     new_value = json.dumps(_product_dict(product), ensure_ascii=False)
@@ -386,6 +390,7 @@ def _product_dict(product: Product) -> dict:
         "category_id": product.category_id,
         "unit": product.unit,
         "price": product.price,
+        "description": product.description,
         "characteristic": product.characteristic,
         "rest": product.rest,
         "min_stock": product.min_stock,
