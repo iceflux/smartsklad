@@ -4,6 +4,11 @@
 {% set path = request.url.path if request is defined else '/' %}
 {% set theme = (request.state.theme|default('light')) if request is defined else 'light' %}
 {% set q_now = (request.query_params.get('q') or '') if request is defined else '' %}
+{# На /login панели и шапки нет: анонимному панель рисует ровно одну ссылку
+   «Войти» — на страницу, которая и есть эта ссылка. Оставить панель, убрав
+   ссылку, значило бы оставить пустую колонку в 16rem, а оставить шапку —
+   кнопку «Меню», открывающую то, чего уже нет. Форму входа это не трогает. #}
+{% set chrome = path != '/login' %}
 <html lang="ru"{% if theme == 'dark' %} class="dark"{% endif %}>
 <head>
     <meta charset="utf-8">
@@ -43,6 +48,7 @@
 </script>
 {% endif %}
     <div class="flex min-h-screen flex-col">
+        {% if chrome %}
         <header class="flex items-center gap-2 border-b border-line bg-surface-raised p-3">
             <button type="button" data-menu-toggle aria-expanded="false" aria-label="Меню" class="app-btn border p-0 h-11 w-11 inline-flex items-center justify-center lg:hidden">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
@@ -87,7 +93,9 @@
             {% endif %}
             </div>
         </header>
+        {% endif %}
         <div class="flex min-h-0 flex-1">
+            {% if chrome %}
             <aside class="app-sidebar flex flex-col gap-1 overflow-y-auto border-r border-line bg-surface-raised p-3">
                 {% if user %}
                     {% if can_create_orders|default(false) %}
@@ -121,6 +129,7 @@
                 {% endif %}
             </aside>
             <div class="app-overlay" data-menu-overlay></div>
+            {% endif %}
             <div class="flex-1 min-w-0">{% block content %}{% endblock %}</div>
             </div>
     </div>

@@ -98,7 +98,29 @@ def test_the_sidebar_still_carries_the_logout_and_the_login_link(client, db_sess
     assert "action=\"/logout\"" in _sidebar(client.get("/").text)
     _login_as(client, db_session, "nobody", "admin")
     client.cookies.clear()
-    assert "/login" in _sidebar(client.get("/login").text)
+    assert "/login" in _sidebar(client.get("/reset-password").text)
+
+
+def test_the_login_page_carries_no_left_panel(client):
+    """На `/login` панели слева быть не должно.
+
+    Анонимному панель рисует ровно одну ссылку «Войти» — на страницу, которая
+    и есть эта ссылка. Убирать её надо вместе с самой панелью: оставить панель,
+    убрав из неё ссылку, значило бы оставить пустую колонку в 16rem, а оставить
+    шапку — значило бы оставить кнопку «Меню», открывающую то, чего больше нет.
+    Форма входа при этом обязана остаться: на ней работает и node-харнесс
+    `tests/test_login_page_js.py`.
+    """
+    body = client.get("/login").text
+    assert "app-sidebar" not in body, "на странице входа осталась панель слева"
+    assert 'href="/login"' not in body, "на странице входа осталась ссылка «Войти»"
+    # Про кнопку ищем тег, а не селектор: инлайновый скрипт внизу base.html
+    # упоминает `[data-menu-toggle]` в любом случае, и это текст, а не разметка.
+    assert "<button type=\"button\" data-menu-toggle" not in body, (
+        "осталась кнопка «Меню» без панели"
+    )
+    assert "<header" not in body, "осталась шапка, кнопка «Меню» которой мертва"
+    assert '<form id="login-form"' in body, "форма входа пропала вместе с панелью"
 
 
 def test_a_group_without_visible_items_omits_its_heading(client, db_session):
