@@ -1,7 +1,10 @@
+import re
 import zlib
 
 import pytest
 
+from app.modules.auth.models import User
+from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.orders.service import create_order
@@ -93,3 +96,126 @@ def test_render_order_html_escapes_customer_name(db_session, env):
     html = render_order_html(o, db_session)
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+
+PASSWORD = "password123"
+STYLE = re.compile(r"<style[^>]*>(.*?)</style>", re.S)
+PRINT_BLOCK = re.compile(r"@media\s+print\s*\{(.*?)\}\s*$", re.S)
+RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+TAG = re.compile(r"<([a-z][a-z0-9]*)\b([^>]*)>", re.I)
+CLASS_ATTR = re.compile(r"""class=(["'])(.*?)\1""", re.S)
+SIMPLE_SELECTOR = re.compile(r"^(?P<tag>[a-z][a-z0-9]*|\*)?(?P<classes>(?:\.[\w:\\.-]+)*)$")
+
+
+def _admin(client, db_session):
+    user = User(username="boss", password_hash=hash_password(PASSWORD),
+                role_id=get_role_by_name(db_session, "admin").id)
+    db_session.add(user)
+    db_session.commit()
+    client.cookies.set("session", login(db_session, "boss", PASSWORD).token)
+
+
+def _elements(html):
+    """(имя тега, множество классов) для каждого тега в разметке."""
+    found = []
+    for match in TAG.finditer(html):
+        classes = CLASS_ATTR.search(match.group(2))
+        found.append((match.group(1).lower(),
+                      set(classes.group(2).split()) if classes else set()))
+    return found
+
+
+def _unescape(name):
+    """Имя класса из селектора в том виде, в каком оно лежит в атрибуте.
+
+    Обратная косая черта в CSS экранирует следующий символ, и именно поэтому
+    `.print\\:hidden` — это класс с ЛИТЕРАЛЬНОЙ обратной чертой внутри и ничего
+    больше, то есть он не подходит к `print:hidden`. Схлопывать черты нельзя:
+    селектор с удвоенной чертой прошёл бы проверку, не печатая ровно того, что
+    она проверяет.
+    """
+    out = []
+    index = 0
+    while index < len(name):
+        if name[index] == "\\" and index + 1 < len(name):
+            out.append(name[index + 1])
+            index += 2
+        else:
+            out.append(name[index])
+            index += 1
+    return "".join(out)
+
+
+def _matches(element, selector):
+    """Подпадает ли элемент под селектор.
+
+    Умеет только имя тега и имена классов — ровно столько, сколько нужно
+    правилу печати. Селектор сложнее разбора НЕ пропускается молча: проверка
+    падает и просит разбор расширить. Это и есть смысл проверки — не сравнить
+    строку селектора с разметкой, а разрешить её: правило с `nav` вместо
+    `.app-sidebar` строке в разметке отвечает, элементу — нет.
+    """
+    parsed = SIMPLE_SELECTOR.match(selector)
+    assert parsed, f"селектор печати не разбирается проверкой: {selector!r}"
+    tag, classes = element
+    want_tag = parsed.group("tag")
+    if want_tag not in (None, "*") and want_tag.lower() != tag:
+        return False
+    return all(_unescape(name) in classes
+               for name in re.findall(r"\.([\w:\\.-]+)", parsed.group("classes") or ""))
+
+
+def _print_rules(html):
+    rules = []
+    for style in STYLE.findall(html):
+        for block in PRINT_BLOCK.findall(style.strip()):
+            for selector, _body in RULE.findall(block):
+                rules.extend(part.strip() for part in selector.split(","))
+    return [rule for rule in rules if rule]
+
+
+def test_the_print_preview_prints_the_document_and_nothing_of_the_shell(client, db_session, env):
+    """Ctrl+P на предпросмотре должен печатать только документ.
+
+    Проверка разрешает каждый селектор правил `@media print` в разметке этой же
+    страницы, а не сравнивает строки. Прежний селектор `nav` строке отвечал,
+    элементу — нет: панель стала `<aside class="app-sidebar">` ещё в задаче про
+    вертикальный сайдбар, и с тех пор печаталась она вместе с шапкой.
+    """
+    _admin(client, db_session)
+    _, _, order = env
+    response = client.get(f"/orders/{order.id}/print")
+    assert response.status_code == 200
+    html = response.text
+
+    rules = _print_rules(html)
+    assert rules, "в предпросмотре печати нет ни одного правила @media print"
+
+    elements = _elements(html)
+    dead = [rule for rule in rules if not any(_matches(e, rule) for e in elements)]
+    assert dead == [], f"правила печати, которым не на что нападать: {dead}"
+
+    shell = [e for e in elements
+             if e[0] in ("header", "aside") or e[1] & {"app-sidebar", "app-overlay"}]
+    assert shell, "в предпросмотре нет ни шапки, ни панели — проверять нечего"
+    uncovered = [e for e in shell if not any(_matches(e, rule) for rule in rules)]
+    assert uncovered == [], f"эти части оболочки попадут на бумагу: {uncovered}"
+
+
+def test_the_print_preview_hides_its_own_controls(client, db_session, env):
+    """Ряд кнопок над документом не должен печататься.
+
+    Отдельно от предыдущей проверки, потому что это другой селектор и другая
+    причина: прежняя строка писала `.print\\\\:hidden` — с удвоенной обратной
+    косой чертой, то есть буквальным символом `\\` в имени класса, которого на
+    элементе нет. Скрывало кнопки правило Tailwind в `app.css`, то есть
+    предпросмот печати зависел от того, что сборщик не вычистил класс.
+    """
+    _admin(client, db_session)
+    _, _, order = env
+    html = client.get(f"/orders/{order.id}/print").text
+    elements = _elements(html)
+    hidden = [e for e in elements if any(_matches(e, rule) for rule in _print_rules(html))]
+    assert any("print:hidden" in e[1] for e in hidden), (
+        "блок кнопок над документом не скрывается на печати"
+    )

@@ -49,8 +49,18 @@
         </tfoot>
     </table>
     <style>
+        /* На печати должен остаться только документ. Навигация перестала быть
+           `<nav>` ещё в задаче про вертикальный сайдбар — теперь это
+           `<aside class="app-sidebar">`, и селектор `nav` не нападал ни на что,
+           то есть панель печаталась вместе с шапкой. Ряд кнопок скрывает
+           `.print\:hidden` — с ОДНОЙ обратной косой чертой: прежние две означали
+           буквальную черту в имени класса, которого на элементе нет, и кнопки
+           скрывал только `print:hidden` из app.css. */
         @media print {
-            nav, .print\\:hidden { display: none !important; }
+            header,
+            .app-sidebar,
+            .app-overlay,
+            .print\:hidden { display: none !important; }
         }
     </style>
 </main>
