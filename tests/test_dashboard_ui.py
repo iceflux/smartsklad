@@ -247,3 +247,37 @@ def test_nav_hides_analytics_link_without_permission(client, db_session):
     r = client.get("/products")
     assert r.status_code == 200
     assert 'href="/dashboard"' not in r.text
+
+
+def test_the_filter_form_controls_are_all_the_same_size(client, db_session):
+    """Высота поля в этой форме задаётся внутренними отступами, и задавать её
+    должна одна строка классов.
+
+    У `select` и у числового поля отступы `p-2` были, а у двух полей даты их не
+    было вовсе — только `border`, то есть поле ниже остальных на 1rem. Ширина
+    у полей разная и должна остаться разной (у числа своя, `w-28`), поэтому
+    сравнивается только вертикальный отступ: без него у полей на форме разная
+    высота, и это видно глазом, но не видно ни в одной существующей проверке
+    раскладки. Ширина проверяется отдельно, чтобы `p-2` не подменили `w-` —
+    и наоборот.
+    """
+    _admin(client, db_session)
+    html = client.get("/dashboard").text
+    form = re.search(r'<form[^>]*action="/dashboard".*?</form>', html, re.S)
+    assert form, "на странице нет формы выбора периода"
+    controls = re.findall(r"<(?:input|select)\b[^>]*>", form.group(0))
+    controls = [tag for tag in controls if "hidden" not in tag]
+    assert len(controls) == 4, f"в форме {len(controls)} полей, а не четыре: {controls}"
+
+    missing = [tag for tag in controls if "p-2" not in tag]
+    assert missing == [], (
+        "у этих полей нет `p-2`, то есть они ниже остальных по высоте: "
+        f"{[t[:70] for t in missing]}"
+    )
+
+    number = _input_tag(html, "top_limit")
+    assert "w-28" in number, f"у числового поля должна остаться своя ширина: {number}"
+    for name in ("date_from", "date_to"):
+        assert "w-" not in _input_tag(html, name), (
+            f"у поля {name} не задана ширина, оно не должно занимать всю форму"
+        )
