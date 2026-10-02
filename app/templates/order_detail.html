@@ -15,6 +15,17 @@
             </form>
             {% endif %}
             <a href="/orders/{{ order.id }}/print" class="app-btn border px-3 py-1 ml-1">Печать</a>
+            <a href="/orders/{{ order.id }}/pdf" class="app-btn border px-3 py-1 ml-1">Скачать PDF</a>
+            {% if can_send_notifications %}
+            <form method="post" action="/orders/{{ order.id }}/send" class="inline">
+                <input type="hidden" name="channel" value="email">
+                <button class="app-btn border px-3 py-1 ml-1">На email</button>
+            </form>
+            <form method="post" action="/orders/{{ order.id }}/send" class="inline">
+                <input type="hidden" name="channel" value="telegram">
+                <button class="app-btn border px-3 py-1 ml-1">В Telegram</button>
+            </form>
+            {% endif %}
             {% if can_create %}
                 <form method="post" action="/orders/{{ order.id }}/copy" class="inline">
                 <button class="app-btn border px-3 py-1 ml-1">Копировать</button>
@@ -38,6 +49,7 @@
     </div>
 
     {% if msg %}<p class="mb-4 bg-success-bg border border-success-border p-2">{{ msg }}</p>{% endif %}
+    {% if err %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">{{ err }}</p>{% endif %}
     {% if is_deleted %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">Заказ удалён</p>{% endif %}
 
     <dl class="space-y-2 mb-4">

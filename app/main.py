@@ -1403,6 +1403,7 @@ def create_app() -> FastAPI:
             "next_statuses": sorted(NEXT_POSSIBLE.get(order.status, set())),
             "status_labels": STATUS_LABELS,
             "msg": request.query_params.get("msg"),
+            "err": request.query_params.get("err"),
             "can_status": user_has_permission(user, Permission.orders_status),
             "can_edit": user_has_permission(user, Permission.orders_edit),
             "can_delete": user_has_permission(user, Permission.orders_delete),
@@ -1443,8 +1444,12 @@ def create_app() -> FastAPI:
         try:
             send_document(db, order, channel, user)
         except ValueError as e:
-            return RedirectResponse(f"/orders/{order_id}/print?" + urlencode({"msg": str(e)}), status_code=303)
-        return RedirectResponse(f"/orders/{order_id}/print?msg=Отправлено ({channel})", status_code=303)
+            # Отдельный ключ, а не `msg`: на странице заказа `msg` рисуется
+            # зелёной плашкой успеха, и отказ канала в ней выглядел бы как
+            # успешная отправка. Раньше отказ был не виден вовсе — предпросмотр
+            # печати текст не выводит, — теперь человек видит причину.
+            return RedirectResponse(f"/orders/{order_id}?" + urlencode({"err": str(e)}), status_code=303)
+        return RedirectResponse(f"/orders/{order_id}?msg=Отправлено ({channel})", status_code=303)
 
     @app.get("/orders/{order_id}/pdf")
     def orders_pdf_download(order_id: int,
