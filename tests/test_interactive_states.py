@@ -48,7 +48,7 @@ STATE_RULES = {
     "app-nav-link": r"\.app-nav-link:hover\{([^}]*)\}",
 }
 
-FOCUS_RULE = r":where\(a,button,input,select,textarea\):focus-visible\{([^}]*)\}"
+FOCUS_RULE = r":where\(a,button,input,select,textarea,summary\):focus-visible\{([^}]*)\}"
 
 """Свойства, которые цвета не несут: подчёркивание у ссылки и затемнение у
 акцентной кнопки. Всё остальное обязано быть на токене — иначе состояние
@@ -121,10 +121,13 @@ def test_every_link_and_button_carries_exactly_one_state_class():
             f"{path.relative_to(ROOT)}: {tag[:110]} — состояний {sorted(states) or 'нет'}"
         )
         found[tag_name] = found.get(tag_name, 0) + 1
-    assert found == {"a": 53, "button": 60}, (
-        f"интерактивных элементов {found}, а проверка ждёт 53 ссылки и 60 кнопок: "
+    assert found == {"a": 54, "button": 61}, (
+        f"интерактивных элементов {found}, а проверка ждёт 54 ссылки и 61 кнопку: "
         "она обязана падать, когда появится новая, ещё не описанная здесь. "
-        "Пять ссылок стояли на удалённой главной странице index.html."
+        "Пять ссылок стояли на удалённой главной странице index.html, "
+        "ссылка на товар — на странице поиска, кнопка «Найти» — в его форме в шапке. "
+        "Раскрывающийся поиск сделан на <summary>, а он не входит в TAG: "
+        "его состояние проверяет tests/test_search.py."
     )
 
 

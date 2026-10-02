@@ -289,8 +289,8 @@ def test_exactly_one_header_element_absorbs_the_free_space(client, db_session, c
 
     Свёрнутый сайдбар добавлял в шапку вторую форму, и без проверки кнопка темы
     оказывалась посреди шапки — ровно в том состоянии, которого почти не бывает.
-    Теперь форм две всегда (тема и сворачивание) и стоит ссылка «Новый заказ»,
-    то есть повод вернуться ровно тот же. Проверка ловит сам класс дефекта:
+    Теперь форм три всегда (тема, сворачивание и поиск) и стоит ссылка «Новый
+    заказ», то есть повод вернуться ровно тот же. Проверка ловит сам класс дефекта:
     поглотитель свободного места в шапке ровно один, он открывается до всех форм
     и остаётся flex-строкой. Без последнего `ml-auto` в блоке, который не flex,
     работает ни на что, и блок кнопок уезжает в середину шапки — ровно тот дефект,
@@ -304,7 +304,7 @@ def test_exactly_one_header_element_absorbs_the_free_space(client, db_session, c
         client.post("/ui/sidebar", data={"collapsed": "true"}, follow_redirects=False)
     header = _header(client.get("/products").text)
     forms = _header_forms(header)
-    assert [action for action, _c, _s, _e in forms] == ["/ui/theme", "/ui/sidebar"], forms
+    assert [action for action, _c, _s, _e in forms] == ["/ui/theme", "/ui/sidebar", "/search"], forms
     spacers = list(re.finditer(r'class="([^"]*\bml-auto\b[^"]*)"', header))
     assert len(spacers) == 1, (
         f"свободное место в шапке поглощают {len(spacers)} элементов, а обязан ровно один — "
@@ -356,7 +356,7 @@ PAGE_ROUTES = [
     "/", "/settings", "/notifications", "/roles", "/roles/new", "/users", "/users/new",
     "/products", "/products/new", "/dashboard", "/backups", "/import", "/forecast",
     "/audit", "/categories", "/categories/new", "/units", "/customers", "/customers/new",
-    "/orders", "/orders/new",
+    "/orders", "/orders/new", "/search",
     "/roles/{role_id}/edit", "/products/{product_id}/edit",
     "/categories/{category_id}/edit", "/customers/{customer_id}/edit",
 ]

@@ -3,6 +3,7 @@
 {% set here = (request.url.path ~ ('?' ~ request.url.query if request.url.query else '')) if request is defined else '/' %}
 {% set path = request.url.path if request is defined else '/' %}
 {% set theme = (request.state.theme|default('light')) if request is defined else 'light' %}
+{% set q_now = (request.query_params.get('q') or '') if request is defined else '' %}
 <html lang="ru"{% if theme == 'dark' %} class="dark"{% endif %}>
 <head>
     <meta charset="utf-8">
@@ -67,6 +68,17 @@
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M6.5 6.5v7"/></svg>
                 </button>
             </form>
+            <details class="app-search min-w-0"{% if path == '/search' %} open{% endif %}>
+                <summary class="app-btn border list-none p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="Поиск">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5 18 18"/></svg>
+                </summary>
+                <form method="get" action="/search" class="flex items-center gap-1">
+                    <input type="search" name="q" value="{{ q_now }}" class="border p-2 w-32 min-w-0" placeholder="Клиент, товар, заказ" aria-label="Поисковый запрос">
+                    <button type="submit" class="app-btn border p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="Найти">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5"/></svg>
+                    </button>
+                </form>
+            </details>
             {% if can_create_orders|default(false) %}
             <a href="/orders/new" class="app-btn-accent bg-accent text-on-accent rounded p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="Новый заказ">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M10 6.5v7M6.5 10h7"/></svg>
@@ -79,6 +91,7 @@
             <aside class="app-sidebar flex flex-col gap-1 overflow-y-auto border-r border-line bg-surface-raised p-3">
                 {% if user %}
                     {% if can_create_orders|default(false) %}
+
                         <a href="/orders/new" class="app-btn-accent bg-accent text-on-accent rounded px-2 py-1 text-center">Новый заказ</a>
                     {% endif %}
                     {% if can_view_orders|default(false) %}

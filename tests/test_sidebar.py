@@ -280,12 +280,12 @@ def test_the_collapse_button_keeps_its_aria_label(client, db_session, collapsed,
     assert found == [label], found
 
 
-def test_the_header_block_holds_theme_then_collapse_then_add_order(client, db_session):
+def test_the_header_block_holds_theme_then_collapse_then_search_then_add_order(client, db_session):
     """Порядок в блоке кнопок задан владельцем и проверяется на разметке.
 
     Порядок виден глазом сразу, поэтому ловится без браузера: тема, сворачивание,
-    «Новый заказ». Формы и ссылка обязаны лежать внутри блока-поглотителя, иначе
-    блок развалится на несколько групп.
+    поиск, «Новый заказ». Формы и ссылка обязаны лежать внутри блока-поглотителя,
+    иначе блок развалится на несколько групп.
     """
     _login_as(client, db_session, "boss", "admin")
     header = _header(client.get("/").text)
@@ -293,10 +293,11 @@ def test_the_header_block_holds_theme_then_collapse_then_add_order(client, db_se
     spacer = header.index('class="ml-auto', start)
     theme = header.index('action="/ui/theme"', spacer)
     collapse = header.index('action="/ui/sidebar"', spacer)
+    search = header.index('action="/search"', spacer)
     add = header.index('href="/orders/new"', spacer)
-    assert spacer < theme < collapse < add, header[spacer:]
+    assert spacer < theme < collapse < search < add, header[spacer:]
     block = header[spacer: header.index("</div>", add)]
-    assert block.count("<form") == 2 and block.count("<a ") == 1, block
+    assert block.count("<form") == 3 and block.count("<a ") == 1, block
 
 
 def test_the_collapse_control_in_the_header_stays_hidden_on_a_phone(client, db_session):
@@ -345,19 +346,24 @@ def test_the_add_order_control_is_absent_without_the_permission(client, db_sessi
 
 
 def test_every_icon_only_control_in_the_header_is_named(client, db_session):
-    """Три значковые кнопки в ряд и одна ссылка, и у каждой должно быть имя.
+    """Четыре значковые кнопки в ряд, одна раскрывающая кнопка и одна ссылка, и у
+    каждого должно быть имя.
 
     Внутри кнопки только SVG с `aria-hidden`, то есть имя на самой кнопке —
     единственное, что её называет. Пустое имя хуже отсутствующего: значок у
-    чтеца всё равно молчит, а имя на месте.
+    чтеца всё равно молчит, а имя на месте. Раскрывающий поиск сделан на
+    `<summary>`, и он не кнопка, но имя нужно ему ровно так же.
     """
     _login_as(client, db_session, "boss", "admin")
     header = _header(client.get("/").text)
     buttons = re.findall(r"<button\b[^>]*>", header)
-    assert len(buttons) == 3, buttons
+    assert len(buttons) == 4, buttons
     for tag in buttons:
         label = re.search(r'aria-label="([^"]*)"', tag)
         assert label and label.group(1).strip(), f"кнопка без имени: {tag}"
+    summary = re.search(r"<summary\b[^>]*>", header)
+    assert summary, "в шапке нет раскрывающего поиска"
+    assert re.search(r'aria-label="[^"]+"', summary.group(0)), summary.group(0)
     assert header.count('role="group"') == 1
     assert 'aria-label="Панель действий"' in header
 
@@ -466,8 +472,8 @@ def test_every_group_item_marks_its_own_section(client, db_session, path, href, 
     """Пункты групп рендерит цикл, а не отдельная строка как «Заказы».
 
     Раньше отметка текущего раздела проверялась только на зашитой в шаблон ссылке
-    «Заказы» (`base.html:65`), поэтому удаление `{% if %}` из цикла
-    `base.html:73` оставляло весь прогон зелёным, а тринадцать разделов молча
+    «Заказы» (`base.html:99`), поэтому удаление `{% if %}` из цикла
+    `base.html:95` оставляло весь прогон зелёным, а тринадцать разделов молча
     переставали подсвечиваться. Разбор: одно точное совпадение, одна вложенная
     страница и путь, не совпадающий ни с чем.
     """

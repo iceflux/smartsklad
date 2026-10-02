@@ -134,6 +134,8 @@ from app.modules.printing.service import render_order_pdf
 
 APP_DIR = Path(__file__).parent
 PAGE_SIZE = 25
+SEARCH_MIN_QUERY = 2
+SEARCH_LIMIT = 10
 
 STATUS_LABELS = {
     "new": "Новый",
@@ -1556,6 +1558,49 @@ def create_app() -> FastAPI:
         except ValueError:
             raise HTTPException(status_code=404, detail="Заказ не найден")
         return RedirectResponse(f"/orders/{order_id}?msg=Заказ восстановлен", status_code=303)
+
+    @app.get("/search")
+    def search_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        raw = request.query_params.get("q") or ""
+        q = raw.strip()
+        prompt = None
+        if not q:
+            prompt = "Введите запрос: пустой поиск ничего не ищет."
+        elif len(q) < SEARCH_MIN_QUERY:
+            prompt = f"Слишком короткий запрос: нужно хотя бы {SEARCH_MIN_QUERY} символа."
+        groups: list[dict] = []
+        total = 0
+        if prompt is None:
+            if user_has_permission(user, Permission.customers_manage):
+                items, found = list_customers(db, search=q, page_size=SEARCH_LIMIT)
+                if found:
+                    groups.append({"title": "Клиенты", "total": found, "hits": [
+                        {"href": f"/customers/{c.id}", "title": c.name,
+                         "hint": " · ".join(part for part in (c.phone, c.inn) if part)}
+                        for c in items]})
+                total += found
+            if user_has_permission(user, Permission.products_view):
+                items, found = list_products(db, search=q, page_size=SEARCH_LIMIT)
+                if found:
+                    groups.append({"title": "Товары", "total": found, "hits": [
+                        {"href": f"/products/{p.id}", "title": p.name,
+                         "hint": f"Артикул {p.sku} · остаток {p.rest}"} for p in items]})
+                total += found
+            if user_has_permission(user, Permission.orders_view):
+                items, found = list_orders(db, search=q, page_size=SEARCH_LIMIT)
+                if found:
+                    groups.append({"title": "Заказы", "total": found, "hits": [
+                        {"href": f"/orders/{o.id}", "title": o.number,
+                         "hint": f"{o.created_at:%d.%m.%Y} · {STATUS_LABELS.get(o.status, o.status)}"
+                                 f" · {group_number(o.total_amount, 2)}"} for o in items]})
+                total += found
+        return templates.TemplateResponse(request, "search.html", {
+            "title": "Поиск", "user": user, "q": q, "prompt": prompt, "groups": groups,
+            "total": total, "limit": SEARCH_LIMIT,
+            "msg": request.query_params.get("msg"), **_page_context(user),
+        })
 
     return app
 
