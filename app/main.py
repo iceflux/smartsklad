@@ -115,6 +115,7 @@ from app.modules.settings.router import router as settings_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.notifications.models import NotificationLog
 from app.modules.settings.service import (
+    COMPANY_FIELDS,
     DEFAULT_MIN_STOCK_DAYS,
     DEFAULT_PASSWORD_CHARSET,
     DEFAULT_PASSWORD_LENGTH,
@@ -123,6 +124,7 @@ from app.modules.settings.service import (
     THEME_VALUES,
     USER_PASSWORD_CHARSET_KEY,
     USER_PASSWORD_LENGTH_KEY,
+    company_data,
     ensure_default_settings,
     get_int_setting,
     get_setting,
@@ -371,6 +373,7 @@ def create_app() -> FastAPI:
             "user_password_charset": get_setting(db, USER_PASSWORD_CHARSET_KEY) or DEFAULT_PASSWORD_CHARSET,
             "user_password_length": get_setting(db, USER_PASSWORD_LENGTH_KEY) or DEFAULT_PASSWORD_LENGTH,
             "min_stock_days": get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),
+            "company": company_data(db),
             **_page_context(user),
         })
 
@@ -405,6 +408,8 @@ def create_app() -> FastAPI:
         set_setting(db, USER_PASSWORD_CHARSET_KEY, charset, user=user)
         set_setting(db, USER_PASSWORD_LENGTH_KEY, str(length), user=user)
         set_setting(db, MIN_STOCK_DAYS_KEY, str(min_stock_days), user=user)
+        for key, _label in COMPANY_FIELDS:
+            set_setting(db, key, (form.get(key) or [""])[0].strip(), user=user)
         return RedirectResponse("/settings?msg=Сохранено", status_code=303)
 
     @app.get("/notifications")

@@ -33,6 +33,31 @@
             <input type="number" name="min_stock_days" min="0" max="365" value="{{ min_stock_days }}" class="border p-2 w-full">
             <p class="text-sm text-muted">Страховой запас по умолчанию для товаров без собственного минимального запаса. В днях продаж.</p>
         </div>
+        <div class="border-t pt-4">
+            <label class="block mb-1">Наименование компании (продавец)</label>
+            <input type="text" name="company_name" value="{{ company.company_name }}" class="border p-2 w-full">
+            <p class="text-sm text-muted">Печатается на документе заказа и в PDF. Пустые поля пропускаются, а если не заполнено ни одного — блок продавца не печатается вовсе.</p>
+        </div>
+        <div>
+            <label class="block mb-1">ИНН</label>
+            <input type="text" name="company_inn" value="{{ company.company_inn }}" class="border p-2 w-full">
+        </div>
+        <div>
+            <label class="block mb-1">КПП</label>
+            <input type="text" name="company_kpp" value="{{ company.company_kpp }}" class="border p-2 w-full">
+        </div>
+        <div>
+            <label class="block mb-1">Адрес</label>
+            <input type="text" name="company_address" value="{{ company.company_address }}" class="border p-2 w-full">
+        </div>
+        <div>
+            <label class="block mb-1">Телефон</label>
+            <input type="text" name="company_phone" value="{{ company.company_phone }}" class="border p-2 w-full">
+        </div>
+        <div>
+            <label class="block mb-1">Email</label>
+            <input type="text" name="company_email" value="{{ company.company_email }}" class="border p-2 w-full">
+        </div>
         <button class="app-btn-accent bg-accent text-on-accent px-4 py-2">Сохранить</button>
     </form>
 </main>

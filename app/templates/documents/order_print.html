@@ -15,6 +15,19 @@
         </form>
         {% endif %}
     </div>
+    {% if seller %}
+    <div class="mb-4 border border-line p-4 text-sm">
+        <p class="mb-2 font-semibold">Продавец</p>
+        <dl>
+            {% for label, value in seller %}
+            <div class="flex gap-2">
+                <dt class="font-semibold">{{ label }}</dt>
+                <dd>{{ value }}</dd>
+            </div>
+            {% endfor %}
+        </dl>
+    </div>
+    {% endif %}
     <h1 class="text-2xl font-bold">Заказ покупателя № {{ number }}</h1>
     <p class="mt-2">Клиент: {{ customer_name }}</p>
     <p>Дата: {{ created_at|dt }}</p>

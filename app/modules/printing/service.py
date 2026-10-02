@@ -1,5 +1,6 @@
 from io import BytesIO
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import reportlab
 from jinja2 import Environment, FileSystemLoader
@@ -15,6 +16,7 @@ from reportlab.platypus import (
 
 from app.formatting import group_number, human_date
 from app.modules.customers.models import Customer
+from app.modules.settings.service import COMPANY_FIELDS, company_data
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 JINJA = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
@@ -55,6 +57,17 @@ def _item_sum(item) -> float:
     return round(item.quantity * item.product_price_snapshot * (1 - item.discount_snapshot / 100.0), 2)
 
 
+def seller_rows(db) -> list[tuple[str, str]]:
+    """Заполненные поля компании по порядку объявления.
+
+    Пустое поле не печатается, а если не заполнено ничего, список пуст и блок
+    на документе не появляется вовсе: полупустой блок выглядит поломкой, а
+    документ без блока — ровно тот, что был до появления настройки.
+    """
+    data = company_data(db)
+    return [(label, data[key]) for key, label in COMPANY_FIELDS if data[key]]
+
+
 def build_order_context(order, db) -> dict:
     customer = db.get(Customer, order.customer_id)
     return {
@@ -63,6 +76,7 @@ def build_order_context(order, db) -> dict:
         "created_at": order.created_at,
         "discount": order.discount,
         "total_amount": order.total_amount,
+        "seller": seller_rows(db),
         "items": [
             {
                 "name": it.product_name_snapshot,
@@ -92,6 +106,11 @@ def render_order_pdf(order, db) -> bytes:
         styles["Heading2"].fontName = font["family_bold"]
         styles["Normal"].fontName = font["family"]
     story = []
+    if ctx["seller"]:
+        story.append(Paragraph("Продавец", styles["Heading2"]))
+        for label, value in ctx["seller"]:
+            story.append(Paragraph(f"{label}: {escape(value)}", styles["Normal"]))
+        story.append(Spacer(1, 6 * mm))
     story.append(Paragraph("Заказ покупателя", styles["Title"]))
     story.append(Paragraph(f'№ {ctx["number"]}', styles["Heading2"]))
     story.append(Paragraph(f'Клиент: {ctx["customer_name"]}', styles["Normal"]))

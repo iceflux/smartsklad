@@ -20,6 +20,18 @@ THEME_KEY = "ui.theme"
 THEME_VALUES = ("light", "dark")
 DEFAULT_THEME = "light"
 USER_KEYS = (SIDEBAR_COLLAPSED_KEY, THEME_KEY)
+COMPANY_FIELDS = (
+    ("company_name", "Наименование"),
+    ("company_inn", "ИНН"),
+    ("company_kpp", "КПП"),
+    ("company_address", "Адрес"),
+    ("company_phone", "Телефон"),
+    ("company_email", "Email"),
+)
+
+
+def company_data(db: Session) -> dict[str, str]:
+    return {key: (get_setting(db, key) or "").strip() for key, _label in COMPANY_FIELDS}
 
 
 def user_setting_key(key: str, user_id: int) -> str:
