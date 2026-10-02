@@ -500,7 +500,7 @@ $env:PGPASSWORD="smartsklad"; psql -h localhost -U smartsklad -d smartsklad -c "
 1. Откройте `/products/{id}/edit`, `/customers` и клиента на редактирование, `/settings`, `/units`.
 2. Посмотрите на поля ввода и на строку добавления единицы измерения.
 
-Ожидаемый результат: поля формы на всю ширину с рамкой и внутренними отступами — `w-full border p-2` в `product_form.html:9`, `customer_form.html`, `settings.html:6` (`space-y-4`). На `/units` поле и кнопка стоят в одну строку с зазором (`flex items-end gap-2` в `units.html:8`), кнопка синяя (`units.html:13`).
+Ожидаемый результат: поля формы на всю ширину с рамкой и внутренними отступами — `w-full border p-2` в `product_form.html:9`, `customer_form.html`, `settings.html:6` (`space-y-4`). На `/units` поле и кнопка стоят в одну строку с зазором (`flex items-end gap-2` в `units.html:8`), кнопка акцентного цвета (`app-btn-accent bg-accent` в `units.html:13`). Галочки на страницах заметно крупнее прежних и стоят по середине строки вместе со своей подписью — это `input[type="checkbox"]` в `app/static/tailwind.css`: 1.25rem на 1.25rem (поле с рамкой и отступами 42 px, то есть примерно половина), `accent-color` из токена акцента, `vertical-align: middle`. Размер задан один раз для всех, а не в каждом из 12 мест, и в тёмной теме отметка такая же фиолетовая, а не серая.
 
 ### 13.6. Резервные копии и баннер технических работ
 

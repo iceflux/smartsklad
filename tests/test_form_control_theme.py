@@ -305,3 +305,45 @@ def test_placeholders_are_dimmed_by_a_token_rather_than_by_a_preflight_literal()
     # контраст у этой пары и до правки был в порядке.
     for selector in ("input::placeholder", "textarea::placeholder"):
         assert _declaration_from_tokens((selector,), "color", "subtle"), selector
+
+
+def test_the_checkbox_is_grown_vertically_centred_and_painted_from_a_token():
+    """Чекбокс — нативный виджет, и у Tailwind v3 НЕТ утилиты `size-*`.
+
+    Проверяется ровно то, чем это лечится, и все три свойства обязательны.
+    Размер: `width` и `height` равны и равны 1.25rem — примерно половина высоты
+    обычного поля `border p-2` (около 2.6rem), чего и просил владелец; число
+    закреплено, потому что «примерно половину» в CSS не проверить, а уменьшить
+    чекбокс обратно к 13px браузера — это откат, который иначе никто не заметит.
+    Значение 0 не считается размером (проверено мутацией: правило с нулевым
+    радиусом пережило бы проверку «свойство есть»).
+    Выравнивание: `vertical-align: middle`, иначе у инлайнового чекбокса низ
+    садится на базовую линию текста и он висит ниже подписи. `accent-color` —
+    токен, а не литерал: в обеих темах отметка приходит из палитры, и заодно
+    это то самое средство, которым в проекте лечат светлую рамку неотмеченного
+    чекбокса в тёмной теме (открытый пункт из отчёта задачи 1).
+    """
+    css = _built()
+    rule = _rule_body(css, r"input\[type=checkbox\]")
+    assert rule, "в app.css нет правила для input[type=checkbox]"
+
+    declared = dict(
+        (prop.strip(), value.strip())
+        for prop, _, value in (d.partition(":") for d in rule.split(";"))
+        if prop.strip()
+    )
+    width, height = declared.get("width"), declared.get("height")
+    assert width == height and width == "1.25rem", (
+        f"чекбокс должен быть 1.25rem на 1.25rem, а не {width} на {height}"
+    )
+    assert declared.get("vertical-align") == "middle", (
+        f"чекбокс не выровнен по середине строки: {declared.get('vertical-align')}"
+    )
+    assert "var(--color-accent)" in declared.get("accent-color", ""), (
+        f"отметка чекбокса не на токене акцента: {declared.get('accent-color')}"
+    )
+
+
+def _rule_body(css, selector_pattern):
+    match = re.search(selector_pattern + r"\s*\{([^}]*)\}", css)
+    return match.group(1).strip() if match else ""
