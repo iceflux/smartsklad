@@ -472,8 +472,9 @@ $env:PGPASSWORD="smartsklad"; psql -h localhost -U smartsklad -d smartsklad -c "
 1. Откройте `/products`, `/orders`, `/customers`, `/units` и `/categories`.
 2. Посмотрите на линию под заголовком таблицы и между строками.
 3. Найдите мягко удалённую запись и посмотрите на её фон и цвет текста.
+4. Наведите курсор на обычную строку и на мягко удалённую — в обоих случаях строка должна отреагировать.
 
-Ожидаемый результат: под заголовком и под каждой строкой есть тонкая серая линия — `border-b` в `products.html:61`, `orders.html:59`, `customers.html:27`, `units.html:19`, `categories.html:16`. Мягко удалённая строка светло-серая с приглушённым текстом, а не просто «уехавшая»: `bg-surface-sunken text-muted` в `products.html:74`, `orders.html:69`, `customers.html:37`. В `/categories` подкатегории сдвинуты вправо и светлее родительской строки — `pl-8 text-secondary` в `categories.html:34`.
+Ожидаемый результат: под заголовком и под каждой строкой есть тонкая серая линия — `border-b` в `products.html:61`, `orders.html:59`, `customers.html:27`, `units.html:19`, `categories.html:16`. Мягко удалённая строка светло-серая с приглушённым текстом, а не просто «уехавшая»: `bg-surface-sunken text-muted` в `products.html:74`, `orders.html:69`, `customers.html:37`. В `/categories` подкатегории сдвинуты вправо и светлее родительской строки — `pl-8 text-secondary` в `categories.html:34`. Любая строка под курсором светлеет фиолетовым — это `tbody tr:hover` в `app/static/tailwind.css`, тот же оттенок акцента, что у текущего пункта меню; **на мягко удалённой строке наведение тоже видно** (в правиле стоит `!important` именно ради этого — иначе утилита `bg-surface-sunken` его перебьёт), но текст на ней остаётся приглушённым.
 
 ### 13.3. Аналитика продаж
 

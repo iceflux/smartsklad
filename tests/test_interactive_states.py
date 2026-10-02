@@ -50,6 +50,13 @@ STATE_RULES = {
 
 FOCUS_RULE = r":where\(a,button,input,select,textarea,summary\):focus-visible\{([^}]*)\}"
 
+ROW_HOVER_RULE = r"tbody tr:hover\{([^}]*)\}"
+
+"""Фоны, на которых реально лежит строка таблицы. `surface` — тело страницы,
+`surface-raised` — приподнятая карточка (дашборд, аудит), `surface-sunken` —
+мягко удалённая строка, и последний стоит в разметке классом-утилитой."""
+ROW_BACKGROUNDS = ("surface", "surface-raised", "surface-sunken")
+
 """Свойства, которые цвета не несут: подчёркивание у ссылки и затемнение у
 акцентной кнопки. Всё остальное обязано быть на токене — иначе состояние
 поедет в тёмной теме, где значения токенов другие."""
@@ -228,3 +235,54 @@ def _luminance(channels):
         value = int(raw) / 255
         parts.append(value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4)
     return 0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2]
+
+
+def _over(foreground, background, alpha):
+    """Затемнённый или осветлённый цвет токена, сведённый к непрозрачному.
+
+    Фон наведения задан как `rgb(var(--color-accent) / 0.12)`, то есть
+    полупрозрачным, а WCAG считает по непрозрачному цвету: считать пару
+    «полупрозрачный токен против токена» нельзя, а свести её можно ровно
+    одним сложением, и это то, что делает браузер.
+    """
+    top = [int(part) for part in foreground.split()]
+    under = [int(part) for part in background.split()]
+    return " ".join(str(round(top[i] * alpha + under[i] * (1 - alpha))) for i in range(3))
+
+
+def test_a_table_row_reacts_on_hover_in_both_themes():
+    """Строка таблицы обязана реагировать на курсор, иначе по длинному списку
+    нельзя понять, на какую строку нажали.
+
+    Проверяется три вещи. Правило доехало до артефакта непустым и лежит на
+    токене — иначе оно поедет за палитрой в тёмной теме. Контраст текста на
+    подложке наведения считается для всех трёх фонов, на которых строка
+    реально лежит, в обеих темах: полупрозрачный акцент сведён к
+    непрозрачному цвету тем же сложением, что делает браузер. И правило
+    побеждает утилиту `bg-surface-sunken`, которой помечена мягко удалённая
+    строка: утилита весит (0,1,0), а `tbody tr:hover` — (0,0,2), поэтому без
+    `!important` наведение на удалённых строках было бы мёртвым, и заметить
+    это, глядя на страницу, нельзя.
+    """
+    body = _body(_built(), ROW_HOVER_RULE).strip()
+    declaration = re.search(r"background-color:([^;]+)", body)
+    assert declaration, f"у наведения строки нет фона: {body}"
+    alpha = re.search(r"var\(--color-accent\)\s*/\s*([\d.]+)\)", declaration.group(1))
+    assert alpha, f"фон наведения не на токене акцента: {declaration.group(1)}"
+    assert "!important" in body, (
+        "без !important утилита bg-surface-sunken мягко удалённой строки "
+        f"(0,1,0) перебьёт этот селектор (0,0,2), и наведение на ней умрёт: {body}"
+    )
+
+    weight = float(alpha.group(1))
+    measured = {}
+    for theme, palette in (("светлая", _light()), ("тёмная", _dark())):
+        for name in ROW_BACKGROUNDS:
+            washed = _over(palette["accent"], palette[name], weight)
+            measured[f"{name} в {theme} теме"] = round(
+                _contrast({"ink": palette["primary"], "fill": washed}, "ink", "fill"),
+                2,
+            )
+    assert {label: value for label, value in measured.items() if value < MIN_NORMAL_TEXT} == {}, (
+        f"текст строки ниже {MIN_NORMAL_TEXT} под фоном наведения: {measured}"
+    )
