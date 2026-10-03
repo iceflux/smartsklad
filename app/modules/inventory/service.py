@@ -3,9 +3,11 @@ import io
 import json
 
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import log_action
+from app.modules.importer.resolve import SkuFactory
 from app.modules.inventory.models import Category, PriceHistory, Product, Unit
 from app.modules.settings.service import STOCK_TRACK_DEFAULT_KEY, get_setting
 
@@ -182,6 +184,29 @@ def get_category_tree(db: Session) -> list[dict]:
     ]
 
 
+ARTICLE_ATTEMPTS = 5
+
+
+def next_sku(db: Session) -> str:
+    return SkuFactory(db, prefix="")()
+
+
+def _assign_sku(db: Session, product_id: int) -> str:
+    for _ in range(ARTICLE_ATTEMPTS):
+        product = db.get(Product, product_id)
+        if product is None:
+            raise ValueError("product not found")
+        sku = next_sku(db)
+        product.sku = sku
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            continue
+        return sku
+    raise ValueError("не удалось подобрать свободный артикул")
+
+
 def create_product(
     db: Session,
     name: str,
@@ -201,17 +226,16 @@ def create_product(
     if not name:
         raise ValueError("name required")
     sku = sku.strip()
-    dup = db.query(Product).filter(Product.sku == sku).first()
-    if dup:
+    auto_sku = not sku
+    if not auto_sku and db.query(Product).filter(Product.sku == sku).first():
         raise ValueError("duplicate sku")
     if min_stock is not None and min_stock < 0:
         raise ValueError("min_stock must be >= 0")
     unit = db.get(Unit, unit_id) if unit_id is not None else get_unit_by_name(db, DEFAULT_UNIT)
     if unit is None or unit.is_deleted:
         raise ValueError("единица не найдена")
-    product = Product(
+    fields = dict(
         name=name,
-        sku=sku,
         category_id=category_id,
         unit_id=unit.id,
         price=price,
@@ -221,12 +245,21 @@ def create_product(
         min_stock=min_stock,
         track_rest=track_rest if track_rest is not None else (get_setting(db, STOCK_TRACK_DEFAULT_KEY) != "false"),
     )
-    db.add(product)
-    db.commit()
-    db.refresh(product)
-    log_action(db, action="product.create", entity_type="product", entity_id=product.id,
-               new_value=name, user_id=user.id if user else None)
-    return product
+    for _ in range(ARTICLE_ATTEMPTS):
+        product = Product(sku=(next_sku(db) if auto_sku else sku), **fields)
+        db.add(product)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            if not auto_sku:
+                raise ValueError("duplicate sku")
+            continue
+        db.refresh(product)
+        log_action(db, action="product.create", entity_type="product", entity_id=product.id,
+                   new_value=name, user_id=user.id if user else None)
+        return product
+    raise ValueError("не удалось подобрать свободный артикул")
 
 
 def update_product(db: Session, product_id: int, data: dict, user=None) -> Product:
@@ -241,7 +274,8 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
             raise ValueError("единица не найдена")
         data = {**data, "unit_id": unit.id}
     old_dict = _product_dict(product)
-    if "sku" in data:
+    blank_sku = "sku" in data and not (data["sku"] or "").strip()
+    if "sku" in data and not blank_sku:
         new_sku = data["sku"].strip()
         if new_sku != product.sku:
             dup = db.query(Product).filter(Product.sku == new_sku, Product.id != product.id).first()
@@ -266,6 +300,9 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
         product.description = (data["description"] or "").strip() or None
     old_value = json.dumps(old_dict, ensure_ascii=False)
     db.commit()
+    if blank_sku:
+        _assign_sku(db, product_id)
+        product = db.get(Product, product_id)
     new_value = json.dumps(_product_dict(product), ensure_ascii=False)
     log_action(db, action="product.update", entity_type="product", entity_id=product.id,
                old_value=old_value, new_value=new_value, user_id=user.id if user else None)

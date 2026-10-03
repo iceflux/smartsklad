@@ -10,7 +10,8 @@
         </div>
         <div>
             <label class="block mb-1">Артикул</label>
-            <input name="sku" required value="{{ product.sku if product else '' }}" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
+            <input name="sku" value="{{ product.sku if product else '' }}" {% if is_new %}placeholder="{{ next_sku }}"{% endif %} class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
+            <p class="text-sm text-muted">Пусто — подставится следующий свободный номер.</p>
         </div>
         <div>
             <label class="block mb-1">Категория</label>

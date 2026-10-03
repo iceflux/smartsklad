@@ -38,7 +38,7 @@ class CategoryIn(BaseModel):
 
 class ProductIn(BaseModel):
     name: str
-    sku: str
+    sku: Optional[str] = None
     category_id: Optional[int] = None
     unit_id: Optional[int] = None
     price: float = 0.0
@@ -186,12 +186,12 @@ def api_create_product(payload: ProductIn, user=Depends(get_current_user), db=De
     if "price" in payload.model_fields_set:
         perms.append(Permission.price_change)
     _ensure(user, *perms)
-    if not payload.name.strip() or not payload.sku.strip():
-        raise HTTPException(status_code=400, detail="Название и артикул обязательны")
+    if not payload.name.strip():
+        raise HTTPException(status_code=400, detail="Название обязательно")
     if payload.min_stock is not None and payload.min_stock < 0:
         raise HTTPException(status_code=400, detail="Минимальный запас не может быть отрицательным")
     try:
-        product = create_product(db, payload.name, payload.sku, payload.category_id,
+        product = create_product(db, payload.name, payload.sku or "", payload.category_id,
                                  payload.unit_id, payload.price, payload.characteristic,
                                  payload.rest, track_rest=payload.track_rest,
                                  min_stock=payload.min_stock,
@@ -209,8 +209,6 @@ def api_patch_product(product_id: int, payload: ProductPatch, user=Depends(get_c
         raise HTTPException(status_code=404, detail="Товар не найден")
     if "name" in payload.model_fields_set and not (payload.name or "").strip():
         raise HTTPException(status_code=400, detail="Название товара не может быть пустым")
-    if "sku" in payload.model_fields_set and not (payload.sku or "").strip():
-        raise HTTPException(status_code=400, detail="Артикул не может быть пустым")
     if "min_stock" in payload.model_fields_set and payload.min_stock is not None and payload.min_stock < 0:
         raise HTTPException(status_code=400, detail="Минимальный запас не может быть отрицательным")
     try:

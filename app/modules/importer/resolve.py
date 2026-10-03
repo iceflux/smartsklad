@@ -77,14 +77,15 @@ def _rest(value) -> int:
 
 
 class SkuFactory:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, prefix: str = SKU_PREFIX) -> None:
         self._taken = {sku for (sku,) in db.query(Product.sku).all()}
         self._counter = 0
+        self._prefix = prefix
 
     def __call__(self) -> str:
         while True:
             self._counter += 1
-            candidate = f"{SKU_PREFIX}{self._counter:05d}"
+            candidate = f"{self._prefix}{self._counter:05d}"
             if candidate not in self._taken:
                 self._taken.add(candidate)
                 return candidate
