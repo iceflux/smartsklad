@@ -132,6 +132,49 @@ def test_the_json_field_is_the_last_one_in_the_form():
     assert "Характеристики (JSON)" in FORM, "подпись поля, которое владелец назвал, поехала"
 
 
+MULTILINE = "Оцинкованный гвоздь 3×35\nПачка 100 шт\nОцинковка цинком"
+
+
+def test_the_product_page_renders_the_breaks_of_the_description(client, db_session):
+    _admin(client, db_session)
+    product_id = _create(client, description=MULTILINE)
+    body = client.get(f"/products/{product_id}").text
+    paragraph = body[body.index("Описание"):
+                     body.index("</p>", body.index("Описание"))]
+    assert "whitespace-pre-line" in paragraph, (
+        "переносы строк в описании схлопнутся в одну строку — класс не на том элементе"
+    )
+    assert MULTILINE.replace("\n", "&#10;") in body or MULTILINE in body
+
+
+def test_the_line_break_class_survives_the_stylesheet_build():
+    css = Path("app/static/app.css").read_bytes().decode("utf-8")
+    rule = re.search(r"\.whitespace-pre-line\{([^}]*)\}", css)
+    assert rule, "правила .whitespace-pre-line нет в app.css — класс вычищен сборкой"
+    assert "white-space:pre-line" in rule.group(1), (
+        f"правило пустое или другое: {{{rule.group(1)}}}"
+    )
+
+
+def test_a_description_typed_with_breaks_comes_back_with_them(client, db_session):
+    _admin(client, db_session)
+    product_id = _create(client, description=MULTILINE)
+    assert client.get(f"/api/products/{product_id}").json()["description"] == MULTILINE
+    form = client.get(f"/products/{product_id}/edit").text
+    assert f">{MULTILINE}</textarea>" in form, "форма не вернула переносы в описание"
+
+
+def test_no_surface_renders_the_description_without_the_breaks_class():
+    offenders = []
+    for path in sorted(Path("app/templates").rglob("*.html")):
+        body = path.read_bytes().decode("utf-8")
+        for match in re.finditer(r'<(p|div|td|span)\b[^>]*>(?=[^<]*\{\{[^}]*description)',
+                                 body, re.S):
+            if "whitespace-pre-line" not in match.group(0):
+                offenders.append(f"{path}: {match.group(0)[:60]}")
+    assert not offenders, f"описание выводится без сохранения переносов: {offenders}"
+
+
 def test_the_model_and_the_migration_agree_on_the_column():
     column = Product.__table__.c.description
     assert column.nullable and column.type.python_type is str
