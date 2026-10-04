@@ -6,7 +6,24 @@ const template = fs.readFileSync(process.argv[2], 'utf8');
 const blocks = [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
 assert.strictEqual(blocks.length, 1,
     'ожидался ровно один блок <script>, получено ' + blocks.length);
-const block = blocks[0];
+let block = blocks[0];
+
+/* Прибор гоняет исходник шаблона, а не отрендеренную страницу, поэтому
+   подстановки Jinja в нём остаются. Значения приходят из приложения (третий
+   аргумент) — иначе прибор проверял бы свою копию числа, а расхождение
+   заметил бы только владелец, молча, отказом на первой букве. Неизвестная
+   подстановка — ошибка прибора, а не «undefined»: молчаливый undefined прогонял
+   бы сценарий на несуществующем коде. */
+const VALUES = JSON.parse(process.argv[3] || '{}');
+const unknown = [];
+block = block.replace(/\{\{\s*([A-Za-z_]\w*)\s*\}\}/g, (whole, name) => {
+    if (!(name in VALUES)) { unknown.push(name); return 'undefined'; }
+    /* Значения — числа и голые идентификаторы, поэтому подставляем их как есть.
+   Строка в кавычках пришла бы в скрипт вместе с кавычками. */
+    return String(VALUES[name]);
+});
+assert.deepStrictEqual(unknown, [],
+    'в скрипте подстановки, которых нет в приборе: ' + unknown.join(', '));
 
 function matches(el, sel) {
     const cls = sel.match(/^\.([\w-]+)$/);
@@ -398,11 +415,18 @@ const THREE = {
         assert.ok(String(option.textContent).length, 'пункт без подписи');
     }
 
-    // 4. Слишком короткий запрос в базу не ходит.
+    // 4. Одна буква — уже намерение искать: уходит запрос с той же паузой.
+    //     Порог подстановки — один символ, и он отличается от порога глобального
+    //     поиска намеренно (причина и измерения — в `_lookup_query`).
     const short = run([THREE]);
     short.type(short.pickers[0], 'Г');
+    assert.deepStrictEqual(short.requests, [], 'запрос ушел раньше паузы');
     await short.flush();
-    assert.deepStrictEqual(short.requests, []);
+    assert.deepStrictEqual(short.requests,
+        ['/api/lookup/customers?q=' + encodeURIComponent('Г')],
+        'одна буква не дошла до сервера: ' + short.requests);
+    assert.strictEqual(short.pickers[0].list.children.length, 3,
+        'ответ на одну букву не показан');
 
     // 5. Стрелки ведут по списку, Enter выбирает.
     const keys = run([THREE]);

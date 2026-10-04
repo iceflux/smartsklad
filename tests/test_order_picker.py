@@ -134,12 +134,31 @@ def test_the_lookup_returns_at_most_the_cap_and_says_how_many_it_left_out(client
     assert body["total"] == 14
     assert body["limit"] == 10
 
-def test_a_query_shorter_than_two_characters_returns_nothing(client, db_session):
+def test_a_single_letter_is_already_a_search(client, db_session):
+    """Порог подстановки — один символ, и это решение, а не опечатка. Подстановка
+    отвечает на вопрос «что положить в строку заказа», её выдача ограничена
+    десятью строками с видимой обрезкой, и глобальный поиск сразу по трём
+    разделам тут ни при чём. Причина и измерения — в `_lookup_query`."""
     _admin(client, db_session)
     _seed(db_session)
     body = client.get("/api/lookup/customers", params={"q": "О"}).json()
-    assert body["items"] == []
-    assert body["total"] == 0
+    assert [row["label"] for row in body["items"]] == ["ООО Строй"], body
+    assert "recent" not in body, "одна буква отдала список последних выбранных"
+
+
+def test_the_two_minimums_are_pinned_and_differ_on_purpose(client, db_session):
+    """Пороги разные намеренно, и оба числа зафиксированы: молча сровнять их —
+    значит либо вернуть владельцу отказ на первой букве, либо заставить поиск из
+    шапки показывать сотни строк. Клиентский скрипт обязан держать тот же порог,
+    что и сервер, иначе первая буква уйдёт в базу и вернёт пустоту."""
+    from app.main import LOOKUP_MIN_QUERY, SEARCH_MIN_QUERY
+
+    _admin(client, db_session)
+    assert LOOKUP_MIN_QUERY == 1, "порог подстановки поменялся — перечитай отчёт"
+    assert SEARCH_MIN_QUERY == 2, "порог глобального поиска поменялся — перечитай отчёт"
+    body = client.get("/orders/new")
+    assert f"var MIN_QUERY = {LOOKUP_MIN_QUERY};" in body.text, (
+        "клиентский порог разошёлся с серверным")
 
 
 def test_the_lookup_answers_with_the_price_and_the_stock(client, db_session):
@@ -381,7 +400,7 @@ def test_a_short_query_is_still_a_search_and_not_the_recent_list(client, db_sess
     product, customer = _seed(db_session)
     _order(client, db_session, customer.id, product.id)
     body = client.get("/api/lookup/customers", params={"q": "О"}).json()
-    assert body["items"] == []
+    assert [row["label"] for row in body["items"]] == ["ООО Строй"]
     assert "recent" not in body, "короткий запрос отдал последние выбранные"
 
 

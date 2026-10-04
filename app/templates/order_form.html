@@ -113,7 +113,7 @@
 </template>
 <script>
 (function () {
-    var MIN_QUERY = 2;
+    var MIN_QUERY = {{ LOOKUP_MIN_QUERY }};
     var DEBOUNCE_MS = 300;
     var LOOKUP_PRODUCTS = "/api/lookup/products";
     var CREATE_PRODUCT = "/api/products";
