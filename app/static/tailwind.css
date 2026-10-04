@@ -147,6 +147,53 @@
     .app-search summary::-webkit-details-marker {
         display: none;
     }
+    /* Подстановка клиента и товара в заказе: текстовое поле и отфильтрованный
+       список под ним. Список открыт не классом, а атрибутом data-open на
+       обёртке, потому что класс в разметке менял бы скрипт, а атрибут читается
+       и правилом, и скриптом; `hidden` не годится — author-правило с `display`
+       перебило бы браузерное `[hidden]`. Показывается и гасится одним
+       правилом, то есть состояние «открыто» нигде не дублируется. */
+    .app-picker {
+        position: relative;
+    }
+    .app-picker-list {
+        display: none;
+        position: absolute;
+        z-index: 20;
+        inset-inline: 0;
+        margin-top: 0.125rem;
+        max-height: 16rem;
+        overflow-y: auto;
+        background-color: rgb(var(--color-surface-raised));
+        border: 1px solid rgb(var(--color-line-strong));
+        border-radius: 0.25rem;
+        box-shadow: 0 0.5rem 1rem rgb(var(--color-line) / 0.25);
+    }
+    .app-picker[data-open="true"] .app-picker-list {
+        display: block;
+    }
+    .app-picker-option {
+        padding: 0.375rem 0.5rem;
+        cursor: pointer;
+        color: rgb(var(--color-primary));
+    }
+    /* Отмеченный пункт виден и с клавиатуры, и мышью. Насыщенность та же, что у
+       текущего пункта меню и у наведения строки таблицы, поэтому «где я» читается
+       одинаково во всём приложении. */
+    .app-picker-option:hover,
+    .app-picker-option[aria-selected="true"] {
+        background-color: rgb(var(--color-accent) / 0.12);
+        color: rgb(var(--color-accent));
+    }
+    /* Пустая подсказка не должна занимать место: под полем и над таблицей
+       позиций лишняя пустая строка выглядит как поломка вёрстки. */
+    .app-picker-note:empty {
+        display: none;
+    }
+    .app-picker-note {
+        font-size: 0.75rem;
+        color: rgb(var(--color-muted));
+    }
     @media (min-width: 1024px) {
         /* Широкий экран: сайдбар постоянная колонка, поэтому его
            обязательно видно — без `visibility: visible` базовое правило

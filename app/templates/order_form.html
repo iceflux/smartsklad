@@ -1,9 +1,20 @@
 {% extends "base.html" %}
-{% macro product_options(selected_id) -%}
-    <option value="">— выбрать —</option>
-    {% for pr in products %}
-        <option value="{{ pr.id }}" {% if pr.id == selected_id %}selected{% endif %}>{{ pr.name }} ({{ pr.price|num }} ₽, ост. {{ pr.rest|num }}){% if pr.deleted %} — удалён{% endif %}</option>
-    {% endfor %}
+{% macro picker(kind, field, current, aria, hint) -%}
+<div class="app-picker" data-lookup="/api/lookup/{{ kind }}" data-open="false"
+     data-value="{{ current.id }}" data-label="{{ current.label }}">
+    <input type="hidden" name="{{ field }}" value="{{ current.id }}">
+    <input type="text" class="border p-2 w-full" role="combobox"
+           aria-expanded="false" aria-autocomplete="list" aria-label="{{ aria }}"
+           value="{{ current.label }}" placeholder="{{ hint }}" autocomplete="off">
+    <ul class="app-picker-list" role="listbox" aria-label="{{ aria }}"></ul>
+    <p class="app-picker-note" role="status"></p>
+</div>
+{%- endmacro %}
+{% macro line(current_id, label, quantity, discount) -%}
+<td class="p-2">{{ picker("products", "product_id", {"id": current_id, "label": label}, "Товар", "Начните вводить название или артикул") }}</td>
+<td class="p-2"><input name="quantity" type="number" min="1" value="{{ quantity }}" class="border p-1 w-24"></td>
+<td class="p-2"><input name="line_discount" type="number" min="0" max="99" step="0.1" value="{{ discount }}" class="border p-1 w-24"></td>
+<td class="p-2"><button type="button" onclick="this.closest('tr').remove()" class="app-btn-danger text-danger">Удалить</button></td>
 {%- endmacro %}
 {% block content %}
 <main class="max-w-4xl mx-auto p-4">
@@ -11,15 +22,11 @@
 
     {% if msg %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">{{ msg }}</p>{% endif %}
 
-    <form method="post" action="{% if is_new %}/orders/new{% else %}/orders/{{ order.id }}/edit{% endif %}" class="space-y-4">
+    <form method="post" data-picker-form
+          action="{% if is_new %}/orders/new{% else %}/orders/{{ order.id }}/edit{% endif %}" class="space-y-4">
         <div>
             <label class="block mb-1">Клиент</label>
-            <select name="customer_id" required class="w-full border p-2">
-                <option value="">— выбрать клиента —</option>
-                {% for c in clients %}
-                    <option value="{{ c.id }}" {% if order and order.customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.deleted %} — удалён{% endif %}</option>
-                {% endfor %}
-            </select>
+            {{ picker("customers", "customer_id", customer_picker, "Клиент", "Начните вводить имя, телефон или ИНН") }}
         </div>
         <div>
             <label class="block mb-1">Скидка на заказ, %</label>
@@ -45,20 +52,10 @@
                 <tbody id="items-body">
                     {% if order and order.items %}
                         {% for it in order.items %}
-                        <tr>
-                            <td class="p-2"><select name="product_id" class="border p-1 w-full">{{ product_options(it.product_id) }}</select></td>
-                            <td class="p-2"><input name="quantity" type="number" min="1" value="{{ it.quantity }}" class="border p-1 w-24"></td>
-                            <td class="p-2"><input name="line_discount" type="number" min="0" max="99" step="0.1" value="{{ it.discount_snapshot }}" class="border p-1 w-24"></td>
-                            <td class="p-2"><button type="button" onclick="this.closest('tr').remove()" class="app-btn-danger text-danger">Удалить</button></td>
-                        </tr>
+                        <tr>{{ line(it.product_id, line_labels.get(it.product_id, ""), it.quantity, it.discount_snapshot) }}</tr>
                         {% endfor %}
                     {% else %}
-                        <tr>
-                            <td class="p-2"><select name="product_id" class="border p-1 w-full">{{ product_options(None) }}</select></td>
-                            <td class="p-2"><input name="quantity" type="number" min="1" value="1" class="border p-1 w-24"></td>
-                            <td class="p-2"><input name="line_discount" type="number" min="0" max="99" step="0.1" value="0" class="border p-1 w-24"></td>
-                            <td class="p-2"><button type="button" onclick="this.closest('tr').remove()" class="app-btn-danger text-danger">Удалить</button></td>
-                        </tr>
+                        <tr>{{ line("", "", 1, 0) }}</tr>
                     {% endif %}
                 </tbody>
             </table>
@@ -70,18 +67,178 @@
     </form>
 </main>
 <template id="item-row">
-    <tr>
-        <td class="p-2"><select name="product_id" class="border p-1 w-full">{{ product_options(None) }}</select></td>
-        <td class="p-2"><input name="quantity" type="number" min="1" value="1" class="border p-1 w-24"></td>
-        <td class="p-2"><input name="line_discount" type="number" min="0" max="99" step="0.1" value="0" class="border p-1 w-24"></td>
-        <td class="p-2"><button type="button" onclick="this.closest('tr').remove()" class="app-btn-danger text-danger">Удалить</button></td>
-    </tr>
+    <tr>{{ line("", "", 1, 0) }}</tr>
 </template>
 <script>
+(function () {
+    var MIN_QUERY = 2;
+    var DEBOUNCE_MS = 300;
+    var states = new WeakMap();
+
+    function stateOf(box) {
+        if (!states.has(box)) {
+            states.set(box, {
+                text: box.querySelector("input[type=text]"),
+                hidden: box.querySelector("input[type=hidden]"),
+                list: box.querySelector(".app-picker-list"),
+                note: box.querySelector(".app-picker-note"),
+                savedValue: box.dataset.value,
+                savedLabel: box.dataset.label,
+                items: [],
+                active: -1,
+                dirty: false,
+                timer: null,
+            });
+        }
+        return states.get(box);
+    }
+
+    function say(state, message) {
+        state.note.textContent = message;
+    }
+
+    function show(box, state, on) {
+        box.setAttribute("data-open", on ? "true" : "false");
+        state.text.setAttribute("aria-expanded", on ? "true" : "false");
+    }
+
+    function mark(state) {
+        for (var i = 0; i < state.list.children.length; i++) {
+            state.list.children[i].setAttribute(
+                "aria-selected", i === state.active ? "true" : "false");
+        }
+    }
+
+    function take(box, state, item) {
+        state.savedValue = String(item.id);
+        state.savedLabel = item.label;
+        state.hidden.value = state.savedValue;
+        state.text.value = item.label;
+        state.dirty = false;
+        say(state, "");
+        state.active = -1;
+        show(box, state, false);
+    }
+
+    function paint(box, state, answer) {
+        state.items = answer.items || [];
+        state.list.innerHTML = "";
+        for (var i = 0; i < state.items.length; i++) {
+            var option = document.createElement("li");
+            option.className = "app-picker-option";
+            option.textContent = state.items[i].label +
+                (state.items[i].hint ? " — " + state.items[i].hint : "");
+            option.setAttribute("role", "option");
+            option.setAttribute("aria-selected", "false");
+            option.addEventListener("click", (function (picked) {
+                return function () { take(box, state, picked); };
+            })(state.items[i]));
+            state.list.appendChild(option);
+        }
+        state.active = -1;
+        if (!state.items.length) {
+            say(state, "Ничего не найдено");
+        } else if (answer.total > state.items.length) {
+            say(state, "Показаны первые " + answer.limit + " из " + answer.total +
+                " — уточните запрос");
+        } else {
+            say(state, "");
+        }
+        show(box, state, state.items.length > 0);
+    }
+
+    function ask(box, state, query) {
+        fetch(box.dataset.lookup + "?q=" + encodeURIComponent(query))
+            .then(function (response) { return response.json(); })
+            .then(function (answer) { paint(box, state, answer); });
+    }
+
+    function onInput(box, state) {
+        if (state.text.value.trim() === "") {
+            state.dirty = false;
+            state.hidden.value = state.savedValue;
+            state.text.value = state.savedLabel;
+            say(state, "");
+            state.active = -1;
+            show(box, state, false);
+            return;
+        }
+        state.dirty = true;
+        state.hidden.value = "";
+        say(state, "");
+        var query = state.text.value.trim();
+        if (query.length < MIN_QUERY) {
+            state.active = -1;
+            show(box, state, false);
+            return;
+        }
+        if (state.timer !== null) clearTimeout(state.timer);
+        state.timer = setTimeout(function () { ask(box, state, query); }, DEBOUNCE_MS);
+    }
+
+    function onKey(box, state, event) {
+        if (event.key === "Escape") {
+            state.active = -1;
+            show(box, state, false);
+        } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            if (box.getAttribute("data-open") !== "true" || !state.items.length) return;
+            event.preventDefault();
+            var step = event.key === "ArrowDown" ? 1 : -1;
+            state.active = (state.active + step + state.items.length) % state.items.length;
+            mark(state);
+        } else if (event.key === "Enter" && state.active >= 0) {
+            event.preventDefault();
+            take(box, state, state.items[state.active]);
+        }
+    }
+
+    var form = document.querySelector("form[data-picker-form]");
+
+    function boxOf(event) {
+        return event.target.closest(".app-picker");
+    }
+
+    if (form) {
+        form.addEventListener("focusin", function (event) {
+            var box = boxOf(event);
+            if (box) stateOf(box).text.select();
+        });
+        form.addEventListener("input", function (event) {
+            var box = boxOf(event);
+            if (box) onInput(box, stateOf(box));
+        });
+        form.addEventListener("keydown", function (event) {
+            var box = boxOf(event);
+            if (box && event.target === stateOf(box).text) onKey(box, stateOf(box), event);
+        });
+        form.addEventListener("submit", function (event) {
+            var boxes = document.querySelectorAll(".app-picker");
+            for (var i = 0; i < boxes.length; i++) {
+                var state = stateOf(boxes[i]);
+                if (!state.dirty) continue;
+                say(state, "Выберите значение из списка или очистите поле");
+                state.text.focus();
+                event.preventDefault();
+                return;
+            }
+        });
+    }
+
+    document.addEventListener("click", function (event) {
+        var box = boxOf(event);
+        Array.prototype.forEach.call(document.querySelectorAll(".app-picker"),
+            function (each) {
+                if (box && box === each) return;
+                if (each.contains(event.target)) return;
+                show(each, stateOf(each), false);
+            });
+    });
+
     function addItemRow() {
-        var tpl = document.getElementById('item-row');
-        var body = document.getElementById('items-body');
+        var tpl = document.getElementById("item-row");
+        var body = document.getElementById("items-body");
         body.appendChild(tpl.content.firstElementChild.cloneNode(true));
     }
+})();
 </script>
 {% endblock %}

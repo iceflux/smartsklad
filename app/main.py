@@ -32,7 +32,8 @@ from app.modules.dashboard.service import (
 )
 from app.modules.auth.dependencies import (
     SESSION_COOKIE, ensure_permissions, get_page_user as _page_user,
-    nav_is_current, page_context as _page_context, user_has_permission,
+    nav_is_current, page_context as _page_context, require_permissions,
+    user_has_permission,
 )
 from app.modules.auth.models import Role, User
 from app.modules.auth.permissions import Permission
@@ -139,6 +140,10 @@ APP_DIR = Path(__file__).parent
 PAGE_SIZE = 25
 SEARCH_MIN_QUERY = 2
 SEARCH_LIMIT = 10
+"""Сколько строк показывает подстановка в заказе. Потолок виден: ответ несёт
+`total`, и список пишет «показаны первые 10 из 214», поэтому обрезка никогда не
+выглядит как «больше ничего не нашлось»."""
+LOOKUP_LIMIT = 10
 
 STATUS_LABELS = {
     "new": "Новый",
@@ -168,20 +173,27 @@ def _client_options(db: Session, include_deleted: bool = False, order=None) -> l
     return options
 
 
-def _product_options(db: Session, order=None) -> list[dict]:
-    items, _ = list_products(db, include_deleted=False)
-    options = [{"id": p.id, "name": p.name, "price": p.price, "rest": p.rest,
-                "deleted": False} for p in items]
-    if order is not None:
-        for item in order.items:
-            if item.product_id in {o["id"] for o in options}:
-                continue
-            product = db.get(Product, item.product_id)
-            bisect.insort(options, {"id": product.id, "name": product.name,
-                                    "price": product.price, "rest": product.rest,
-                                    "deleted": bool(product.is_deleted)},
-                          key=lambda o: o["name"])
-    return options
+def _picker_customer(db: Session, order) -> dict:
+    """Текущий клиент заказа для подстановки. Мягко удалённый помечается словами,
+    а не флагом: в форме нет кода, который этот флаг прочитал бы."""
+    if order is None:
+        return {"id": "", "label": ""}
+    customer = db.get(Customer, order.customer_id)
+    if customer is None:
+        return {"id": "", "label": ""}
+    return {"id": customer.id,
+            "label": customer.name + (" — удалён" if customer.is_deleted else "")}
+
+
+def _picker_labels(db: Session, ids) -> dict[int, str]:
+    """Имена товаров позиций заказа. Словарь, а не список: строка может
+    повторять один товар, и мягко удалённый товар из базы не исчезает —
+    фильтра `is_deleted` здесь намеренно нет, иначе позицию было бы не показать."""
+    wanted = {i for i in ids if i}
+    if not wanted:
+        return {}
+    return {p.id: p.name + (" — удалён" if p.is_deleted else "")
+            for p in db.query(Product).filter(Product.id.in_(wanted)).all()}
 
 
 def _order_form_items(form: dict) -> list[dict]:
@@ -213,6 +225,14 @@ def _to_int(raw, default):
 
 def _page_param(raw):
     return min(10000, max(1, _to_int(raw, 1)))
+
+
+def _lookup_query(raw: str) -> str | None:
+    """Запрос подстановки: короче `SEARCH_MIN_QUERY` в базу не идёт. Порог тот
+    же, что у глобального поиска, — иначе один и тот же набор букв искал бы
+    разное на двух страницах."""
+    query = (raw or "").strip()
+    return query if len(query) >= SEARCH_MIN_QUERY else None
 
 
 def _safe_next(raw: str) -> str:
@@ -1337,11 +1357,10 @@ def create_app() -> FastAPI:
         if user is None:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.orders_create)
-        clients = _client_options(db)
-        products = _product_options(db)
         return templates.TemplateResponse(request, "order_form.html", {
             "title": "Новый заказ", "user": user, "order": None, "is_new": True,
-            "clients": clients, "products": products, "msg": request.query_params.get("msg"),
+            "customer_picker": {"id": "", "label": ""}, "line_labels": {},
+            "msg": request.query_params.get("msg"),
             **_page_context(user),
         })
 
@@ -1487,11 +1506,11 @@ def create_app() -> FastAPI:
             return RedirectResponse(
                 f"/orders/{order_id}?" + urlencode({"msg": "Нельзя редактировать выполненный заказ"}),
                 status_code=303)
-        clients = _client_options(db, order=order)
-        products = _product_options(db, order)
         return templates.TemplateResponse(request, "order_form.html", {
             "title": f"Заказ {order.number}", "user": user, "order": order, "is_new": False,
-            "clients": clients, "products": products, "msg": request.query_params.get("msg"),
+            "customer_picker": _picker_customer(db, order),
+            "line_labels": _picker_labels(db, (i.product_id for i in order.items)),
+            "msg": request.query_params.get("msg"),
             **_page_context(user),
         })
 
@@ -1571,6 +1590,40 @@ def create_app() -> FastAPI:
         except ValueError:
             raise HTTPException(status_code=404, detail="Заказ не найден")
         return RedirectResponse(f"/orders/{order_id}?msg=Заказ восстановлен", status_code=303)
+
+    @app.get("/api/lookup/customers")
+    def lookup_customers(
+        q: str = "",
+        user: Annotated[User, Depends(require_permissions(Permission.customers_manage))] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        query = _lookup_query(q)
+        if query is None:
+            return {"items": [], "total": 0, "limit": LOOKUP_LIMIT}
+        items, total = list_customers(db, search=query, page_size=LOOKUP_LIMIT)
+        return {
+            "items": [{"id": c.id, "label": c.name,
+                       "hint": " · ".join(part for part in (c.phone, c.inn) if part)}
+                      for c in items],
+            "total": total, "limit": LOOKUP_LIMIT,
+        }
+
+    @app.get("/api/lookup/products")
+    def lookup_products(
+        q: str = "",
+        user: Annotated[User, Depends(require_permissions(Permission.products_view))] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        query = _lookup_query(q)
+        if query is None:
+            return {"items": [], "total": 0, "limit": LOOKUP_LIMIT}
+        items, total = list_products(db, search=query, page_size=LOOKUP_LIMIT)
+        return {
+            "items": [{"id": p.id, "label": p.name,
+                       "hint": f"{group_number(p.price, 2)} ₽ · ост. {group_number(p.rest)}"}
+                      for p in items],
+            "total": total, "limit": LOOKUP_LIMIT,
+        }
 
     @app.get("/search")
     def search_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
