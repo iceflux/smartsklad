@@ -3,7 +3,7 @@ from pathlib import Path
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "app" / "templates"
 CSS = TEMPLATES.parent / "static" / "app.css"
-SCROLL_WRAPPER = '<div class="overflow-x-auto">'
+SCROLL_WRAPPER = re.compile(r'<div[^>]*class="[^"]*\boverflow-x-auto\b[^"]*"[^>]*>')
 SCROLL_CLASS = "overflow-x-auto"
 PRINT_DIR = "documents"
 TABLE_RE = re.compile(r"<table\b")
@@ -32,7 +32,7 @@ def _unwrapped(path):
             None,
         )
         closes = lines[end + 1].strip() if end is not None and end + 1 < len(lines) else ""
-        if opens != SCROLL_WRAPPER or closes != "</div>":
+        if not SCROLL_WRAPPER.fullmatch(opens) or closes != "</div>":
             found.append(f"{path.relative_to(TEMPLATES)}:{index + 1}")
     return found
 
@@ -51,7 +51,7 @@ def test_no_table_is_wrapped_in_a_second_scroll_wrapper():
     doubled = [
         path.relative_to(TEMPLATES).as_posix()
         for path in _screen_templates()
-        if path.read_text(encoding="utf-8").count(SCROLL_WRAPPER)
+        if len(SCROLL_WRAPPER.findall(path.read_text(encoding="utf-8")))
         != len(_tables(path.read_text(encoding="utf-8").splitlines()))
     ]
     assert not doubled, "wrapper count differs from table count: " + ", ".join(doubled)

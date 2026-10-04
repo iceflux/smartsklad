@@ -8,7 +8,7 @@
 
     {% if msg %}<p class="mb-4 bg-success-bg border border-success-border p-2">{{ msg }}</p>{% endif %}
 
-    <form method="get" action="/customers" class="flex flex-wrap items-end gap-2 mb-4">
+    <form data-live-filter method="get" action="/customers" class="flex flex-wrap items-end gap-2 mb-4">
         <div>
             <label class="block text-sm">Поиск (имя/телефон/ИНН)</label>
             <input name="search" value="{{ search }}" class="border p-2">
@@ -21,7 +21,7 @@
         <a href="/customers" class="app-link text-sm text-accent py-2">Сбросить</a>
     </form>
 
-    <div class="overflow-x-auto">
+    <div data-live-list class="overflow-x-auto">
     <table class="w-full border-collapse">
         <thead>
             <tr class="border-b text-left">

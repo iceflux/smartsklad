@@ -3,8 +3,10 @@ const fs = require('fs');
 const vm = require('vm');
 
 const template = fs.readFileSync(process.argv[2], 'utf8');
-const blocks = [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
-const block = blocks[blocks.length - 1];
+const blocks = [...template.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+/* Блок выбирается по содержимому, а не «последним в файле»: в base.html их
+   теперь несколько, и живая фильтрация добавила свой. */
+const block = blocks.find(b => /data-menu-toggle/.test(b));
 assert.ok(block, 'base.html renders no bare <script> for the sidebar');
 assert.ok(!/onclick\s*=/.test(template), 'the markup carries an inline handler');
 assert.ok(/data-menu-toggle/.test(template), 'no button carries data-menu-toggle');

@@ -155,5 +155,26 @@
     });
 })();
 </script>
+<script>
+(function () {
+    var DEBOUNCE_MS = 300;
+    function liveFilterDebounce(form) {
+        var field = form.querySelector("input[name=search]");
+        if (!field) return;
+        var list = document.querySelector("[data-live-list]");
+        var timer = null;
+        field.addEventListener("input", function () {
+            if (timer !== null) clearTimeout(timer);
+            if (list) list.setAttribute("aria-busy", "true");
+            timer = setTimeout(function () {
+                if (list) list.removeAttribute("aria-busy");
+                form.requestSubmit();
+            }, DEBOUNCE_MS);
+        });
+    }
+    Array.prototype.forEach.call(
+        document.querySelectorAll("form[data-live-filter]"), liveFilterDebounce);
+})();
+</script>
 </body>
 </html>
