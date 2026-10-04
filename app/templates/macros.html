@@ -1,0 +1,3 @@
+{% macro sort_head(label, key, path, sort, direction, base_qs) -%}
+<th class="p-2"{% if key and key == sort %} aria-sort="{{ 'descending' if direction == 'desc' else 'ascending' }}"{% endif %}>{% if key %}<a href="{{ path }}?{{ base_qs }}{% if base_qs %}&{% endif %}sort={{ key }}&dir={{ 'asc' if key == sort and direction == 'desc' else 'desc' }}" class="app-link">{{ label }}{% if key == sort %} {% if direction == 'desc' %}▼{% else %}▲{% endif %}{% endif %}</a>{% else %}{{ label }}{% endif %}</th>
+{%- endmacro %}

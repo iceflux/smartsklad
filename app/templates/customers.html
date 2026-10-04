@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros.html" import sort_head %}
 {% block content %}
 <main class="max-w-6xl mx-auto p-4">
     <div class="flex items-center justify-between mb-4">
@@ -9,6 +10,8 @@
     {% if msg %}<p class="mb-4 bg-success-bg border border-success-border p-2">{{ msg }}</p>{% endif %}
 
     <form data-live-filter method="get" action="/customers" class="flex flex-wrap items-end gap-2 mb-4">
+        <input type="hidden" name="sort" value="{{ sort or '' }}">
+        <input type="hidden" name="dir" value="{{ direction or '' }}">
         <div>
             <label class="block text-sm">Поиск (имя/телефон/ИНН)</label>
             <input name="search" value="{{ search }}" class="border p-2">
@@ -25,10 +28,10 @@
     <table class="w-full border-collapse">
         <thead>
             <tr class="border-b text-left">
-                <th class="p-2">Имя</th>
-                <th class="p-2">Телефон</th>
-                <th class="p-2">ИНН</th>
-                <th class="p-2">Скидка</th>
+                {{ sort_head("Имя", "name", "/customers", sort, direction, base_qs) }}
+                {{ sort_head("Телефон", "phone", "/customers", sort, direction, base_qs) }}
+                {{ sort_head("ИНН", "inn", "/customers", sort, direction, base_qs) }}
+                {{ sort_head("Скидка", "discount", "/customers", sort, direction, base_qs) }}
                 <th class="p-2">Действия</th>
             </tr>
         </thead>

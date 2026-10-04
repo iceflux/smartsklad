@@ -235,6 +235,13 @@ def _lookup_query(raw: str) -> str | None:
     return query if len(query) >= SEARCH_MIN_QUERY else None
 
 
+def _sort_params(request: Request) -> tuple[str | None, str | None]:
+    """Читает выбор сортировки из адресной строки. Ни ключ, ни направление не
+    проверяются здесь по списку — это делает `app.sorting.apply_sort` по
+    белому списку колонок раздела; здесь остаётся только приведение к строке."""
+    return request.query_params.get("sort"), request.query_params.get("dir")
+
+
 def _safe_next(raw: str) -> str:
     if raw.startswith("/") and not raw.startswith("//"):
         return raw
@@ -580,8 +587,10 @@ def create_app() -> FastAPI:
         include_deleted = request.query_params.get("include_deleted") == "1"
         raw_page = request.query_params.get("page") or "1"
         page = _page_param(raw_page)
+        sort, direction = _sort_params(request)
         items, total = list_products(db, search=search, category_id=category_id,
-                                     include_deleted=include_deleted, page=page)
+                                     include_deleted=include_deleted, page=page,
+                                     sort=sort, direction=direction)
         pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
         products = [
             {
@@ -595,11 +604,13 @@ def create_app() -> FastAPI:
         qs = urlencode({k: v for k, v in {
             "search": search, "category_id": category_id,
             "include_deleted": "1" if include_deleted else None,
+            "sort": sort, "dir": direction,
         }.items() if v not in (None, "")})
         return templates.TemplateResponse(request, "products.html", {
             "title": "Товары", "user": user, "products": products, "total": total,
             "page": page, "pages": pages, "base_qs": qs, "msg": request.query_params.get("msg"),
             "search": search or "", "category_id": category_id, "include_deleted": include_deleted,
+            "sort": sort, "direction": direction,
             "tree": get_category_tree(db),
             "can_edit": user_has_permission(user, Permission.products_edit),
             "can_stock": user_has_permission(user, Permission.stock_change),
@@ -1213,7 +1224,9 @@ def create_app() -> FastAPI:
         include_deleted = request.query_params.get("include_deleted") == "1"
         raw_page = request.query_params.get("page") or "1"
         page = _page_param(raw_page)
-        items, total = list_customers(db, search=search, include_deleted=include_deleted, page=page)
+        sort, direction = _sort_params(request)
+        items, total = list_customers(db, search=search, include_deleted=include_deleted,
+                                      page=page, sort=sort, direction=direction)
         pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
         customers = [{
             "id": c.id, "name": c.name, "inn": c.inn, "phone": c.phone,
@@ -1222,11 +1235,13 @@ def create_app() -> FastAPI:
         } for c in items]
         qs = urlencode({k: v for k, v in {
             "search": search, "include_deleted": "1" if include_deleted else None,
+            "sort": sort, "dir": direction,
         }.items() if v not in (None, "")})
         return templates.TemplateResponse(request, "customers.html", {
             "title": "Клиенты", "user": user, "customers": customers, "total": total,
             "page": page, "pages": pages, "base_qs": qs,
             "search": search or "", "include_deleted": include_deleted,
+            "sort": sort, "direction": direction,
             "msg": request.query_params.get("msg"),
             "can_edit": user_has_permission(user, Permission.customers_manage),
             **_page_context(user),
@@ -1317,11 +1332,13 @@ def create_app() -> FastAPI:
         include_deleted = request.query_params.get("include_deleted") == "1"
         raw_page = request.query_params.get("page") or "1"
         page = _page_param(raw_page)
+        sort, direction = _sort_params(request)
         items, total = list_orders(
             db, search=search, customer_id=customer_id, status=status,
             date_from=datetime.combine(d_from, time.min) if d_from else None,
             date_to=datetime.combine(d_to, time.max) if d_to else None,
             min_amount=min_amount, include_deleted=include_deleted, page=page,
+            sort=sort, direction=direction,
         )
         pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
         orders = [{
@@ -1337,6 +1354,7 @@ def create_app() -> FastAPI:
             "date_to": request.query_params.get("date_to"),
             "min_amount": request.query_params.get("min_amount"),
             "include_deleted": "1" if include_deleted else None,
+            "sort": sort, "dir": direction,
         }.items() if v not in (None, "")})
         return templates.TemplateResponse(request, "orders.html", {
             "title": "Заказы", "user": user, "orders": orders, "total": total,
@@ -1345,6 +1363,7 @@ def create_app() -> FastAPI:
             "date_from": request.query_params.get("date_from", ""),
             "date_to": request.query_params.get("date_to", ""),
             "min_amount": min_amount or "", "include_deleted": include_deleted,
+            "sort": sort, "direction": direction,
             "msg": request.query_params.get("msg"),
             "clients": _client_options(db, include_deleted=include_deleted),
             "statuses": list(VALID_STATUSES), "status_labels": STATUS_LABELS,

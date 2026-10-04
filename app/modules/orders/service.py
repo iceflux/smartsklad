@@ -7,6 +7,7 @@ from app.modules.audit.service import log_action
 from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
+from app.sorting import apply_sort
 
 
 VALID_STATUSES = {"new", "processing", "done", "cancelled"}
@@ -241,9 +242,22 @@ def copy_order(db, order_id, *, user=None):
                         discount=src.discount, items=items, user=user)
 
 
+ORDER_SORTS = {
+    "number": Order.number,
+    "status": Order.status,
+    "amount": Order.total_amount,
+    "created": Order.created_at,
+}
+DEFAULT_ORDER_SORT = "number"
+"""Новые заказы сверху: так список был устроен до появления сортировки, и
+менять порядок при загрузке страницы — значило бы менять его у того, кто его
+уже знал."""
+DEFAULT_ORDER_DIRECTION = "desc"
+
+
 def list_orders(db, *, date_from=None, date_to=None, customer_id=None, status=None,
                 min_amount=None, include_deleted=False, page=1, page_size=25,
-                search=None):
+                search=None, sort=None, direction=None):
     q = db.query(Order)
     if search:
         q = q.filter(Order.number.ilike(f"%{search}%"))
@@ -260,7 +274,9 @@ def list_orders(db, *, date_from=None, date_to=None, customer_id=None, status=No
     if not include_deleted:
         q = q.filter(Order.deleted_at.is_(None))
     total = q.count()
-    items = q.order_by(Order.number.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    items = (apply_sort(q, Order, ORDER_SORTS, DEFAULT_ORDER_SORT,
+                        DEFAULT_ORDER_DIRECTION, sort, direction)
+             .offset((page - 1) * page_size).limit(page_size).all())
     return items, total
 
 

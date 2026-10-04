@@ -10,6 +10,7 @@ from app.modules.audit.service import log_action
 from app.modules.importer.resolve import SkuFactory
 from app.modules.inventory.models import Category, PriceHistory, Product, Unit
 from app.modules.settings.service import STOCK_TRACK_DEFAULT_KEY, get_setting
+from app.sorting import apply_sort
 
 DEFAULT_UNITS = (
     "шт", "кг", "г", "т", "л", "мл", "м", "м2", "м3", "см", "мм",
@@ -329,6 +330,16 @@ def restore_product(db: Session, product_id: int, user=None) -> None:
                new_value=product.name, user_id=user.id if user else None)
 
 
+PRODUCT_SORTS = {
+    "name": Product.name,
+    "sku": Product.sku,
+    "price": Product.price,
+    "rest": Product.rest,
+}
+DEFAULT_PRODUCT_SORT = "name"
+DEFAULT_PRODUCT_DIRECTION = "asc"
+
+
 def list_products(
     db: Session,
     search: str | None = None,
@@ -336,6 +347,8 @@ def list_products(
     include_deleted: bool = False,
     page: int = 1,
     page_size: int = 25,
+    sort: str | None = None,
+    direction: str | None = None,
 ) -> tuple[list[Product], int]:
     query = db.query(Product)
     if search:
@@ -347,12 +360,11 @@ def list_products(
     if not include_deleted:
         query = query.filter(Product.is_deleted.is_(False))
     total = query.count()
-    items = (
-        query.order_by(Product.name)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
+    items = (apply_sort(query, Product, PRODUCT_SORTS, DEFAULT_PRODUCT_SORT,
+                        DEFAULT_PRODUCT_DIRECTION, sort, direction)
+             .offset((page - 1) * page_size)
+             .limit(page_size)
+             .all())
     return items, total
 
 

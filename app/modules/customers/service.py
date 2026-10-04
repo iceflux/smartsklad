@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.audit.service import log_action
 from app.modules.customers.models import Customer
+from app.sorting import apply_sort
 
 
 def _validate_name(name: str) -> str:
@@ -98,9 +99,20 @@ def get_customer(db: Session, customer_id: int) -> Customer | None:
     return db.get(Customer, customer_id)
 
 
+CUSTOMER_SORTS = {
+    "name": Customer.name,
+    "phone": Customer.phone,
+    "inn": Customer.inn,
+    "discount": Customer.personal_discount,
+}
+DEFAULT_CUSTOMER_SORT = "name"
+DEFAULT_CUSTOMER_DIRECTION = "asc"
+
+
 def list_customers(db: Session, *, search: str | None = None,
                    include_deleted: bool = False, page: int = 1,
-                   page_size: int = 25) -> tuple[list[Customer], int]:
+                   page_size: int = 25, sort: str | None = None,
+                   direction: str | None = None) -> tuple[list[Customer], int]:
     query = db.query(Customer)
     if search:
         query = query.filter(or_(
@@ -111,7 +123,9 @@ def list_customers(db: Session, *, search: str | None = None,
     if not include_deleted:
         query = query.filter(Customer.is_deleted.is_(False))
     total = query.count()
-    items = query.order_by(Customer.name).offset((page - 1) * page_size).limit(page_size).all()
+    items = (apply_sort(query, Customer, CUSTOMER_SORTS, DEFAULT_CUSTOMER_SORT,
+                        DEFAULT_CUSTOMER_DIRECTION, sort, direction)
+             .offset((page - 1) * page_size).limit(page_size).all())
     return items, total
 
 
