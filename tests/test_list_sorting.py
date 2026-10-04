@@ -17,15 +17,18 @@ from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.customers.models import Customer
 from app.modules.customers.service import (CUSTOMER_SORTS, DEFAULT_CUSTOMER_DIRECTION,
                                            DEFAULT_CUSTOMER_SORT, list_customers)
-from app.modules.inventory.models import Product
+from app.modules.inventory.models import Category, Product, Unit
 from app.modules.inventory.service import (DEFAULT_PRODUCT_DIRECTION, DEFAULT_PRODUCT_SORT,
-                                           PRODUCT_SORTS, get_unit_by_name, list_products)
+                                           PRODUCT_JOINS, PRODUCT_SORTS, get_unit_by_name,
+                                           list_products)
+from app.modules.orders.models import Order
 from app.modules.orders.service import (DEFAULT_ORDER_DIRECTION, DEFAULT_ORDER_SORT,
-                                        ORDER_SORTS, list_orders)
+                                        ORDER_JOINS, ORDER_SORTS, create_order,
+                                        list_orders)
 from app.sorting import apply_sort
 
 PASSWORD = "password123"
-PAGES = {"/customers": 4, "/products": 4, "/orders": 4}
+PAGES = {"/customers": 4, "/products": 6, "/orders": 5}
 
 
 def _admin(client, db_session):
@@ -72,19 +75,61 @@ def test_every_section_page_offers_four_sortable_headers(client, db_session):
         assert len({key for key, _ in links}) == expected, f"{url}: повторяющиеся колонки"
 
 
-def test_the_columns_that_are_not_columns_are_not_sorted(client, db_session):
-    """Категория, Ед. и Действия у товара и Клиент у заказа нарисованы не из
-    своей колонки: там имя из связи. Сортировка по ним потребовала бы JOIN, а
-    обещание «кликните и увидите» дешевле оставить пустым, чем сделать
-    наполовину."""
+def test_the_sortable_columns_are_real_columns_of_their_table():
+    """Ключ в белом списке обязан быть именем колонки — своей таблицы или той,
+    которая присоединяется ради этого ключа. Опечатка здесь стоила бы 500 на
+    любом клике по заголовку — и только на этом клике."""
+    from app.modules.inventory.models import Category, Unit
+    from app.modules.orders.models import Order
+    cases = [(Customer, CUSTOMER_SORTS, None), (Product, PRODUCT_SORTS, PRODUCT_JOINS),
+             (Order, ORDER_SORTS, ORDER_JOINS)]
+    for model, sorts, joins in cases:
+        for key, column in sorts.items():
+            joined = joins[key][0] if joins and key in joins else None
+            allowed = model.__table__.columns
+            if joined is not None:
+                allowed = list(allowed) + list(joined.__table__.columns)
+            assert column.key in {c.name for c in allowed}, \
+                f"{model.__tablename__}: {column.key} не колонка ни своей таблицы, " \
+                "ни присоединяемой — опечатка в белом списке"
+
+
+def test_every_joined_sort_key_actually_carries_its_join():
+    """Ключ в белом списке без присоединения — это 500 на клике: SQLAlchemy не
+    знает, откуда брать `categories.name`, и падает при сборке запроса."""
+    for sorts, joins in [(PRODUCT_SORTS, PRODUCT_JOINS), (ORDER_SORTS, ORDER_JOINS)]:
+        for key, column in sorts.items():
+            if key in joins:
+                target, _onclause = joins[key]
+                assert column.key in {c.name for c in target.__table__.columns}, \
+                    f"{key}: колонка не из той таблицы, которая присоединяется"
+            else:
+                assert key not in joins, f"{key}: присоединение без колонки в нём"
+
+
+def test_the_relation_columns_are_sorted_now(client, db_session):
+    """Категория, Ед. и Клиент больше не пустые заголовки. Отказ был «это связь,
+    нужен JOIN», а JOIN — это работа, а не запрет.
+
+    Ищется строка с ССЫЛКОЙ этого ключа, а не `>{header}<`: у сортируемого
+    заголовка текст обёрнут в `<a>`, и проверка «есть ли `<a>` рядом с именем»
+    по старой разметке больше не работает."""
     _admin(client, db_session)
-    for url, header in [("/products", "Категория"), ("/products", "Ед."),
-                        ("/products", "Действия"), ("/customers", "Действия"),
-                        ("/orders", "Клиент")]:
+    for url, key in [("/products", "category"), ("/products", "unit"),
+                     ("/orders", "customer")]:
+        text = client.get(url).text
+        line = next(l for l in text.splitlines() if f"sort={key}&dir=" in l)
+        assert "<a " in line, f"{url}: «{key}» не ссылка, значит не сортируется"
+
+
+def test_the_columns_that_still_have_no_meaning_stay_unsorted(client, db_session):
+    """«Действия» — это ссылки на действия, а не значение, и сортировать нечего.
+    Заголовок без ссылки остаётся честным."""
+    _admin(client, db_session)
+    for url, header in [("/products", "Действия"), ("/customers", "Действия")]:
         text = client.get(url).text
         line = next(l for l in text.splitlines() if f">{header}<" in l)
-        assert "<a " not in line, f"{url}: колонка «{header}» unexpectedly sortable"
-
+        assert "<a " not in line, f"{url}: колонка «{header}» не должна сортироваться"
 
 def test_the_list_follows_the_chosen_column_and_direction(client, db_session):
     _admin(client, db_session)
@@ -208,19 +253,29 @@ def test_an_unknown_direction_falls_back_instead_of_reaching_the_query(client, d
 
 
 def test_every_sortable_query_carries_the_stable_second_key(db_session):
-    for model, sorts, default_sort, default_dir, key in [
-        (Customer, CUSTOMER_SORTS, DEFAULT_CUSTOMER_SORT, DEFAULT_CUSTOMER_DIRECTION, "inn"),
-        (Product, PRODUCT_SORTS, DEFAULT_PRODUCT_SORT, DEFAULT_PRODUCT_DIRECTION, "price"),
+    for model, sorts, default_sort, default_dir, key, joins in [
+        (Customer, CUSTOMER_SORTS, DEFAULT_CUSTOMER_SORT, DEFAULT_CUSTOMER_DIRECTION,
+         "inn", None),
+        (Product, PRODUCT_SORTS, DEFAULT_PRODUCT_SORT, DEFAULT_PRODUCT_DIRECTION,
+         "price", PRODUCT_JOINS),
+        (Product, PRODUCT_SORTS, DEFAULT_PRODUCT_SORT, DEFAULT_PRODUCT_DIRECTION,
+         "category", PRODUCT_JOINS),
+        (Product, PRODUCT_SORTS, DEFAULT_PRODUCT_SORT, DEFAULT_PRODUCT_DIRECTION,
+         "unit", PRODUCT_JOINS),
+        (Order, ORDER_SORTS, DEFAULT_ORDER_SORT, DEFAULT_ORDER_DIRECTION,
+         "number", ORDER_JOINS),
+        (Order, ORDER_SORTS, DEFAULT_ORDER_SORT, DEFAULT_ORDER_DIRECTION,
+         "customer", ORDER_JOINS),
     ]:
         for direction in ("asc", "desc"):
             query = apply_sort(db_session.query(model), model, sorts, default_sort,
-                               default_dir, key, direction)
+                               default_dir, key, direction, joins)
             sql = str(query.statement.compile(db_session.get_bind(),
                                               compile_kwargs={"literal_binds": True}))
             order = sql.split("ORDER BY")[1]
-            assert order.count(",") == 1, f"{model.__tablename__}: в ORDER BY один ключ: {order}"
+            assert order.count(",") == 1, f"{model.__tablename__}/{key}: в ORDER BY один ключ: {order}"
             assert order.rstrip().split(",")[-1].strip() == f"{model.__tablename__}.id {direction.upper()}", \
-                f"{model.__tablename__}: второго ключа нет, постраничный разбор будет рвать строки"
+                f"{model.__tablename__}/{key}: второго ключа нет, постраничный разбор будет рвать строки"
 
 
 def test_paging_over_equal_keys_neither_repeats_nor_drops_a_row(db_session):
@@ -261,18 +316,6 @@ def test_the_allowlist_covers_exactly_the_headers_the_page_offers(client, db_ses
         offered = {key for key, _ in re.findall(
             rf'href="{re.escape(url)}\?[^"]*sort=(\w+)&dir=(\w+)"', client.get(url).text)}
         assert offered == set(sorts), f"{url}: в шапке {sorted(offered)}, в списке {sorted(sorts)}"
-
-
-def test_the_sortable_columns_are_real_columns_of_their_table():
-    """Ключ в белом списке обязан быть именем колонки своей таблицы. Опечатка
-    здесь стоила бы 500 на любом клике по заголовку — и только на этом клике."""
-    from app.modules.orders.models import Order
-    for model, sorts in [(Customer, CUSTOMER_SORTS), (Product, PRODUCT_SORTS),
-                         (Order, ORDER_SORTS)]:
-        for key, column in sorts.items():
-            assert column.key in model.__table__.columns, \
-                f"{model.__tablename__}: {column.key} не колонка — опечатка в белом списке"
-
 
 def _search_hits(text):
     body = text[text.index("<h2 class=\"app-group-title\">Клиенты"):text.index("</section>")]

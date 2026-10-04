@@ -62,7 +62,7 @@
         <thead>
             <tr class="border-b text-left">
                 {{ sort_head("Номер", "number", "/orders", sort, direction, base_qs) }}
-                <th class="p-2">Клиент</th>
+                {{ sort_head("Клиент", "customer", "/orders", sort, direction, base_qs) }}
                 {{ sort_head("Статус", "status", "/orders", sort, direction, base_qs) }}
                 {{ sort_head("Сумма", "amount", "/orders", sort, direction, base_qs) }}
                 {{ sort_head("Дата", "created", "/orders", sort, direction, base_qs) }}

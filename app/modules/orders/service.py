@@ -247,7 +247,15 @@ ORDER_SORTS = {
     "status": Order.status,
     "amount": Order.total_amount,
     "created": Order.created_at,
+    "customer": Customer.name,
 }
+ORDER_JOINS = {
+    "customer": (Customer, Order.customer_id == Customer.id),
+}
+"""У заказа нет relationships на клиента — в таблице лежит только `customer_id`,
+а имя показывает роут, — поэтому присоединение пишется явным условием. Внешнее:
+клиент в заказе обязателен, но строка могла бы остаться и без него, и внутреннее
+присоединение убрало бы такой заказ из списка молча."""
 DEFAULT_ORDER_SORT = "number"
 """Новые заказы сверху: так список был устроен до появления сортировки, и
 менять порядок при загрузке страницы — значило бы менять его у того, кто его
@@ -275,7 +283,7 @@ def list_orders(db, *, date_from=None, date_to=None, customer_id=None, status=No
         q = q.filter(Order.deleted_at.is_(None))
     total = q.count()
     items = (apply_sort(q, Order, ORDER_SORTS, DEFAULT_ORDER_SORT,
-                        DEFAULT_ORDER_DIRECTION, sort, direction)
+                        DEFAULT_ORDER_DIRECTION, sort, direction, ORDER_JOINS)
              .offset((page - 1) * page_size).limit(page_size).all())
     return items, total
 

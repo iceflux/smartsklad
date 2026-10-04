@@ -66,8 +66,8 @@
                 {% if can_edit %}<th class="p-2"></th>{% endif %}
                 {{ sort_head("Название", "name", "/products", sort, direction, base_qs) }}
                 {{ sort_head("Артикул", "sku", "/products", sort, direction, base_qs) }}
-                <th class="p-2">Категория</th>
-                <th class="p-2">Ед.</th>
+                {{ sort_head("Категория", "category", "/products", sort, direction, base_qs) }}
+                {{ sort_head("Ед.", "unit", "/products", sort, direction, base_qs) }}
                 {{ sort_head("Цена", "price", "/products", sort, direction, base_qs) }}
                 {{ sort_head("Остаток", "rest", "/products", sort, direction, base_qs) }}
                 <th class="p-2">Действия</th>

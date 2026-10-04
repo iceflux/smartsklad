@@ -335,7 +335,18 @@ PRODUCT_SORTS = {
     "sku": Product.sku,
     "price": Product.price,
     "rest": Product.rest,
+    "category": Category.name,
+    "unit": Unit.name,
 }
+PRODUCT_JOINS = {
+    "category": (Category, Product.category_id == Category.id),
+    "unit": (Unit, Product.unit_id == Unit.id),
+}
+"""Категории и единицы — таблицы связи, а не колонки товара. Присоединение
+внешнее: `category_id` nullable, и внутреннее убрало бы из списка товар без
+категории — то есть товар просто исчез бы со страницы. Мягко удалённая строка
+связи остаётся в таблице, поэтому товар с удалённой категорией или единицей тоже
+не пропадёт."""
 DEFAULT_PRODUCT_SORT = "name"
 DEFAULT_PRODUCT_DIRECTION = "asc"
 
@@ -361,7 +372,7 @@ def list_products(
         query = query.filter(Product.is_deleted.is_(False))
     total = query.count()
     items = (apply_sort(query, Product, PRODUCT_SORTS, DEFAULT_PRODUCT_SORT,
-                        DEFAULT_PRODUCT_DIRECTION, sort, direction)
+                        DEFAULT_PRODUCT_DIRECTION, sort, direction, PRODUCT_JOINS)
              .offset((page - 1) * page_size)
              .limit(page_size)
              .all())
