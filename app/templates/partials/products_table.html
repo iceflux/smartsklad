@@ -1,0 +1,79 @@
+{% from "macros.html" import sort_head %}
+{#
+  Список товаров — ОДИН кусок на страницу товаров, окно выбора в заказе и всё,
+  что появится после. Вторая копия этого списка в окне разошлась бы со страницей
+  при первом же новом поле, и заметил бы это тот, кто искал товар дважды.
+
+  Отличия страницы и окна заданы тремя значениями, а не отдельной разметкой:
+
+  * `actions` — колонки выбора строки (галочка и «Действия»). В окне их нет:
+    выбирать строку там нечем, и обманывать человека ссылкой «Удалить» в окне
+    поиска незачем.
+  * `sort_base` и `form_action` — куда ведут ссылки сортировки, постраничные
+    ссылки и форма фильтра. В окне это эндпоинт, отдающий эту же разметку, и
+    поэтому ссылка работает и без скрипта.
+  * `live_filter` — живая фильтрация из `base.html`. Она перерисовывает страницу
+    по адресу формы, то есть уводит человека с заказа, поэтому в окне её нет.
+#}
+<div class="overflow-x-auto">
+<table class="w-full border-collapse">
+    <thead>
+        <tr class="border-b text-left">
+            {% if actions and can_edit %}<th class="p-2"></th>{% endif %}
+            {{ sort_head("Название", "name", sort_base, sort, direction, base_qs) }}
+            {{ sort_head("Артикул", "sku", sort_base, sort, direction, base_qs) }}
+            {{ sort_head("Категория", "category", sort_base, sort, direction, base_qs) }}
+            {{ sort_head("Ед.", "unit", sort_base, sort, direction, base_qs) }}
+            {{ sort_head("Цена", "price", sort_base, sort, direction, base_qs) }}
+            {{ sort_head("Остаток", "rest", sort_base, sort, direction, base_qs) }}
+            {% if actions %}<th class="p-2">Действия</th>{% endif %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in products %}
+        <tr class="border-b {% if p.is_deleted %}bg-surface-sunken text-muted{% endif %}"{% if not actions %} data-pick-id="{{ p.id }}" data-pick-label="{{ p.name }}{% if p.is_deleted %} — удалён{% endif %}"{% endif %}>
+            {% if actions and can_edit %}
+            <td class="p-2">
+                {% if not p.is_deleted %}<input type="checkbox" name="product_ids" value="{{ p.id }}" form="bulk-form">{% endif %}
+            </td>
+            {% endif %}
+            <td class="p-2"><a href="/products/{{ p.id }}" class="app-link text-accent">{{ p.name }}</a>{% if p.is_deleted %} (удалён){% endif %}</td>
+            <td class="p-2">{{ p.sku }}</td>
+            <td class="p-2">{{ p.category_name }}</td>
+            <td class="p-2">{{ p.unit }}</td>
+            <td class="p-2">{{ p.price|num }}</td>
+            <td class="p-2">{{ p.rest|num }}</td>
+            {% if actions %}
+            <td class="p-2">
+                {% if p.is_deleted %}
+                    {% if can_edit %}
+                    <form method="post" action="/products/{{ p.id }}/restore" class="inline">
+                        <button class="app-link text-accent">Восстановить</button>
+                    </form>
+                    {% endif %}
+                {% else %}
+                    {% if can_edit or can_price or can_stock %}
+                        <a href="/products/{{ p.id }}/edit" class="app-link text-accent mr-2">Изменить</a>
+                    {% endif %}
+                    {% if can_edit %}
+                    <form method="post" action="/products/{{ p.id }}/delete" class="inline" onsubmit="return confirm('Удалить товар?');">
+                        <button class="app-btn-danger text-danger">Удалить</button>
+                    </form>
+                    {% endif %}
+                {% endif %}
+            </td>
+            {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ 8 if actions else 6 }}" class="p-4 text-center text-muted">Товары не найдены</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<div class="flex items-center gap-3 mt-4 text-sm">
+    <span>Всего: {{ total|num }}</span>
+    {% if page > 1 %}<a class="app-link text-accent" href="{{ sort_base }}?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
+    <span>Стр. {{ page }} из {{ pages }}</span>
+    {% if page < pages %}<a class="app-link text-accent" href="{{ sort_base }}?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
+</div>

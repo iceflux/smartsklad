@@ -22,9 +22,13 @@ def test_the_picker_filters_by_typing_and_survives_the_keyboard():
     node = shutil.which("node")
     if node is None:
         pytest.skip("node не установлен")
-    from app.main import LOOKUP_MIN_QUERY
+    from app.main import CUSTOMERS_TABLE, LOOKUP_MIN_QUERY, PRODUCTS_TABLE
 
-    values = json.dumps({"LOOKUP_MIN_QUERY": LOOKUP_MIN_QUERY})
+    values = json.dumps({
+        "LOOKUP_MIN_QUERY": LOOKUP_MIN_QUERY,
+        "PRODUCTS_TABLE": PRODUCTS_TABLE,
+        "CUSTOMERS_TABLE": CUSTOMERS_TABLE,
+    })
     r = subprocess.run([node, str(HARNESS), str(TEMPLATE), values],
                        capture_output=True)
     assert r.returncode == 0, (r.stdout + r.stderr).decode("utf-8", "replace")

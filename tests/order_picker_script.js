@@ -43,6 +43,13 @@ function matches(el, sel) {
     if (attr) {
         return el.tag === attr[1] && el.getAttribute(attr[2]) === attr[3];
     }
+    /* Селектор «тег плюс признак», как `tr[data-pick-id]` в окне выбора. Без этой
+       ветки прибор тихо не нашёл бы строку, и проверка выбора прошла бы в пустоту:
+       скрипт искал бы строку, которой прибор не умеет видеть. */
+    const tagged = sel.match(/^(\w+)\[([\w-]+)\]$/);
+    if (tagged) {
+        return el.tag === tagged[1] && el.getAttribute(tagged[2]) !== null;
+    }
     return el.tag === sel;
 }
 
@@ -66,6 +73,12 @@ function findAll(root, sel) {
     return out;
 }
 
+/* `data-pick-id` в DOM читается как `dataset.pickId`, а не `dataset['pick-id']`.
+       Разница невидима на одиночном слове и ломает всё составные: строка в окне
+       выбора пришла бы в скрипт без идентификатора. */
+function toCamel(name) {
+    return name.slice(5).replace(/-([a-z])/g, (whole, letter) => letter.toUpperCase());
+}
 function makeEl(tag, attrs) {
     const el = {
         tag,
@@ -74,12 +87,16 @@ function makeEl(tag, attrs) {
         children: [],
         parentNode: null,
         value: '',
+        checked: false,
         className: (attrs && attrs.class) || '',
         _handlers: {},
     };
+    for (const key of ['name', 'href', 'type']) {
+        if (attrs && attrs[key] !== undefined) el[key] = attrs[key];
+    }
     for (const key of Object.keys(el.attrs)) {
         if (key === 'class') continue;
-        if (key.indexOf('data-') === 0) el.dataset[key.slice(5)] = String(el.attrs[key]);
+        if (key.indexOf('data-') === 0) el.dataset[toCamel(key)] = String(el.attrs[key]);
     }
     /* `innerHTML = ""` у настоящего элемента вычищает детей, и скрипт на этом
        держится: без очистки новый список дописывался бы к старому, и человек
@@ -89,7 +106,19 @@ function makeEl(tag, attrs) {
         get: () => html,
         set: (raw) => {
             html = String(raw);
-            if (html === '') el.children.length = 0;
+            if (html === '') { el.children.length = 0; return; }
+            /* Разбор HTML у выдуманных элементов не встроен, и прибор не изображает
+               браузер. «Сервер» отдаёт готовые узлы в `__nodes`, и присваивание
+               принимает их как содержимое: предмет проверки — с каким адресом и с
+               каким запросом скрипт пошёл и что он сделал со строкой, а не умение
+               браузера разбирать разметку. */
+            if (raw && raw.__nodes) {
+                el.children.length = 0;
+                for (const node of raw.__nodes) {
+                    node.parentNode = el;
+                    el.children.push(node);
+                }
+            }
         },
     });
     /* `textContent` у настоящего элемента не только читается, но и ЗАМЕЩАЕТ
@@ -106,7 +135,7 @@ function makeEl(tag, attrs) {
     });
     el.setAttribute = (key, raw) => {
         el.attrs[key] = String(raw);
-        if (key.indexOf('data-') === 0) el.dataset[key.slice(5)] = String(raw);
+        if (key.indexOf('data-') === 0) el.dataset[toCamel(key)] = String(raw);
     };
     el.getAttribute = (key) => (key in el.attrs ? el.attrs[key] : null);
     el.addEventListener = (type, fn) => {
@@ -134,6 +163,7 @@ function makeEl(tag, attrs) {
         }
         return false;
     };
+    el.querySelectorAll = (sel) => findAll(el, sel);
     el.focus = () => { el.focused = true; };
     el.select = () => { el.selected = true; };
     /* Список подстановки `position: fixed`, и скрипт ставит ему координаты из
@@ -223,30 +253,84 @@ function makeRowTemplate() {
     return tpl;
 }
 
-function makeBrowseModal() {
+const TABLE = '/api/lookup/products/table';
+
+function makeFilterForm() {
+    const form = makeEl('form', {method: 'get', action: '/products'});
+    const sort = makeEl('input', {type: 'hidden', name: 'sort'});
+    sort.value = '';
+    const dir = makeEl('input', {type: 'hidden', name: 'dir'});
+    dir.value = '';
+    const search = makeEl('input', {type: 'text', name: 'search'});
+    const category = makeEl('select', {name: 'category_id'});
+    const deleted = makeEl('input', {type: 'checkbox', name: 'include_deleted'});
+    const filter = makeEl('button', {'class': 'app-btn-line'});
+    filter.textContent = 'Фильтр';
+    const reset = makeEl('a', {'class': 'app-link', href: '/products'});
+    reset.textContent = 'Сбросить';
+    form.appendChild(sort);
+    form.appendChild(dir);
+    form.appendChild(search);
+    form.appendChild(category);
+    form.appendChild(deleted);
+    form.appendChild(filter);
+    form.appendChild(reset);
+    return {form, search, category, deleted, sort, dir};
+}
+
+/* Список, который приходит из `/api/lookup/products/table`: ровно та же
+   разметка, что на странице товаров, с сортировкой и постраничными ссылками.
+   Имена функций строят строки из TABLE, а не из ответа, — прибор не изображает
+   сервер, он проверяет, что скрипт по этим ссылкам САМ идёт за следующей
+   страницей, а не перерисовывает список сам. */
+function makeProductRow(id, label, extra) {
+    const row = makeEl('tr', Object.assign({'data-pick-id': id,
+                                           'data-pick-label': label}, extra || {}));
+    const cell = makeEl('td');
+    const link = makeEl('a', {'class': 'app-link', href: '/products/' + id});
+    link.textContent = label;
+    cell.appendChild(link);
+    row.appendChild(cell);
+    for (const text of ['SKU-1', '—', 'шт', '10.00', '5']) {
+        row.appendChild(makeEl('td', {text: text}));
+    }
+    return row;
+}
+
+function makeBrowseModal(options) {
+    options = options || {};
     const modal = makeEl('div', {
-        'class': 'app-modal', 'data-open': 'false', 'data-modal': 'browse',
+        'class': 'app-modal', 'data-open': 'false', 'data-modal': 'browse-products',
+        'data-table': TABLE,
     });
-    const panel = makeEl('div', {'class': 'app-modal-panel'});
-    const close = makeEl('button', {'class': 'app-btn', 'data-modal-close': ''});
+    const panel = makeEl('div', {'class': 'app-modal-panel app-modal-panel-wide'});
+    const close = makeEl('button', {'class': 'app-btn', 'data-modal-close': '',
+                                  'data-modal-kind': 'browse-products'});
     close.textContent = 'Закрыть';
-    const input = makeEl('input', {type: 'search', 'data-modal-query': ''});
-    const note = makeEl('p', {'class': 'app-picker-note', 'data-modal-note': ''});
-    const list = makeEl('ul', {'class': 'app-modal-list', 'data-modal-list': ''});
+    const filter = makeFilterForm();
+    const table = makeEl('div', {'data-modal-table': ''});
     panel.appendChild(close);
-    panel.appendChild(input);
-    panel.appendChild(note);
-    panel.appendChild(list);
+    panel.appendChild(filter.form);
+    panel.appendChild(table);
     modal.appendChild(panel);
-    return {modal, close, input, note, list};
+    return {modal, close, table, filter,
+             /* Строки ТЕЛА таблицы: `tr` есть ещё и в `thead`, и считать его
+                строкой товара было бы ошибкой прибора. */
+             rows: function () {
+                 const body = findAll(table, 'tbody')[0];
+                 return body ? findAll(body, 'tr') : [];
+             },
+             links: function () { return findAll(table, 'a'); },
+             nodes: function () { return table.children; }};
 }
 
 function makeCreateModal() {
     const modal = makeEl('div', {
-        'class': 'app-modal', 'data-open': 'false', 'data-modal': 'create',
+        'class': 'app-modal', 'data-open': 'false', 'data-modal': 'create-products',
     });
     const panel = makeEl('div', {'class': 'app-modal-panel'});
-    const close = makeEl('button', {'class': 'app-btn', 'data-modal-close': ''});
+    const close = makeEl('button', {'class': 'app-btn', 'data-modal-close': '',
+                                  'data-modal-kind': 'create-products'});
     close.textContent = 'Закрыть';
     const form = makeEl('form', {'class': 'space-y-2', 'data-create-form': ''});
     const name = makeEl('input', {name: 'name'});
@@ -263,6 +347,56 @@ function makeCreateModal() {
     panel.appendChild(form);
     modal.appendChild(panel);
     return {modal, close, form, name, price, note, submit};
+}
+
+const COLUMNS = [['Название', 'name'], ['Артикул', 'sku'], ['Категория', 'category'],
+    ['Ед.', 'unit'], ['Цена', 'price'], ['Остаток', 'rest']];
+
+/* «Сервер» отдаёт ту же структуру, что и эндпоинт разметки: заголовки с
+   ссылками сортировки, строки и постраничную ссылку. Имена колонок и адреса
+   берутся из одного места с приложением, поэтому проверка «скрипт пошёл за
+   СОРТИРОВКОЙ» не подменяется подгонкой ожидаемого. */
+function tableAnswer(query, rows, options) {
+    options = options || {};
+    const params = {};
+    query.split('&').forEach(function (pair) {
+        if (!pair) return;
+        const kv = pair.split('=');
+        params[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1] || '');
+    });
+    const found = params.search
+        ? rows.filter(function (pair) { return pair[1].indexOf(params.search) !== -1; })
+        : rows;
+    assert.ok(found.length > 0 || !params.search,
+        'прибор не знает таких строк: ' + JSON.stringify(params) + ' из ' + JSON.stringify(rows));
+    const head = makeEl('thead');
+    const headRow = makeEl('tr');
+    for (const column of COLUMNS) {
+        const cell = makeEl('th');
+        const link = makeEl('a', {'class': 'app-link',
+            href: TABLE + '?sort=' + column[1] + '&dir=desc'});
+        link.textContent = column[0];
+        cell.appendChild(link);
+        headRow.appendChild(cell);
+    }
+    head.appendChild(headRow);
+    const body = makeEl('tbody');
+    for (const pair of found) body.appendChild(makeProductRow(pair[0], pair[1]));
+    const table = makeEl('table');
+    table.appendChild(head);
+    table.appendChild(body);
+    const wrapper = makeEl('div', {'class': 'overflow-x-auto'});
+    wrapper.appendChild(table);
+    const nodes = [wrapper];
+    if (options.pages && options.pages > 1) {
+        const foot = makeEl('div');
+        const forward = makeEl('a', {'class': 'app-link',
+            href: TABLE + '?' + (query ? query + '&' : '') + 'page=' + ((params.page || 1) + 1)});
+        forward.textContent = 'Вперёд';
+        foot.appendChild(forward);
+        nodes.push(foot);
+    }
+    return {__nodes: nodes, query: query};
 }
 
 function run(payloads, options) {
@@ -335,10 +469,37 @@ function run(payloads, options) {
             calls.push({url, sent});
             const index = requests.length - 1;
             const payload = payloads[index] !== undefined ? payloads[index] : payloads[0];
+            if (url.indexOf(TABLE) === 0) {
+                /* Эндпоинт разметки отдаёт HTML, а не JSON. Прибор отдаёт узлы
+                   строк, собранные из имени запроса, — так видно, что скрипт
+                   пошёл за СЛЕДУЮЩЕЙ страницей или с тем поиском, который набрал
+                   человек, а не показал прежний список. */
+                const query = (url.split('?')[1] || '');
+                const answer = tableAnswer(query, options.rows
+                    || [[21, 'Гвоздь'], [22, 'Шуруп']], options);
+                return Promise.resolve({ok: true, text: () => Promise.resolve(answer)});
+            }
             return Promise.resolve({
                 ok: !(payload && payload.ok === false),
                 json: () => Promise.resolve(payload),
             });
+        },
+        FormData: function (form) {
+            /* У настоящего FormData обход отдаёт пару (значение, имя), и код
+               приложения на это и рассчитывает, поэтому прибор отдаёт то же
+               самое, а не пару (имя, значение). */
+            return {
+                forEach: (fn) => findAll(form, 'input').concat(findAll(form, 'select'))
+                    .forEach((field) => {
+                        const name = field.getAttribute('name');
+                        if (!name) return;
+                        const value = field.type === 'checkbox'
+                            ? (field.checked ? field.getAttribute('value') || 'on' : '')
+                            : field.value;
+                        if (value === '' || value === null) return;
+                        fn(value, name);
+                    }),
+            };
         },
         WeakMap,
         encodeURIComponent,
@@ -369,9 +530,10 @@ function run(payloads, options) {
         press: (node, key) => fire(node, 'keydown', {key}),
         submitForm: (node) => fire(node, 'submit'),
         typeModal: (value) => {
-            browse.input.value = value;
-            return fire(browse.input, 'input');
+            browse.filter.search.value = value;
+            return fire(browse.filter.search, 'input');
         },
+        submitBrowseForm: () => fire(browse.filter.form, 'submit'),
         scroll: (dy) => {
             for (const picker of pickers) {
                 picker.text.rect = Object.assign({}, picker.text.rect, {
@@ -589,61 +751,87 @@ const THREE = {
     assert.strictEqual(typing.pickers[0].note.textContent, '',
         'подсказка про последние выбранные осталась после набора');
 
-    // 18. «Выбрать товар» открывает окно и спрашивает ТОТ ЖЕ адрес подстановки.
-    //     Второй путь запросов разошёлся бы с полем, и заметил бы это только тот,
-    //     кто искал одно и то же дважды.
-    const RECENT_PRODUCTS = {
-        items: [{id: 21, label: 'Гвоздь', hint: '10.00 ₽ · ост. 5'},
-                {id: 22, label: 'Шуруп', hint: '12.00 ₽ · ост. 7'}],
-        total: 2, limit: 10, recent: true,
-    };
-    const browse = run([RECENT_PRODUCTS], {pickers: [makePicker('products', '', '')]});
+    // 18. «Выбрать товар» открывает окно со СПИСОКМ РАЗДЕЛА: та же разметка, тот же
+    //     фильтр и та же сортировка, что на странице товаров. Свой список из
+    //     подстановки здесь больше не рисуется: он разошёлся бы со страницей при
+    //     первом же новом поле, и заметил бы это тот, кто искал одно и то же дважды.
+    const browse = run([THREE], {pickers: [makePicker('products', '', '')]});
     browse.click(browse.pickers[0].browse);
     await browse.flush();
     assert.strictEqual(browse.browse.modal.getAttribute('data-open'), 'true',
         'окно выбора товара не открылось');
-    assert.deepStrictEqual(browse.requests, ['/api/lookup/products?q='],
-        'окно пошло не на подстановку: ' + browse.requests[0]);
-    assert.strictEqual(browse.browse.list.children.length, 2);
-    assert.ok(browse.browse.input.focused, 'фокус остался на странице, а не в окне');
-    assert.strictEqual(browse.browse.note.textContent, 'Последние выбранные');
-    const labels = RECENT_PRODUCTS.items.map((row) => row.label);
-    browse.browse.list.children.forEach((row, index) => {
-        const button = row.children[0];
-        assert.strictEqual(button.tag, 'button',
-            'пункт окна должен быть кнопкой, иначе с клавиатуры не выбрать');
-        const states = String(button.className).split(/\s+/)
-            .filter((c) => ['app-link', 'app-btn', 'app-btn-accent', 'app-btn-line',
-                            'app-btn-danger', 'app-nav-link'].indexOf(c) !== -1);
-        assert.strictEqual(states.length, 1, 'состояний у пункта: ' + states);
-        assert.ok(String(button.textContent).indexOf(labels[index]) === 0,
-            `пункт ${index}: ${button.textContent}`);
-    });
+    assert.deepStrictEqual(browse.requests, [TABLE],
+        'окно пошло не за списком раздела: ' + browse.requests[0]);
+    assert.strictEqual(browse.browse.rows().length, 2,
+        'в окне ' + browse.browse.rows().length + ' строк вместо двух');
+    assert.deepStrictEqual(browse.browse.rows().map((r) => r.getAttribute('data-pick-label')),
+        ['Гвоздь', 'Шуруп'], 'окно показало не те строки');
+    assert.ok(browse.browse.filter.search.focused,
+        'фокус остался на странице, а не в окне (или встал в скрытое поле sort)');
+    assert.ok(browse.browse.filter.search.getAttribute('name') === 'search',
+        'в окне нет поля поиска');
+    assert.strictEqual(browse.browse.filter.form.getAttribute('action'), '/products',
+        'форма фильтра в окне ведёт не туда');
 
-    // 19. Набор в окне идёт с той же паузой и на тот же адрес.
-    browse.typeModal('Шуп');
-    assert.deepStrictEqual(browse.requests, ['/api/lookup/products?q='],
-        'запрос ушёл раньше паузы');
+    // 19. Набор в окне идёт с той же паузой и спрашивает тот же адрес списка.
+    browse.typeModal('Шуру');
+    assert.deepStrictEqual(browse.requests, [TABLE], 'запрос ушёл раньше паузы');
     await browse.flush();
     assert.strictEqual(browse.requests.length, 2);
     assert.strictEqual(browse.requests[1],
-        '/api/lookup/products?q=' + encodeURIComponent('Шуп'));
-    assert.strictEqual(browse.browse.list.children.length, 2,
-        'старые пункты остались в окне: выбрать можно было бы товар прошлого запроса');
+        TABLE + '?search=' + encodeURIComponent('Шуру'), browse.requests[1]);
+    assert.deepStrictEqual(browse.browse.rows().map((r) => r.getAttribute('data-pick-label')),
+        ['Шуруп'], 'окно показало прежний список: выбрать можно было бы чужое; '
+        + 'запросы: ' + JSON.stringify(browse.requests)
+        + ' узлов: ' + browse.browse.nodes().length);
 
-    // 20. Клик по пункту заполняет строку и закрывает окно, фокус возвращается
-    //     в поле строки — иначе человек продолжал бы печатать в закрытом окне.
-    browse.click(browse.browse.list.children[0].children[0]);
+    // 20. Сортировка в окне — не украшение: клик по заголовку идёт за ТОЙ ЖЕ
+    //     разметкой с новым порядком, и форма фильтра его запоминает, иначе
+    //     следующее нажатие «Фильтр» потеряло бы сортировку.
+    const sorted = run([THREE], {pickers: [makePicker('products', '', '')]});
+    sorted.click(sorted.pickers[0].browse);
+    await sorted.flush();
+    const priceHead = sorted.browse.links().filter((a) => a.getAttribute('href')
+        === TABLE + '?sort=price&dir=desc')[0];
+    assert.ok(priceHead, 'в окне нет сортировки по цене');
+    sorted.click(priceHead);
+    await sorted.flush();
+    assert.strictEqual(sorted.requests.length, 2);
+    assert.strictEqual(sorted.requests[1], TABLE + '?sort=price&dir=desc',
+        'сортировка в окне пошла не туда: ' + sorted.requests[1]);
+    assert.strictEqual(sorted.browse.filter.sort.value, 'price',
+        'форма не запомнила сортировку: следующее «Фильтр» её бы сбросило');
+    assert.strictEqual(sorted.browse.filter.dir.value, 'desc');
+
+    // 20a. Постраничная ссылка в окне тоже ведёт за списком, а не уводит со
+    //      страницы заказа.
+    const paged = run([THREE], {pickers: [makePicker('products', '', '')], pages: 3});
+    paged.click(paged.pickers[0].browse);
+    await paged.flush();
+    const forward = paged.browse.links().filter((a) => a.getAttribute('href')
+        === TABLE + '?page=2')[0];
+    assert.ok(forward, 'в окне нет постраничной ссылки');
+    paged.click(forward);
+    await paged.flush();
+    assert.strictEqual(paged.requests[1], TABLE + '?page=2', paged.requests[1]);
+
+    // 21. Клик по строке заполняет строку заказа и закрывает окно, фокус
+    //     возвращается в поле строки — иначе человек продолжал бы печатать в
+    //     закрытом окне.
+    browse.browse.filter.search.value = '';
+    browse.fire(browse.browse.form, 'submit');
+    await browse.flush();
+    browse.click(browse.browse.rows()[0]);
     assert.strictEqual(browse.pickers[0].hidden.value, '21');
     assert.strictEqual(browse.pickers[0].text.value, 'Гвоздь');
     assert.strictEqual(browse.browse.modal.getAttribute('data-open'), 'false');
     assert.ok(browse.pickers[0].text.focused, 'фокус не вернулся в строку заказа');
 
-    // 21. Escape закрывает окно, ничего не выбирая.
-    const escModal = run([RECENT_PRODUCTS], {pickers: [makePicker('products', '9', 'Доска')]});
+    // 21a. Escape закрывает окно, ничего не выбирая.
+    const escModal = run([THREE], {pickers: [makePicker('products', '9', 'Доска')]});
     escModal.click(escModal.pickers[0].browse);
     await escModal.flush();
-    escModal.press(escModal.browse.input, 'Escape');
+    escModal.press(escModal.browse.filter.search, 'Escape');
     assert.strictEqual(escModal.browse.modal.getAttribute('data-open'), 'false',
         'Escape не закрыл окно выбора товара');
     assert.strictEqual(escModal.pickers[0].hidden.value, '9', 'Escape подменил товар');
@@ -722,13 +910,13 @@ const THREE = {
 
     // 25. Строка, добавленная позже, работает: обработчики висят на форме, а не
     //     на кнопках, иначе клон из <template> остался бы с мёртвыми кнопками.
-    const lateLine = run([RECENT_PRODUCTS], {pickers: [makePicker('products', '', '')]});
+    const lateLine = run([THREE], {pickers: [makePicker('products', '', '')]});
     const extra = makePicker('products', '', '');
     lateLine.form.appendChild(extra.box);
     lateLine.click(extra.browse);
     await lateLine.flush();
     assert.strictEqual(lateLine.browse.modal.getAttribute('data-open'), 'true');
-    lateLine.click(lateLine.browse.list.children[1].children[0]);
+    lateLine.click(lateLine.browse.rows()[1]);
     assert.strictEqual(extra.hidden.value, '22');
     assert.strictEqual(lateLine.pickers[0].hidden.value, '',
         'выбор ушёл не в ту строку');

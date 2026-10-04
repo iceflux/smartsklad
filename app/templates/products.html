@@ -1,5 +1,12 @@
 {% extends "base.html" %}
-{% from "macros.html" import sort_head %}
+{#
+  Страница товаров и окно выбора товара в заказе собирают ОДИН и тот же список и
+  один и тот же фильтр из `partials/`. Отличие только в значениях: страница
+  передаёт `actions` и свои адреса, окно — те же адреса, но указывающие на
+  эндпоинт этой же разметки. Второй копии списка здесь нет, и появиться она не
+  может: проверка `tests/test_shared_order_surfaces.py` требует, чтобы поля
+  фильтра и заголовки колонок в окне и на странице совпадали.
+#}
 {% block content %}
 <main class="max-w-6xl mx-auto p-4">
     <div class="flex items-center justify-between mb-4">
@@ -16,32 +23,8 @@
 
     {% if msg %}<p class="mb-4 bg-success-bg border border-success-border p-2">{{ msg }}</p>{% endif %}
 
-    <form data-live-filter method="get" action="/products" class="flex flex-wrap items-end gap-2 mb-4">
-        <input type="hidden" name="sort" value="{{ sort or '' }}">
-        <input type="hidden" name="dir" value="{{ direction or '' }}">
-        <div>
-            <label class="block text-sm">Поиск (название/артикул)</label>
-            <input name="search" value="{{ search }}" class="border p-2">
-        </div>
-        <div>
-            <label class="block text-sm">Категория</label>
-            <select name="category_id" class="border p-2">
-                <option value="">Все</option>
-                {% for root in tree %}
-                    <option value="{{ root.id }}" {% if category_id == root.id %}selected{% endif %}>{{ root.name }}</option>
-                    {% for child in root.children %}
-                        <option value="{{ child.id }}" {% if category_id == child.id %}selected{% endif %}>&nbsp;&nbsp;{{ child.name }}</option>
-                    {% endfor %}
-                {% endfor %}
-            </select>
-        </div>
-        <label class="flex items-center gap-1 text-sm">
-            <input type="checkbox" name="include_deleted" value="1" {% if include_deleted %}checked{% endif %}>
-            Показывать удалённые
-        </label>
-        <button class="app-btn-line bg-line px-3 py-2">Фильтр</button>
-        <a href="/products" class="app-link text-sm text-accent py-2">Сбросить</a>
-    </form>
+    {% set form_action = "/products" %}
+    {% include "partials/products_filter.html" %}
 
     {% if can_edit %}
     <form id="bulk-form" method="post" action="/products/bulk-category" class="flex items-center gap-2 mb-3">
@@ -59,66 +42,7 @@
     {% endif %}
 
     <div data-live-list>
-    <div class="overflow-x-auto">
-    <table class="w-full border-collapse">
-        <thead>
-            <tr class="border-b text-left">
-                {% if can_edit %}<th class="p-2"></th>{% endif %}
-                {{ sort_head("Название", "name", "/products", sort, direction, base_qs) }}
-                {{ sort_head("Артикул", "sku", "/products", sort, direction, base_qs) }}
-                {{ sort_head("Категория", "category", "/products", sort, direction, base_qs) }}
-                {{ sort_head("Ед.", "unit", "/products", sort, direction, base_qs) }}
-                {{ sort_head("Цена", "price", "/products", sort, direction, base_qs) }}
-                {{ sort_head("Остаток", "rest", "/products", sort, direction, base_qs) }}
-                <th class="p-2">Действия</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for p in products %}
-            <tr class="border-b {% if p.is_deleted %}bg-surface-sunken text-muted{% endif %}">
-                {% if can_edit %}
-                <td class="p-2">
-                    {% if not p.is_deleted %}<input type="checkbox" name="product_ids" value="{{ p.id }}" form="bulk-form">{% endif %}
-                </td>
-                {% endif %}
-                <td class="p-2"><a href="/products/{{ p.id }}" class="app-link text-accent">{{ p.name }}</a>{% if p.is_deleted %} (удалён){% endif %}</td>
-                <td class="p-2">{{ p.sku }}</td>
-                <td class="p-2">{{ p.category_name }}</td>
-                <td class="p-2">{{ p.unit }}</td>
-                <td class="p-2">{{ p.price|num }}</td>
-                <td class="p-2">{{ p.rest|num }}</td>
-                <td class="p-2">
-                    {% if p.is_deleted %}
-                        {% if can_edit %}
-                        <form method="post" action="/products/{{ p.id }}/restore" class="inline">
-                            <button class="app-link text-accent">Восстановить</button>
-                        </form>
-                        {% endif %}
-                    {% else %}
-                        {% if can_edit or can_price or can_stock %}
-                            <a href="/products/{{ p.id }}/edit" class="app-link text-accent mr-2">Изменить</a>
-                        {% endif %}
-                        {% if can_edit %}
-                        <form method="post" action="/products/{{ p.id }}/delete" class="inline" onsubmit="return confirm('Удалить товар?');">
-                            <button class="app-btn-danger text-danger">Удалить</button>
-                        </form>
-                        {% endif %}
-                    {% endif %}
-                </td>
-            </tr>
-            {% else %}
-            <tr><td colspan="8" class="p-4 text-center text-muted">Товары не найдены</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-
-    <div class="flex items-center gap-3 mt-4 text-sm">
-        <span>Всего: {{ total|num }}</span>
-        {% if page > 1 %}<a class="app-link text-accent" href="/products?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
-        <span>Стр. {{ page }} из {{ pages }}</span>
-        {% if page < pages %}<a class="app-link text-accent" href="/products?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
-    </div>
+    {% include "partials/products_table.html" %}
     </div>
 </main>
 {% endblock %}

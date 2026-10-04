@@ -248,11 +248,13 @@
         border-radius: 0.25rem;
         box-shadow: 0 0.5rem 1rem rgb(var(--color-line) / 0.25);
     }
-    .app-modal-list {
-        margin-top: 0.5rem;
-        max-height: 18rem;
-        overflow-y: auto;
+    .app-modal-panel-wide {
+        width: 100%;
+        max-width: 56rem;
     }
+    /* Окно выбора показывает СПИСОК РАЗДЕЛА целиком, то есть шесть колонок и
+       сортировку по каждой. Узкой панели в 32rem таблица не помещается, поэтому
+       у окна с таблицей своя ширина. */
     @media (min-width: 1024px) {
         /* Широкий экран: сайдбар постоянная колонка, поэтому его
            обязательно видно — без `visibility: visible` базовое правило

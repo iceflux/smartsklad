@@ -73,26 +73,25 @@
         <a href="{% if order %}/orders/{{ order.id }}{% else %}/orders{% endif %}" class="app-btn ml-2 border px-4 py-2">Отмена</a>
     </form>
 
-    <div class="app-modal" data-open="false" data-modal="browse">
-        <div class="app-modal-panel bg-surface-raised border border-line-strong p-4"
+    <div class="app-modal" data-open="false" data-modal="browse-products" data-table="{{ PRODUCTS_TABLE }}">
+        <div class="app-modal-panel app-modal-panel-wide bg-surface-raised border border-line-strong p-4"
              role="dialog" aria-modal="true" aria-label="Выбор товара">
             <div class="flex items-center justify-between mb-2">
                 <h2 class="font-semibold">Выбор товара</h2>
-                <button type="button" class="app-btn border px-2 py-1" data-modal-close>Закрыть</button>
+                <button type="button" class="app-btn border px-2 py-1" data-modal-close data-modal-kind="browse-products">Закрыть</button>
             </div>
-            <input type="search" class="border p-2 w-full" data-modal-query autocomplete="off"
-                   aria-label="Поиск товара" placeholder="Начните вводить название или артикул">
-            <p class="app-picker-note" role="status" data-modal-note></p>
-            <ul class="app-modal-list" data-modal-list></ul>
+            {% set form_action = "/products" %}
+            {% include "partials/products_filter.html" %}
+            <div data-modal-table></div>
         </div>
     </div>
 
-    <div class="app-modal" data-open="false" data-modal="create">
+    <div class="app-modal" data-open="false" data-modal="create-products">
         <div class="app-modal-panel bg-surface-raised border border-line-strong p-4"
              role="dialog" aria-modal="true" aria-label="Создание товара">
             <div class="flex items-center justify-between mb-2">
                 <h2 class="font-semibold">Новый товар</h2>
-                <button type="button" class="app-btn border px-2 py-1" data-modal-close>Закрыть</button>
+                <button type="button" class="app-btn border px-2 py-1" data-modal-close data-modal-kind="create-products">Закрыть</button>
             </div>
             <form class="space-y-2" data-create-form>
                 <div>
@@ -117,7 +116,6 @@
 (function () {
     var MIN_QUERY = {{ LOOKUP_MIN_QUERY }};
     var DEBOUNCE_MS = 300;
-    var LOOKUP_PRODUCTS = "/api/lookup/products";
     var CREATE_PRODUCT = "/api/products";
     var states = new WeakMap();
     var target = null;
@@ -330,7 +328,9 @@
         target = box;
         var modal = modalByName(name);
         modal.setAttribute("data-open", "true");
-        var field = modal.querySelector("input");
+        /* Поле поиска, а не первое поле формы: у формы фильтра первым идёт
+           скрытое `sort`, и фокус в него — это фокус в никуда. */
+        var field = modal.querySelector("input[name=search]") || modal.querySelector("input");
         field.value = "";
         field.focus();
     }
@@ -378,45 +378,77 @@
         if (notice) notice.textContent = "";
     }
 
-    function paintModal(modal, answer) {
-        var list = modal.querySelector("ul");
-        var note = noteOf(modal);
-        list.innerHTML = "";
-        var items = answer.items || [];
-        for (var i = 0; i < items.length; i++) {
-            var row = document.createElement("li");
-            var option = document.createElement("button");
-            option.type = "button";
-            option.className = "app-btn w-full text-left mb-1";
-            option.textContent = items[i].label +
-                (items[i].hint ? " — " + items[i].hint : "");
-            option.addEventListener("click", (function (picked) {
-                return function () { choose(picked, "browse"); };
-            })(items[i]));
-            row.appendChild(option);
-            list.appendChild(row);
-        }
-        if (!items.length) {
-            note.textContent = "Ничего не найдено";
-        } else if (answer.recent) {
-            note.textContent = "Последние выбранные";
-        } else if (answer.total > items.length) {
-            note.textContent = "Показаны первые " + answer.limit + " из " +
-                answer.total + " — уточните запрос";
-        } else {
-            note.textContent = "";
-        }
+    /* Окно выбора товара — это список товаров, а не вторая его копия: та же
+       разметка `partials/products_table.html`, тот же фильтр и та же сортировка,
+       отнятые у страницы только колонкой действий. Данные приходят из
+       `/api/lookup/products/table`, который зовёт ту же `list_products`, что и
+       страница, поэтому один и тот же запрос даёт один и тот же набор строк. */
+    function tableQuery(modal) {
+        var parts = [];
+        new FormData(modal.querySelector("form")).forEach(
+            function (value, key) {
+                if (value !== "" && value !== null) {
+                    parts.push(encodeURIComponent(key) + "=" + encodeURIComponent(value));
+                }
+            });
+        return parts.join("&");
     }
 
-    function askModal(modal, query) {
-        fetch(LOOKUP_PRODUCTS + "?q=" + encodeURIComponent(query))
-            .then(function (response) { return response.json(); })
-            .then(function (answer) { paintModal(modal, answer); });
+    function loadTable(modal, query) {
+        fetch(modal.dataset.table + (query ? "?" + query : ""))
+            .then(function (response) { return response.text(); })
+            .then(function (html) { modal.querySelector("[data-modal-table]").innerHTML = html; });
     }
 
-    var browseModal = modalByName("browse");
-    var createModal = modalByName("create");
-    var modalQuery = browseModal.querySelector("input");
+    /* Сортировка и постраничные ссылки внутри окна приходят сервером и ведут на
+       тот же эндпоинт. Без скрипта они работают как обычные ссылки — и уводят на
+       страницу фильтра, что тоже верно; со скриптом перерисовывается только
+       список, и человек остаётся в заказе. Поля формы синхронизируются с
+       новым запросом, иначе следующее нажатие «Фильтр» потеряло бы сортировку. */
+    function adoptQuery(modal, query) {
+        var form = modal.querySelector("form");
+        query.split("&").forEach(function (pair) {
+            if (!pair) return;
+            var kv = pair.split("=");
+            var field = form.querySelector("[name=" + kv[0] + "]");
+            if (!field) return;
+            if (field.type === "checkbox") field.checked = kv[1] === "1";
+            else field.value = decodeURIComponent(kv[1] || "");
+        });
+    }
+
+var browseModal = modalByName("browse-products");
+var createModal = modalByName("create-products");
+    var browseForm = browseModal.querySelector("form");
+    var browseField = browseForm.querySelector("input[name=search]");
+
+    browseModal.addEventListener("click", function (event) {
+        var row = event.target.closest("tr[data-pick-id]");
+        if (row) {
+            event.preventDefault();
+            choose({id: row.dataset.pickId, label: row.dataset.pickLabel}, "browse-products");
+            return;
+        }
+        var link = event.target.closest("a");
+        if (link) {
+            var query = (link.getAttribute("href") || "").split("?")[1] || "";
+            event.preventDefault();
+            adoptQuery(browseModal, query);
+            loadTable(browseModal, query);
+        }
+    });
+
+    browseForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+        loadTable(browseModal, tableQuery(browseModal));
+    });
+
+    browseField.addEventListener("input", function () {
+        if (modalTimer !== null) clearTimeout(modalTimer);
+        modalTimer = setTimeout(function () {
+            loadTable(browseModal, tableQuery(browseModal));
+        }, DEBOUNCE_MS);
+    });
 
     /* Обработчики висят на форме, а не на кнопках: строка, добавленная кнопкой
        «Добавить строку», копируется из <template>, и кнопки на ней — другие
@@ -430,8 +462,8 @@
             }
             var browse = event.target.closest("[data-picker-browse]");
             if (browse) {
-                openModal("browse", browse.closest(".app-picker"));
-                askModal(browseModal, "");
+                openModal("browse-products", browse.closest(".app-picker"));
+                loadTable(browseModal, "");
                 return;
             }
             var create = event.target.closest("[data-picker-create]");
@@ -440,7 +472,7 @@
                     showNotice(create.getAttribute("data-notice"));
                     return;
                 }
-                openModal("create", create.closest(".app-picker"));
+                openModal("create-products", create.closest(".app-picker"));
             }
         });
     }
@@ -449,10 +481,10 @@
         if (event.target.closest("[data-notice-close]")) hideNotice();
     });
 
-    modalQuery.addEventListener("input", function () {
+    browseField.addEventListener("input", function () {
         if (modalTimer !== null) clearTimeout(modalTimer);
         modalTimer = setTimeout(function () {
-            askModal(browseModal, modalQuery.value.trim());
+            loadTable(browseModal, tableQuery(browseModal));
         }, DEBOUNCE_MS);
     });
 
@@ -460,19 +492,19 @@
         document.querySelectorAll("[data-modal-close]"),
         function (button) {
             button.addEventListener("click", function () {
-                closeModal(button.closest("[data-modal=create]") ? "create" : "browse");
+                closeModal(button.getAttribute("data-modal-kind"));
             });
         });
 
     document.addEventListener("click", function (event) {
-        if (event.target === browseModal) closeModal("browse");
-        if (event.target === createModal) closeModal("create");
+        if (event.target === browseModal) closeModal("browse-products");
+        if (event.target === createModal) closeModal("create-products");
     });
 
     document.addEventListener("keydown", function (event) {
         if (event.key !== "Escape") return;
-        if (browseModal.getAttribute("data-open") === "true") closeModal("browse");
-        if (createModal.getAttribute("data-open") === "true") closeModal("create");
+        if (browseModal.getAttribute("data-open") === "true") closeModal("browse-products");
+        if (createModal.getAttribute("data-open") === "true") closeModal("create-products");
     });
 
     createModal.querySelector("form").addEventListener("submit", function (event) {
@@ -494,7 +526,7 @@
                 note.textContent = answer.body.detail || "Не удалось создать товар";
                 return;
             }
-            choose({id: answer.body.id, label: answer.body.name}, "create");
+            choose({id: answer.body.id, label: answer.body.name}, "create-products");
         });
     });
 })();

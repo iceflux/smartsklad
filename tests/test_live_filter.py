@@ -23,15 +23,33 @@ SECTION_PAGES = ("products.html", "customers.html", "orders.html")
 
 FORM = re.compile(r"<form[^>]*data-live-filter[^>]*>")
 LIST = re.compile(r'data-live-list')
+INCLUDE = re.compile(r'\{%\s*include\s+"([^"]+)"\s*%\}')
+
+
+def _page_source(name: str) -> str:
+    """Текст страницы ВМЕСТЕ с тем, что она подключает.
+
+    Фильтр и список товаров и клиентов живут в `partials/` — иначе страница и окно
+    выбора в заказе были бы двумя копиями. Проверка разметки должна видеть
+    подключённый кусок, а не строку `{% include %}`."""
+    text = (TEMPLATES / name).read_text(encoding="utf-8")
+    for _ in range(4):
+        expanded = INCLUDE.sub(
+            lambda match: (TEMPLATES / match.group(1)).read_text(encoding="utf-8"),
+            text)
+        if expanded == text:
+            break
+        text = expanded
+    return text
 
 
 def test_every_section_filter_form_asks_for_live_filtering():
-    missing = [name for name in SECTION_PAGES if not FORM.search((TEMPLATES / name).read_text(encoding="utf-8"))]
+    missing = [name for name in SECTION_PAGES if not FORM.search(_page_source(name))]
     assert missing == [], f"нет живой фильтрации на {missing}"
 
 
 def test_the_list_the_filter_replaces_is_marked():
-    missing = [name for name in SECTION_PAGES if not LIST.search((TEMPLATES / name).read_text(encoding="utf-8"))]
+    missing = [name for name in SECTION_PAGES if not LIST.search(_page_source(name))]
     assert missing == [], f"список на {missing} не помечен, и пауза не скажет, что он в работе"
 
 
@@ -63,7 +81,7 @@ def test_the_marked_region_covers_the_total_and_the_pager():
     её: список отфильтровался бы, а счётчик и постраничные ссылки показывали бы
     прежние числа. Пометка поэтому поднята выше — на внешний блок."""
     for name in SECTION_PAGES:
-        body = (TEMPLATES / name).read_text(encoding="utf-8")
+        body = _page_source(name)
         opened = body.index("data-live-list")
         for label in ("Всего:", "Вперёд"):
             index = body.index(label)
@@ -86,7 +104,7 @@ def test_the_live_filter_does_not_navigate_the_page():
     вход `search`. Иначе «живая фильтрация» стала бы требованием JS там, где
     раньше его не было."""
     for name in SECTION_PAGES:
-        body = (TEMPLATES / name).read_text(encoding="utf-8")
+        body = _page_source(name)
         form = re.search(r"<form[^>]*data-live-filter[^>]*>([\s\S]*?)</form>", body)
         assert form, name
         assert '<input name="search"' in form.group(1) or \

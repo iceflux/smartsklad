@@ -1,0 +1,54 @@
+{% from "macros.html" import sort_head %}
+{#
+  Список клиентов — ОДИН кусок на страницу клиентов, окно выбора клиента в
+  заказе и всё, что появится после. Отличия заданы значениями, а не отдельной
+  разметкой: `actions` убирает колонку действий, `sort_base` и `form_action`
+  указывают, куда ведут ссылки, `live_filter` включает перерисовку страницы по
+  адресу формы — в окне она уводила бы человека с заказа.
+#}
+<div class="overflow-x-auto">
+<table class="w-full border-collapse">
+    <thead>
+        <tr class="border-b text-left">
+            {{ sort_head("Имя", "name", sort_base, sort, direction, base_qs) }}
+            {{ sort_head("Телефон", "phone", sort_base, sort, direction, base_qs) }}
+            {{ sort_head("ИНН", "inn", sort_base, sort, direction, base_qs) }}
+            {{ sort_head("Скидка", "discount", sort_base, sort, direction, base_qs) }}
+            {% if actions %}<th class="p-2">Действия</th>{% endif %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in customers %}
+        <tr class="border-b {% if c.is_deleted %}bg-surface-sunken text-muted{% endif %}"{% if not actions %} data-pick-id="{{ c.id }}" data-pick-label="{{ c.name }}{% if c.is_deleted %} — удалён{% endif %}"{% endif %}>
+            <td class="p-2"><a href="/customers/{{ c.id }}" class="app-link text-accent">{{ c.name }}</a>{% if c.is_deleted %} (удалён){% endif %}</td>
+            <td class="p-2">{{ c.phone or '' }}</td>
+            <td class="p-2">{{ c.inn or '' }}</td>
+            <td class="p-2">{{ c.personal_discount }}%</td>
+            {% if actions %}
+            <td class="p-2">
+                {% if c.is_deleted %}
+                    <form method="post" action="/customers/{{ c.id }}/restore" class="inline">
+                        <button class="app-link text-accent">Восстановить</button>
+                    </form>
+                {% else %}
+                    <a href="/customers/{{ c.id }}/edit" class="app-link text-accent mr-2">Изменить</a>
+                    <form method="post" action="/customers/{{ c.id }}/delete" class="inline" onsubmit="return confirm('Удалить клиента?');">
+                        <button class="app-btn-danger text-danger">Удалить</button>
+                    </form>
+                {% endif %}
+            </td>
+            {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ 5 if actions else 4 }}" class="p-4 text-center text-muted">Клиенты не найдены</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<div class="flex items-center gap-3 mt-4 text-sm">
+    <span>Всего: {{ total|num }}</span>
+    {% if page > 1 %}<a class="app-link text-accent" href="{{ sort_base }}?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
+    <span>Стр. {{ page }} из {{ pages }}</span>
+    {% if page < pages %}<a class="app-link text-accent" href="{{ sort_base }}?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
+</div>

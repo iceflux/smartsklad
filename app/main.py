@@ -146,6 +146,12 @@ SEARCH_LIMIT = 10
 `total`, и список пишет «показаны первые 10 из 214», поэтому обрезка никогда не
 выглядит как «больше ничего не нашлось»."""
 LOOKUP_LIMIT = 10
+PRODUCTS_TABLE = "/api/lookup/products/table"
+CUSTOMERS_TABLE = "/api/lookup/customers/table"
+"""Адреса, отдающие РАЗМЕТКУ списка раздела для окна выбора в заказе. Не второй
+путь к данным: данные берутся теми же `list_products`/`list_customers`, что и на
+странице, а отдаётся тот же кусок шаблона. Без скрипта ссылка сортировки в окне
+ведёт сюда и работает."""
 LOOKUP_MIN_QUERY = 1
 """Сколько символов нужно подстановке в заказе, чтобы пойти в базу. Порог
 намеренно ниже, чем у глобального поиска, и почему — в `_lookup_query`; здесь
@@ -215,6 +221,14 @@ def _order_form_context(db: Session, user: User, order) -> dict:
         "customer_picker": _picker_customer(db, order),
         "line_labels": _picker_labels(db, (i.product_id for i in order.items)) if order else {},
         "LOOKUP_MIN_QUERY": LOOKUP_MIN_QUERY,
+        "PRODUCTS_TABLE": PRODUCTS_TABLE,
+        "CUSTOMERS_TABLE": CUSTOMERS_TABLE,
+        # Фильтр и форма товара в окнах читают те же значения, что и страницы
+        # разделов; без них список в окне открылся бы с пустым запросом и без
+        # дерева категорий.
+        "tree": get_category_tree(db),
+        "search": "", "category_id": None, "include_deleted": False,
+        "sort": None, "direction": None,
         **_product_create(user),
     }
 
@@ -281,6 +295,66 @@ def _lookup_query(raw: str) -> str | None:
     """
     query = (raw or "").strip()
     return query if len(query) >= LOOKUP_MIN_QUERY else None
+
+
+def _listing(request: Request, rows: list[dict], extra: dict) -> dict:
+    """Общий хвост списка раздела: страница, постраничные ссылки и строка
+    состояния. Через неё проходят и страницы разделов, и окна выбора в заказе,
+    поэтому «стр. 3 из 9» и постраничные ссылки считаются одним способом."""
+    page = _page_param(request.query_params.get("page") or "1")
+    total = extra["total"]
+    pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    sort, direction = _sort_params(request)
+    base_qs = urlencode({k: v for k, v in {
+        **extra, "sort": sort, "dir": direction,
+    }.items() if v not in (None, "")})
+    return {"total": total, "page": page, "pages": pages,
+            "base_qs": base_qs, "sort": sort, "direction": direction, **extra}
+
+
+def _products_listing(db: Session, request: Request) -> dict:
+    """Ровно то, что показывает страница товаров: фильтры, сортировка, страницы.
+    Функция одна на страницу и на окно выбора товара в заказе — иначе окно
+    показало бы другой набор строк при том же запросе, и человек искал бы одно и
+    то же дважды, ничего не заметив."""
+    search = request.query_params.get("search") or None
+    category_id = _to_int(request.query_params.get("category_id"), None)
+    include_deleted = request.query_params.get("include_deleted") == "1"
+    page = _page_param(request.query_params.get("page") or "1")
+    sort, direction = _sort_params(request)
+    items, total = list_products(db, search=search, category_id=category_id,
+                                 include_deleted=include_deleted, page=page,
+                                 sort=sort, direction=direction)
+    rows = [{
+        "id": p.id, "name": p.name, "sku": p.sku,
+        "category_name": _category_label(p.category),
+        "unit": p.unit, "price": p.price, "rest": p.rest,
+        "is_deleted": p.is_deleted,
+    } for p in items]
+    return _listing(request, rows, {
+        "products": rows, "search": search or "", "category_id": category_id,
+        "include_deleted": include_deleted, "total": total,
+    })
+
+
+def _customers_listing(db: Session, request: Request) -> dict:
+    """Список клиентов для страницы клиентов и для окна выбора клиента в
+    заказе. Право на колонку действий даёт вызывающий: в окне её нет."""
+    search = request.query_params.get("search") or None
+    include_deleted = request.query_params.get("include_deleted") == "1"
+    page = _page_param(request.query_params.get("page") or "1")
+    sort, direction = _sort_params(request)
+    items, total = list_customers(db, search=search, include_deleted=include_deleted,
+                                  page=page, sort=sort, direction=direction)
+    rows = [{
+        "id": c.id, "name": c.name, "inn": c.inn, "phone": c.phone,
+        "email": c.email, "personal_discount": c.personal_discount,
+        "is_deleted": c.is_deleted,
+    } for c in items]
+    return _listing(request, rows, {
+        "customers": rows, "search": search or "", "include_deleted": include_deleted,
+        "total": total,
+    })
 
 
 def _pick_by_ids(db: Session, model, ids: list[int]) -> list:
@@ -643,42 +717,32 @@ def create_app() -> FastAPI:
         if user is None:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.products_view)
-        search = request.query_params.get("search") or None
-        raw_category = request.query_params.get("category_id")
-        category_id = _to_int(raw_category, None)
-        include_deleted = request.query_params.get("include_deleted") == "1"
-        raw_page = request.query_params.get("page") or "1"
-        page = _page_param(raw_page)
-        sort, direction = _sort_params(request)
-        items, total = list_products(db, search=search, category_id=category_id,
-                                     include_deleted=include_deleted, page=page,
-                                     sort=sort, direction=direction)
-        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-        products = [
-            {
-                "id": p.id, "name": p.name, "sku": p.sku,
-                "category_name": _category_label(p.category),
-                "unit": p.unit, "price": p.price, "rest": p.rest,
-                "is_deleted": p.is_deleted,
-            }
-            for p in items
-        ]
-        qs = urlencode({k: v for k, v in {
-            "search": search, "category_id": category_id,
-            "include_deleted": "1" if include_deleted else None,
-            "sort": sort, "dir": direction,
-        }.items() if v not in (None, "")})
         return templates.TemplateResponse(request, "products.html", {
-            "title": "Товары", "user": user, "products": products, "total": total,
-            "page": page, "pages": pages, "base_qs": qs, "msg": request.query_params.get("msg"),
-            "search": search or "", "category_id": category_id, "include_deleted": include_deleted,
-            "sort": sort, "direction": direction,
+            "title": "Товары", "user": user, "msg": request.query_params.get("msg"),
             "tree": get_category_tree(db),
+            "live_filter": True, "sort_base": "/products",
+            "actions": True,
             "can_edit": user_has_permission(user, Permission.products_edit),
             "can_stock": user_has_permission(user, Permission.stock_change),
             "can_price": user_has_permission(user, Permission.price_change),
             "can_export": user_has_permission(user, Permission.reports_export),
+            **_products_listing(db, request),
             **_page_context(user),
+        })
+
+    @app.get(PRODUCTS_TABLE)
+    def lookup_products_table(
+        request: Request,
+        user: Annotated[User, Depends(require_permissions(Permission.products_view))] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        """Та же разметка списка товаров, что и на странице, для окна выбора в
+        заказе. Отличие одно — `actions`: колонки выбора строки в окне нет, и
+        остальное — фильтр, сортировка, постраничность — обязано совпадать с
+        тем, что показывает страница."""
+        return templates.TemplateResponse(request, "partials/products_table.html", {
+            **_products_listing(db, request),
+            "sort_base": PRODUCTS_TABLE, "actions": False, "can_edit": False,
         })
 
     @app.get("/products/new")
@@ -1288,31 +1352,26 @@ def create_app() -> FastAPI:
         if user is None:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.customers_manage)
-        search = request.query_params.get("search") or None
-        include_deleted = request.query_params.get("include_deleted") == "1"
-        raw_page = request.query_params.get("page") or "1"
-        page = _page_param(raw_page)
-        sort, direction = _sort_params(request)
-        items, total = list_customers(db, search=search, include_deleted=include_deleted,
-                                      page=page, sort=sort, direction=direction)
-        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-        customers = [{
-            "id": c.id, "name": c.name, "inn": c.inn, "phone": c.phone,
-            "email": c.email, "personal_discount": c.personal_discount,
-            "is_deleted": c.is_deleted,
-        } for c in items]
-        qs = urlencode({k: v for k, v in {
-            "search": search, "include_deleted": "1" if include_deleted else None,
-            "sort": sort, "dir": direction,
-        }.items() if v not in (None, "")})
         return templates.TemplateResponse(request, "customers.html", {
-            "title": "Клиенты", "user": user, "customers": customers, "total": total,
-            "page": page, "pages": pages, "base_qs": qs,
-            "search": search or "", "include_deleted": include_deleted,
-            "sort": sort, "direction": direction,
+            "title": "Клиенты", "user": user,
             "msg": request.query_params.get("msg"),
+            "live_filter": True, "sort_base": "/customers",
+            "actions": True,
             "can_edit": user_has_permission(user, Permission.customers_manage),
+            **_customers_listing(db, request),
             **_page_context(user),
+        })
+
+    @app.get(CUSTOMERS_TABLE)
+    def lookup_customers_table(
+        request: Request,
+        user: Annotated[User, Depends(require_permissions(Permission.customers_manage))] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        """То же, что `lookup_products_table`, для клиентов."""
+        return templates.TemplateResponse(request, "partials/customers_table.html", {
+            **_customers_listing(db, request),
+            "sort_base": CUSTOMERS_TABLE, "actions": False,
         })
 
     @app.get("/customers/new")

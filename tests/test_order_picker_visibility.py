@@ -342,16 +342,26 @@ INNER_MODAL = """<!doctype html><html><head><meta charset="utf-8">
 <style>__CSS__</style>
 <script>
 /* Сеть подменена, всё остальное — настоящее: раскладку выдуманный DOM не знает,
-   а предмет здесь и есть раскладка. Создание товара отвечает отдельно от
-   подстановки, иначе выбор из окна и создание нельзя было бы различить.
+   а предмет здесь и есть раскладка. Эндпоинт разметки отдаёт HTML (у скрипта
+   `response.text()`), подстановка — JSON, создание — JSON с идентификатором.
    Ошибка скрипта объявляется заголовком: иначе прибор молчал бы пустым выводом,
    и переименование селектора выглядело бы как «Chrome ничего не измерил». */
 window.onerror = function (message, source, line) {
   document.title = 'ERROR ' + message + ' @' + line;
 };
+/* Ошибка ВНУТРИ промиса не проходит через window.onerror, и прибор молчал бы
+   пустым выводом — ровно тот класс молчания, из-за которого в прошлом раунде
+   чуть не приняли ложную зелень. */
+window.addEventListener('unhandledrejection', function (event) {
+  var reason = event.reason;
+  document.title = 'ERROR promise: ' + (reason && (reason.message || reason));
+});
 window.fetch = function (url, sent) {
   var post = sent && sent.method === 'POST';
-  return Promise.resolve({ok: true, json: function () {
+  var table = String(url).indexOf('__TABLE__') === 0;
+  return Promise.resolve({ok: true, text: function () {
+    return Promise.resolve(table ? __TABLE_HTML__ : '');
+  }, json: function () {
     return Promise.resolve(post ? __CREATED__ : __ANSWER__);
   }});
 };
@@ -391,19 +401,22 @@ var boxes = document.querySelectorAll('.app-picker');
 var line = boxes[boxes.length - 1];
 var browseBtn = line.querySelector('[data-picker-browse]');
 var createBtn = line.querySelector('[data-picker-create]');
-var browse = document.querySelector('[data-modal=browse]');
-var create = document.querySelector('[data-modal=create]');
+var browse = document.querySelector('[data-modal=browse-products]');
+var create = document.querySelector('[data-modal=create-products]');
 var out = {button: hits(browseBtn), before: read(line)};
 
 browseBtn.click();
 setTimeout(function () {
   var panel = browse.querySelector('.app-modal-panel');
-  var options = browse.querySelector('[data-modal-list]').querySelectorAll('button');
+  var heads = browse.querySelectorAll('th');
+  var rows = browse.querySelectorAll('[data-modal-table] tbody tr');
+  var firstRow = rows[0];
   out.window = {open: browse.getAttribute('data-open'), panel: hits(panel),
-                options: options.length};
-  out.firstOption = {hit: hits(options[0]),
-                     text: options[0] ? options[0].textContent : ''};
-  options[1].click();
+                columns: heads.length, rows: rows.length,
+                sortLinks: browse.querySelectorAll('th a').length,
+                total: (browse.querySelector('[data-modal-table] .text-sm') || {}).textContent};
+  out.firstRow = {hit: hits(firstRow), label: firstRow.getAttribute('data-pick-label')};
+  firstRow.click();
   setTimeout(function () {
     out.chosen = read(line);
     out.afterChoose = browse.getAttribute('data-open');
@@ -418,7 +431,7 @@ setTimeout(function () {
         form.querySelector('input[name=name]').value = 'Гвоздь 3мм';
         out.createWindow = {open: create.getAttribute('data-open'),
                             panel: hits(create.querySelector('.app-modal-panel'))};
-        form.querySelector('button').click();
+        form.querySelector('button[type], button').click();
         setTimeout(function () {
           out.created = read(line);
           out.createClosed = create.getAttribute('data-open');
@@ -427,8 +440,25 @@ setTimeout(function () {
       }, 100);
     }, 100);
   }, 100);
-}, 150);
+}, 200);
 """
+
+TABLE_HTML = """<div class="overflow-x-auto"><table class="w-full border-collapse">
+<thead><tr>
+<th><a href="/api/lookup/products/table?sort=name&amp;dir=desc" class="app-link">Название</a></th>
+<th><a href="/api/lookup/products/table?sort=sku&amp;dir=desc" class="app-link">Артикул</a></th>
+<th><a href="/api/lookup/products/table?sort=category&amp;dir=desc" class="app-link">Категория</a></th>
+<th><a href="/api/lookup/products/table?sort=unit&amp;dir=desc" class="app-link">Ед.</a></th>
+<th><a href="/api/lookup/products/table?sort=price&amp;dir=desc" class="app-link">Цена</a></th>
+<th><a href="/api/lookup/products/table?sort=rest&amp;dir=desc" class="app-link">Остаток</a></th>
+</tr></thead>
+<tbody>
+<tr data-pick-id="1" data-pick-label="Гвоздь 1"><td><a href="/products/1" class="app-link">Гвоздь 1</a></td><td>1</td><td></td><td>шт</td><td>10.00</td><td>5</td></tr>
+<tr data-pick-id="2" data-pick-label="Гвоздь 2"><td><a href="/products/2" class="app-link">Гвоздь 2</a></td><td>2</td><td></td><td>шт</td><td>10.00</td><td>5</td></tr>
+<tr data-pick-id="3" data-pick-label="Гвоздь 3"><td><a href="/products/3" class="app-link">Гвоздь 3</a></td><td>3</td><td></td><td>шт</td><td>10.00</td><td>5</td></tr>
+</tbody></table></div>
+<div class="flex items-center gap-3 mt-4 text-sm"><span>Всего: 3</span>
+<span>Стр. 1 из 1</span></div>"""
 
 CREATED_JSON = json.dumps({"id": 77, "name": "Гвоздь 3мм"}, ensure_ascii=False)
 
@@ -498,6 +528,8 @@ def _measure_add_row() -> dict:
 
 
 def _measure_modal() -> dict:
+    from app.main import PRODUCTS_TABLE
+
     page = _render()
     body = page[page.index("<body"): page.index("</body>")]
     css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
@@ -506,6 +538,8 @@ def _measure_modal() -> dict:
     inner.write_text(
         INNER_MODAL.replace("__CSS__", css).replace("__ANSWER__", ANSWER_JSON)
                    .replace("__CREATED__", CREATED_JSON)
+                   .replace("__TABLE__", PRODUCTS_TABLE)
+                   .replace("__TABLE_HTML__", json.dumps(TABLE_HTML, ensure_ascii=False))
                    .replace("__BODY__", body)
                    .replace("__MEASURE__", MODAL_MEASURE),
         encoding="utf-8")
@@ -539,19 +573,30 @@ def test_the_picker_buttons_are_really_pressable(modal):
     assert modal["button"]["hit"], f"в центре кнопки лежит {modal['button']['by']}"
 
 
-def test_the_browse_window_is_really_on_the_screen(modal):
+def test_the_browse_window_is_the_products_list_itself(modal):
+    """Окно выбора — это список раздела: те же шесть колонок, те же сортируемые
+    заголовки, те же строки. Проверка «в окне есть список» прошла бы и на старой
+    копии, поэтому считаются колонки и ссылки сортировки."""
     assert modal["window"]["open"] == "true", modal
     assert modal["window"]["panel"]["onScreen"], modal["window"]["panel"]
     assert modal["window"]["panel"]["hit"], (
         f"в центре окна лежит {modal['window']['panel']['by']}")
-    assert modal["window"]["options"] == 3, modal["window"]
-    assert modal["firstOption"]["hit"]["onScreen"] and modal["firstOption"]["hit"]["hit"], (
-        f"пункт списка не на экране: {modal['firstOption']}")
+    assert modal["window"]["columns"] == 6, (
+        f"в окне {modal['window']['columns']} колонок: {modal['window']}")
+    assert modal["window"]["sortLinks"] == 6, (
+        "сортировка в окне не по каждой колонке: " + str(modal["window"]))
+    assert modal["window"]["rows"] == 3, modal["window"]
+    assert "Всего" in (modal["window"]["total"] or ""), modal["window"]
+
+
+def test_the_first_row_is_really_on_the_screen_and_clickable(modal):
+    assert modal["firstRow"]["hit"]["onScreen"], modal["firstRow"]
+    assert modal["firstRow"]["hit"]["hit"], (
+        f"в центре строки лежит {modal['firstRow']['hit']['by']}")
 
 
 def test_the_chosen_product_fills_the_order_line(modal):
-    assert modal["chosen"]["hidden"] == "2", modal["chosen"]
-    assert modal["chosen"]["shown"] == "Гвоздь 2", modal["chosen"]
+    assert modal["chosen"] == {"hidden": "1", "shown": "Гвоздь 1"}, modal["chosen"]
     assert modal["afterChoose"] == "false", "окно осталось открытым поверх заполненной строки"
 
 
@@ -702,7 +747,7 @@ function box(el) {
 }
 var button = document.querySelector('[data-picker-create]');
 var notice = document.querySelector('[data-picker-notice]');
-var modal = document.querySelector('[data-modal=create]');
+var modal = document.querySelector('[data-modal=create-products]');
 var out = {
   disabledAttribute: button.getAttribute('disabled'),
   ariaDisabled: button.getAttribute('aria-disabled'),
