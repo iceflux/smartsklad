@@ -12,6 +12,11 @@
 вернёт то, что под ним, — на элемент, который виден. Проверка «список есть в DOM»
 прошла бы на той же поломанной странице.
 
+Тем же прибором проверяется окно выбора товара и форма создания товара: там
+предмет тот же самый. Кнопка «Выбрать товар» может лежать в разметке и при этом
+не наезжать ни на что, а окно — открыться и оказаться за краем экрана; и то и
+другое «есть в DOM» не отличает от рабочего.
+
 Тест гоняет настоящий рендер `/orders/new` через TestClient и собранный
 `app/static/app.css` в headless Chrome — выдуманный DOM ничего не знает о
 раскладке, а раскладка здесь и есть предмет проверки.
@@ -145,7 +150,15 @@ html,body{margin:0;padding:0}iframe{border:0;display:block;height:1200px}
 var timer = setInterval(function () {
   var f = document.getElementById('f');
   var d = f && f.contentDocument;
-  if (!d || d.title.indexOf('RESULT') !== 0) { return; }
+  if (!d) { return; }
+  /* Ошибка скрипта страницы видна иначе только пустым выводом: прибор молчал бы,
+     и падение выглядело бы как «Chrome ничего не измерил». */
+  if (d.title.indexOf('ERROR') === 0) {
+    clearInterval(timer);
+    document.getElementById('out').textContent = d.title;
+    return;
+  }
+  if (d.title.indexOf('RESULT') !== 0) { return; }
   clearInterval(timer);
   document.getElementById('out').textContent = d.title;
 }, 5);
@@ -313,6 +326,195 @@ def test_the_list_stays_attached_to_its_field_when_the_page_scrolls(measured):
         assert abs(after["gap"]) <= 4, (
             f"список {where} оторвался от поля после прокрутки: "
             f"поле ушло, список остался, зазор {after['gap']}px")
+
+
+INNER_MODAL = """<!doctype html><html><head><meta charset="utf-8">
+<style>__CSS__</style>
+<script>
+/* Сеть подменена, всё остальное — настоящее: раскладку выдуманный DOM не знает,
+   а предмет здесь и есть раскладка. Создание товара отвечает отдельно от
+   подстановки, иначе выбор из окна и создание нельзя было бы различить.
+   Ошибка скрипта объявляется заголовком: иначе прибор молчал бы пустым выводом,
+   и переименование селектора выглядело бы как «Chrome ничего не измерил». */
+window.onerror = function (message, source, line) {
+  document.title = 'ERROR ' + message + ' @' + line;
+};
+window.fetch = function (url, sent) {
+  var post = sent && sent.method === 'POST';
+  return Promise.resolve({ok: true, json: function () {
+    return Promise.resolve(post ? __CREATED__ : __ANSWER__);
+  }});
+};
+</script></head>
+<body class="bg-surface text-primary" data-sidebar="expanded" data-nav="closed">
+__BODY__
+<script>__MEASURE__</script>
+</body></html>"""
+
+MODAL_MEASURE = r"""
+function own(el, node) {
+  for (var n = node; n; n = n.parentElement) { if (n === el) return true; }
+  return false;
+}
+function rect(el) {
+  var r = el.getBoundingClientRect();
+  return {x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width),
+          h: Math.round(r.height)};
+}
+function hits(el) {
+  if (!el) return {hit: false};
+  var r = el.getBoundingClientRect();
+  var probe = document.elementFromPoint(Math.round(r.x + r.width / 2),
+                                        Math.round(r.y + r.height / 2));
+  return {hit: own(el, probe), onScreen: r.width > 0 && r.height > 0
+          && r.y >= 0 && r.bottom <= document.documentElement.clientHeight,
+          by: (probe && (probe.className || probe.tagName)) || '(нет)'};
+}
+function read(box) {
+  return {
+    hidden: box.querySelector('input[type=hidden]').value,
+    shown: box.querySelector('input[type=text]').value,
+  };
+}
+
+var boxes = document.querySelectorAll('.app-picker');
+var line = boxes[boxes.length - 1];
+var browseBtn = line.querySelector('[data-picker-browse]');
+var createBtn = line.querySelector('[data-picker-create]');
+var browse = document.querySelector('[data-modal=browse]');
+var create = document.querySelector('[data-modal=create]');
+var out = {button: hits(browseBtn), before: read(line)};
+
+browseBtn.click();
+setTimeout(function () {
+  var panel = browse.querySelector('.app-modal-panel');
+  var options = browse.querySelector('[data-modal-list]').querySelectorAll('button');
+  out.window = {open: browse.getAttribute('data-open'), panel: hits(panel),
+                options: options.length};
+  out.firstOption = {hit: hits(options[0]),
+                     text: options[0] ? options[0].textContent : ''};
+  options[1].click();
+  setTimeout(function () {
+    out.chosen = read(line);
+    out.afterChoose = browse.getAttribute('data-open');
+    browseBtn.click();
+    setTimeout(function () {
+      document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+      out.escaped = browse.getAttribute('data-open');
+      out.afterEscape = read(line);
+      createBtn.click();
+      setTimeout(function () {
+        var form = create.querySelector('[data-create-form]');
+        form.querySelector('input[name=name]').value = 'Гвоздь 3мм';
+        out.createWindow = {open: create.getAttribute('data-open'),
+                            panel: hits(create.querySelector('.app-modal-panel'))};
+        form.querySelector('button').click();
+        setTimeout(function () {
+          out.created = read(line);
+          out.createClosed = create.getAttribute('data-open');
+          document.title = 'RESULT' + JSON.stringify(out) + 'END';
+        }, 200);
+      }, 100);
+    }, 100);
+  }, 100);
+}, 150);
+"""
+
+CREATED_JSON = json.dumps({"id": 77, "name": "Гвоздь 3мм"}, ensure_ascii=False)
+
+
+def _measure_modal() -> dict:
+    page = _render()
+    body = page[page.index("<body"): page.index("</body>")]
+    css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
+    work = Path(tempfile.mkdtemp(prefix="picker-modal-"))
+    inner = work / "inner.html"
+    inner.write_text(
+        INNER_MODAL.replace("__CSS__", css).replace("__ANSWER__", ANSWER_JSON)
+                   .replace("__CREATED__", CREATED_JSON)
+                   .replace("__BODY__", body)
+                   .replace("__MEASURE__", MODAL_MEASURE),
+        encoding="utf-8")
+    outer = work / "outer.html"
+    outer.write_text(
+        OUTER.replace("__WIDTH__", str(WIDTH)).replace("__INNER__", inner.resolve().as_uri()),
+        encoding="utf-8")
+    shell = (f'"{_chrome()}" --headless=new --disable-gpu --no-sandbox '
+             f'--allow-file-access-from-files --window-size=1600,1400 '
+             f'--virtual-time-budget=8000 --dump-dom "{outer.resolve().as_uri()}"')
+    out = subprocess.run(shell, capture_output=True, text=True, encoding="utf-8")
+    match = re.search(r'<pre id="out">(.*?)</pre>', out.stdout, re.DOTALL)
+    assert match, out.stdout[-3000:] + out.stderr[-2000:]
+    raw = html_mod.unescape(match.group(1))
+    assert raw.startswith("RESULT"), repr(raw[:400])
+    return json.loads(raw[len("RESULT"):-len("END")])
+
+
+@pytest.fixture(scope="module")
+def modal() -> dict:
+    if _chrome() is None:
+        pytest.skip("Chrome не установлен")
+    return _measure_modal()
+
+
+def test_the_picker_buttons_are_really_pressable(modal):
+    """Кнопка, которая есть в разметке, но не на экране, — это ровно тот дефект,
+    о котором предупреждает бриф: проверка «кнопка есть» прошла бы на странице,
+    где по ней нельзя нажать."""
+    assert modal["button"]["onScreen"], modal["button"]
+    assert modal["button"]["hit"], f"в центре кнопки лежит {modal['button']['by']}"
+
+
+def test_the_browse_window_is_really_on_the_screen(modal):
+    assert modal["window"]["open"] == "true", modal
+    assert modal["window"]["panel"]["onScreen"], modal["window"]["panel"]
+    assert modal["window"]["panel"]["hit"], (
+        f"в центре окна лежит {modal['window']['panel']['by']}")
+    assert modal["window"]["options"] == 3, modal["window"]
+    assert modal["firstOption"]["hit"]["onScreen"] and modal["firstOption"]["hit"]["hit"], (
+        f"пункт списка не на экране: {modal['firstOption']}")
+
+
+def test_the_chosen_product_fills_the_order_line(modal):
+    assert modal["chosen"]["hidden"] == "2", modal["chosen"]
+    assert modal["chosen"]["shown"] == "Гвоздь 2", modal["chosen"]
+    assert modal["afterChoose"] == "false", "окно осталось открытым поверх заполненной строки"
+
+
+def test_escape_closes_the_window_without_choosing_anything(modal):
+    assert modal["escaped"] == "false", "Escape не закрыл окно"
+    assert modal["afterEscape"] == modal["chosen"], (
+        f"Escape подменил товар: {modal['afterEscape']}")
+
+
+def test_the_create_window_is_on_the_screen_and_its_product_fills_the_line(modal):
+    assert modal["createWindow"]["open"] == "true", modal
+    assert modal["createWindow"]["panel"]["onScreen"] and modal["createWindow"]["panel"]["hit"], \
+        modal["createWindow"]["panel"]
+    assert modal["created"] == {"hidden": "77", "shown": "Гвоздь 3мм"}, (
+        f"созданный товар не стал выбранным в строке: {modal['created']}")
+    assert modal["createClosed"] == "false", "форма создания осталась открытой"
+
+
+def test_the_window_rules_reach_the_built_stylesheet():
+    """Окно открыто атрибутом `data-open`, и правило живёт в артефакте: класс,
+    выпавший из сборки, дал бы окно в разметке и полноэкранную пустоту на экране."""
+    css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
+    hidden = re.search(r"\.app-modal\{([^}]*)\}", css)
+    assert hidden, "правило .app-modal не доехало до сборки"
+    assert "display:none" in hidden.group(1).replace(" ", ""), hidden.group(1)
+    opened = re.search(r"\.app-modal\[data-open[^\]]*\]\{([^}]*)\}", css)
+    assert opened, "окно не открывается: правила по data-open нет в сборке"
+    assert "display:flex" in opened.group(1).replace(" ", ""), opened.group(1)
+    panel = re.search(r"\.app-modal-panel\{([^}]*)\}", css)
+    assert panel and panel.group(1).strip(), "панель окна без правил"
+    # Артефакт собран и лежит в репозитории, поэтому проверка только его не
+    # поймала бы вычищенное правило в исходнике: сборку никто не запускал бы.
+    source = (ROOT / "app" / "static" / "tailwind.css").read_text(encoding="utf-8")
+    block = re.search(r"\.app-modal\[data-open=\"true\"\]\s*\{([^}]*)\}", source)
+    assert block, "в исходнике нет правила, открывающего окно"
+    assert "display: flex" in block.group(1), (
+        f"окно не открывается: {block.group(1)!r}")
 
 
 def test_the_list_is_placed_by_the_script_under_its_field():

@@ -202,6 +202,40 @@
         font-size: 0.75rem;
         color: rgb(var(--color-muted));
     }
+    /* Окно выбора товара и форма создания товара у строки заказа. Открыто не
+       классом, а тем же атрибутом `data-open`, что и список подстановки: состояние
+       тогда нигде не дублируется. Затемнение — своё, а не `.app-overlay`: то
+       правило гасится на широком экране и при `data-nav=closed`, то есть на
+       странице без открытого меню его нет вовсе. Панель не ловит фокус и не
+       закрывает страницу: закрыть её можно Escape, кнопкой и кликом мимо, то
+       есть с клавиатуры из неё всегда можно выйти. */
+    .app-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 1rem;
+        overflow-y: auto;
+        background-color: rgb(var(--color-primary) / 0.4);
+    }
+    .app-modal[data-open="true"] {
+        display: flex;
+    }
+    .app-modal-panel {
+        width: 100%;
+        max-width: 32rem;
+        max-height: 85vh;
+        overflow-y: auto;
+        border-radius: 0.25rem;
+        box-shadow: 0 0.5rem 1rem rgb(var(--color-line) / 0.25);
+    }
+    .app-modal-list {
+        margin-top: 0.5rem;
+        max-height: 18rem;
+        overflow-y: auto;
+    }
     @media (min-width: 1024px) {
         /* Широкий экран: сайдбар постоянная колонка, поэтому его
            обязательно видно — без `visibility: visible` базовое правило

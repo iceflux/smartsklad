@@ -175,6 +175,32 @@ def _client_options(db: Session, include_deleted: bool = False, order=None) -> l
     return options
 
 
+PRODUCT_CREATE_PERMS = (Permission.products_edit, Permission.price_change)
+"""Права, без которых товар из заказа не создать. `price.change` — не украшение:
+`POST /api/products` требует его вместе с `products.edit`, если в теле есть цена,
+а в форме рядом с заказом цена есть всегда."""
+
+
+def _product_create(user: User) -> dict:
+    """Может ли человек создать товар прямо из строки заказа, и если нет — что
+    именно ему не хватает. Подпись берётся из `PERMISSION_LABELS`: человек не
+    может действовать на код `products.edit`, а уведомление обязано быть
+    понятным, а не точным."""
+    can = all(user_has_permission(user, perm) for perm in PRODUCT_CREATE_PERMS)
+    if can:
+        return {"can_create_products": True, "product_create_notice": None}
+    missing = [PERMISSION_LABELS[perm.value] for perm in PRODUCT_CREATE_PERMS
+               if not user_has_permission(user, perm)]
+    return {
+        "can_create_products": False,
+        "product_create_notice": (
+            "Создание товара недоступно: нет "
+            + ("право" if len(missing) == 1 else "прав")
+            + " «" + "», «".join(missing) + "»."
+        ),
+    }
+
+
 def _picker_customer(db: Session, order) -> dict:
     """Текущий клиент заказа для подстановки. Мягко удалённый помечается словами,
     а не флагом: в форме нет кода, который этот флаг прочитал бы."""
@@ -1396,6 +1422,7 @@ def create_app() -> FastAPI:
             "title": "Новый заказ", "user": user, "order": None, "is_new": True,
             "customer_picker": {"id": "", "label": ""}, "line_labels": {},
             "msg": request.query_params.get("msg"),
+            **_product_create(user),
             **_page_context(user),
         })
 
@@ -1546,6 +1573,7 @@ def create_app() -> FastAPI:
             "customer_picker": _picker_customer(db, order),
             "line_labels": _picker_labels(db, (i.product_id for i in order.items)),
             "msg": request.query_params.get("msg"),
+            **_product_create(user),
             **_page_context(user),
         })
 

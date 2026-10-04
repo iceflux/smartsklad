@@ -6,6 +6,10 @@
     <input type="text" class="border p-2 w-full" role="combobox"
            aria-expanded="false" aria-autocomplete="list" aria-label="{{ aria }}"
            value="{{ current.label }}" placeholder="{{ hint }}" autocomplete="off">
+    {% if kind == "products" %}
+    <button type="button" class="app-btn border px-2 py-1 text-sm mt-1 mr-1" data-picker-browse>Выбрать товар</button>
+    <button type="button" class="app-btn border px-2 py-1 text-sm mt-1" data-picker-create{% if not can_create_products %} disabled{% endif %}>Создать товар</button>
+    {% endif %}
     <ul class="app-picker-list" role="listbox" aria-label="{{ aria }}"></ul>
     <p class="app-picker-note" role="status"></p>
 </div>
@@ -21,6 +25,7 @@
     <h1 class="text-2xl font-bold mb-4">{% if is_new %}Новый заказ{% else %}Заказ {{ order.number }}{% endif %}</h1>
 
     {% if msg %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">{{ msg }}</p>{% endif %}
+    {% if product_create_notice %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">{{ product_create_notice }}</p>{% endif %}
 
     <form method="post" data-picker-form
           action="{% if is_new %}/orders/new{% else %}/orders/{{ order.id }}/edit{% endif %}" class="space-y-4">
@@ -65,6 +70,43 @@
         <button class="app-btn-accent bg-accent text-on-accent px-4 py-2">Сохранить</button>
         <a href="{% if order %}/orders/{{ order.id }}{% else %}/orders{% endif %}" class="app-btn ml-2 border px-4 py-2">Отмена</a>
     </form>
+
+    <div class="app-modal" data-open="false" data-modal="browse">
+        <div class="app-modal-panel bg-surface-raised border border-line-strong p-4"
+             role="dialog" aria-modal="true" aria-label="Выбор товара">
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="font-semibold">Выбор товара</h2>
+                <button type="button" class="app-btn border px-2 py-1" data-modal-close>Закрыть</button>
+            </div>
+            <input type="search" class="border p-2 w-full" data-modal-query autocomplete="off"
+                   aria-label="Поиск товара" placeholder="Начните вводить название или артикул">
+            <p class="app-picker-note" role="status" data-modal-note></p>
+            <ul class="app-modal-list" data-modal-list></ul>
+        </div>
+    </div>
+
+    <div class="app-modal" data-open="false" data-modal="create">
+        <div class="app-modal-panel bg-surface-raised border border-line-strong p-4"
+             role="dialog" aria-modal="true" aria-label="Создание товара">
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="font-semibold">Новый товар</h2>
+                <button type="button" class="app-btn border px-2 py-1" data-modal-close>Закрыть</button>
+            </div>
+            <form class="space-y-2" data-create-form>
+                <div>
+                    <label class="block text-sm" for="new-product-name">Название</label>
+                    <input id="new-product-name" name="name" class="border p-2 w-full" autocomplete="off">
+                </div>
+                <div>
+                    <label class="block text-sm" for="new-product-price">Цена</label>
+                    <input id="new-product-price" name="price" type="number" min="0" step="0.01"
+                           value="0" class="border p-2 w-full">
+                </div>
+                <p class="app-picker-note" role="status" data-create-note></p>
+                <button class="app-btn-accent bg-accent text-on-accent px-3 py-2">Создать</button>
+            </form>
+        </div>
+    </div>
 </main>
 <template id="item-row">
     <tr>{{ line("", "", 1, 0) }}</tr>
@@ -73,7 +115,11 @@
 (function () {
     var MIN_QUERY = 2;
     var DEBOUNCE_MS = 300;
+    var LOOKUP_PRODUCTS = "/api/lookup/products";
+    var CREATE_PRODUCT = "/api/products";
     var states = new WeakMap();
+    var target = null;
+    var modalTimer = null;
 
     function stateOf(box) {
         if (!states.has(box)) {
@@ -217,7 +263,7 @@
     if (form) {
         form.addEventListener("focusin", function (event) {
             var box = boxOf(event);
-            if (!box) return;
+            if (!box || event.target !== stateOf(box).text) return;
             var state = stateOf(box);
             state.text.select();
             /* Пустое поле нового заказа предлагает последние выбранные: иначе
@@ -267,6 +313,149 @@
         var body = document.getElementById("items-body");
         body.appendChild(tpl.content.firstElementChild.cloneNode(true));
     }
+
+    /* Окно выбора товара и форма создания товара. Обе нужны рядом с подстановкой,
+       а не на странице товаров: опечатку в названии человек правит, не закрывая
+       заказ, а выбрать из тысяч строк можно просмотром. Список окна спрашивает
+       ТОТ ЖЕ `/api/lookup/products`, что и набор в поле: второй путь запросов
+       разошёлся бы с подстановкой, и заметил бы это только тот, кто искал одно
+       и то же дважды. */
+    function modalByName(name) {
+        return document.querySelector("[data-modal=" + name + "]");
+    }
+
+    function openModal(name, box) {
+        target = box;
+        var modal = modalByName(name);
+        modal.setAttribute("data-open", "true");
+        var field = modal.querySelector("input");
+        field.value = "";
+        field.focus();
+    }
+
+    function closeModal(name) {
+        modalByName(name).setAttribute("data-open", "false");
+        if (!target) return;
+        var field = target.querySelector("input[type=text]");
+        target = null;
+        field.focus();
+    }
+
+    function choose(item, name) {
+        take(target, stateOf(target), item);
+        closeModal(name);
+    }
+
+    function noteOf(modal) {
+        return modal.querySelector("p");
+    }
+
+    function paintModal(modal, answer) {
+        var list = modal.querySelector("ul");
+        var note = noteOf(modal);
+        list.innerHTML = "";
+        var items = answer.items || [];
+        for (var i = 0; i < items.length; i++) {
+            var row = document.createElement("li");
+            var option = document.createElement("button");
+            option.type = "button";
+            option.className = "app-btn w-full text-left mb-1";
+            option.textContent = items[i].label +
+                (items[i].hint ? " — " + items[i].hint : "");
+            option.addEventListener("click", (function (picked) {
+                return function () { choose(picked, "browse"); };
+            })(items[i]));
+            row.appendChild(option);
+            list.appendChild(row);
+        }
+        if (!items.length) {
+            note.textContent = "Ничего не найдено";
+        } else if (answer.recent) {
+            note.textContent = "Последние выбранные";
+        } else if (answer.total > items.length) {
+            note.textContent = "Показаны первые " + answer.limit + " из " +
+                answer.total + " — уточните запрос";
+        } else {
+            note.textContent = "";
+        }
+    }
+
+    function askModal(modal, query) {
+        fetch(LOOKUP_PRODUCTS + "?q=" + encodeURIComponent(query))
+            .then(function (response) { return response.json(); })
+            .then(function (answer) { paintModal(modal, answer); });
+    }
+
+    var browseModal = modalByName("browse");
+    var createModal = modalByName("create");
+    var modalQuery = browseModal.querySelector("input");
+
+    /* Обработчики висят на форме, а не на кнопках: строка, добавленная кнопкой
+       «Добавить строку», копируется из <template>, и кнопки на ней — другие
+       элементы, чем те, что были на странице при загрузке. */
+    if (form) {
+        form.addEventListener("click", function (event) {
+            var browse = event.target.closest("[data-picker-browse]");
+            if (browse) {
+                openModal("browse", browse.closest(".app-picker"));
+                askModal(browseModal, "");
+                return;
+            }
+            var create = event.target.closest("[data-picker-create]");
+            if (create && create.getAttribute("disabled") === null) {
+                openModal("create", create.closest(".app-picker"));
+            }
+        });
+    }
+
+    modalQuery.addEventListener("input", function () {
+        if (modalTimer !== null) clearTimeout(modalTimer);
+        modalTimer = setTimeout(function () {
+            askModal(browseModal, modalQuery.value.trim());
+        }, DEBOUNCE_MS);
+    });
+
+    Array.prototype.forEach.call(
+        document.querySelectorAll("[data-modal-close]"),
+        function (button) {
+            button.addEventListener("click", function () {
+                closeModal(button.closest("[data-modal=create]") ? "create" : "browse");
+            });
+        });
+
+    document.addEventListener("click", function (event) {
+        if (event.target === browseModal) closeModal("browse");
+        if (event.target === createModal) closeModal("create");
+    });
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") return;
+        if (browseModal.getAttribute("data-open") === "true") closeModal("browse");
+        if (createModal.getAttribute("data-open") === "true") closeModal("create");
+    });
+
+    createModal.querySelector("form").addEventListener("submit", function (event) {
+        event.preventDefault();
+        var note = noteOf(createModal);
+        fetch(CREATE_PRODUCT, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                name: createModal.querySelector("input[name=name]").value.trim(),
+                price: Number(createModal.querySelector("input[name=price]").value) || 0,
+            }),
+        }).then(function (response) {
+            return response.json().then(function (body) {
+                return {ok: response.ok, body: body};
+            });
+        }).then(function (answer) {
+            if (!answer.ok) {
+                note.textContent = answer.body.detail || "Не удалось создать товар";
+                return;
+            }
+            choose({id: answer.body.id, label: answer.body.name}, "create");
+        });
+    });
 })();
 </script>
 {% endblock %}
