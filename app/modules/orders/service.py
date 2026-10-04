@@ -284,6 +284,55 @@ def get_order(db, order_id):
     return db.get(Order, order_id)
 
 
+RECENT_WINDOW = 50
+"""Сколько последних заказов смотрят, чтобы набрать 10 разных сущностей.
+Десять заказов мало: один заказ может содержать один и тот же товар дважды, а
+заказов без новых клиентов подряд бывает много. Окно взято с запасом, а не
+«бесконечный просмотр таблицы»."""
+
+
+def recent_customer_ids(db, limit: int) -> list[int]:
+    """Клиенты последних заказов, свежие первыми.
+
+    Заказов по пользователям в базе нет — таблица `orders` не помнит, кто их
+    создал, а `create_order` принимает пользователя только для аудита. Поэтому
+    «последние выбранные» — это последние заказы вообще, а не этого человека:
+    придумывать принадлежность заказа значило бы либо врать, либо тащить миграцию
+    с новой колонкой, чего владелец не просил.
+
+    Мягко удалённые заказы не считаются: их позиции и клиент человек не выбирал.
+    """
+    rows = (db.query(Order.customer_id)
+            .filter(Order.deleted_at.is_(None))
+            .order_by(Order.id.desc()).limit(RECENT_WINDOW).all())
+    return _first_distinct(rows, limit)
+
+
+def recent_product_ids(db, limit: int) -> list[int]:
+    """Товары последних заказов, свежие первыми. Порядок — по заказу, внутри
+    заказа по строке, то есть последним выбранным в последнем заказе."""
+    rows = (db.query(OrderItem.product_id)
+            .join(Order, Order.id == OrderItem.order_id)
+            .filter(Order.deleted_at.is_(None))
+            .order_by(Order.id.desc(), OrderItem.id.desc())
+            .limit(RECENT_WINDOW).all())
+    return _first_distinct(rows, limit)
+
+
+def _first_distinct(rows, limit: int) -> list[int]:
+    """Разные значения по порядку строк, до `limit`. Список, а не множество:
+    множество не умеет «свежие первыми»."""
+    seen: list[int] = []
+    for row in rows:
+        value = row[0]
+        if value in seen:
+            continue
+        seen.append(value)
+        if len(seen) == limit:
+            break
+    return seen
+
+
 def customer_order_stats(db, customer_id):
     q = db.query(Order).filter(
         Order.customer_id == customer_id,

@@ -110,6 +110,8 @@ from app.modules.orders.service import (
     delete_order,
     get_order,
     list_orders,
+    recent_customer_ids,
+    recent_product_ids,
     restore_order,
     update_order,
 )
@@ -233,6 +235,20 @@ def _lookup_query(raw: str) -> str | None:
     разное на двух страницах."""
     query = (raw or "").strip()
     return query if len(query) >= SEARCH_MIN_QUERY else None
+
+
+def _pick_by_ids(db: Session, model, ids: list[int]) -> list:
+    """Строки по списку идентификаторов, в том же порядке.
+
+    `IN` идёт по первичному ключу, а порядок строк после него не задан, то есть
+    «свежие первыми» пришлось бы восстанавливать здесь. Мягко удалённые пропускаются:
+    предлагать выбрать удалённое бессмысленно, и в поиске их тоже нет.
+    """
+    if not ids:
+        return []
+    rows = {row.id: row for row in db.query(model).filter(
+        model.id.in_(ids), model.is_deleted.is_(False)).all()}
+    return [rows[i] for i in ids if i in rows]
 
 
 def _sort_params(request: Request) -> tuple[str | None, str | None]:
@@ -1616,7 +1632,16 @@ def create_app() -> FastAPI:
         user: Annotated[User, Depends(require_permissions(Permission.customers_manage))] = None,
         db: Annotated[Session, Depends(get_db)] = None,
     ):
-        query = _lookup_query(q)
+        raw = (q or "").strip()
+        if raw == "":
+            rows = _pick_by_ids(db, Customer, recent_customer_ids(db, LOOKUP_LIMIT))
+            return {
+                "items": [{"id": c.id, "label": c.name,
+                           "hint": " · ".join(part for part in (c.phone, c.inn) if part)}
+                          for c in rows],
+                "total": len(rows), "limit": LOOKUP_LIMIT, "recent": True,
+            }
+        query = _lookup_query(raw)
         if query is None:
             return {"items": [], "total": 0, "limit": LOOKUP_LIMIT}
         items, total = list_customers(db, search=query, page_size=LOOKUP_LIMIT)
@@ -1633,7 +1658,16 @@ def create_app() -> FastAPI:
         user: Annotated[User, Depends(require_permissions(Permission.products_view))] = None,
         db: Annotated[Session, Depends(get_db)] = None,
     ):
-        query = _lookup_query(q)
+        raw = (q or "").strip()
+        if raw == "":
+            rows = _pick_by_ids(db, Product, recent_product_ids(db, LOOKUP_LIMIT))
+            return {
+                "items": [{"id": p.id, "label": p.name,
+                           "hint": f"{group_number(p.price, 2)} ₽ · ост. {group_number(p.rest)}"}
+                          for p in rows],
+                "total": len(rows), "limit": LOOKUP_LIMIT, "recent": True,
+            }
+        query = _lookup_query(raw)
         if query is None:
             return {"items": [], "total": 0, "limit": LOOKUP_LIMIT}
         items, total = list_products(db, search=query, page_size=LOOKUP_LIMIT)

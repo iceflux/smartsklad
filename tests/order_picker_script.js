@@ -373,8 +373,44 @@ const THREE = {
     placed.resize();
     assert.strictEqual(placed.pickers[0].list.style.top, '292px');
 
+// 15. Пустое поле нового заказа при фокусе просит последние выбранные.
+    const RECENT = {
+        items: [{id: 11, label: 'Гвоздь'}, {id: 12, label: 'Шуруп'}],
+        total: 2, limit: 10, recent: true,
+    };
+    const fresh = run([RECENT], {pickers: [makePicker('customers', '', '')]});
+    fresh.focus(fresh.pickers[0]);
+    await fresh.flush();
+    assert.strictEqual(fresh.requests.length, 1, 'пустое поле не спросило последние выбранные');
+    assert.strictEqual(fresh.requests[0], '/api/lookup/customers?q=',
+        'запрос пошёл не на подстановку: ' + fresh.requests[0]);
+    assert.strictEqual(fresh.pickers[0].list.children.length, 2);
+    assert.strictEqual(fresh.pickers[0].note.textContent, 'Последние выбранные',
+        'список последних не отличить от результатов поиска');
+
+    // 16. Заполненное поле молчит: там уже есть значение, и список только мешал бы.
+    const filled = run([RECENT]);
+    filled.focus(filled.pickers[0]);
+    await filled.flush();
+    assert.strictEqual(filled.requests.length, 0,
+        'поле с выбранным значением запросило последние выбранные');
+    assert.strictEqual(filled.pickers[0].box.getAttribute('data-open'), 'false');
+
+    // 17. Начатый набор отменяет последние: человек ищет, а не выбирает из того,
+    //     что и так на руках.
+    const typing = run([RECENT, THREE], {pickers: [makePicker('customers', '', '')]});
+    typing.focus(typing.pickers[0]);
+    await typing.flush();
+    typing.type(typing.pickers[0], 'Гвозд');
+    await typing.flush();
+    assert.strictEqual(typing.requests.length, 2);
+    assert.ok(/q=%D0%93%D0%B2%D0%BE%D0%B7%D0%B4/.test(typing.requests[1]),
+        'второй запрос не про набор: ' + typing.requests[1]);
+    assert.strictEqual(typing.pickers[0].note.textContent, '',
+        'подсказка про последние выбранные осталась после набора');
+
     console.log('ok');
 })().catch((e) => {
-    console.error(e.message);
+    console.error(e.stack || e.message);
     process.exit(1);
 });

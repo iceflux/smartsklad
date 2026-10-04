@@ -152,6 +152,8 @@
         state.active = -1;
         if (!state.items.length) {
             say(state, "Ничего не найдено");
+        } else if (answer.recent) {
+            say(state, "Последние выбранные");
         } else if (answer.total > state.items.length) {
             say(state, "Показаны первые " + answer.limit + " из " + answer.total +
                 " — уточните запрос");
@@ -215,7 +217,16 @@
     if (form) {
         form.addEventListener("focusin", function (event) {
             var box = boxOf(event);
-            if (box) stateOf(box).text.select();
+            if (!box) return;
+            var state = stateOf(box);
+            state.text.select();
+            /* Пустое поле нового заказа предлагает последние выбранные: иначе
+               список появляется только после двух букв, а набирать название
+               товара, который уже брали, не хочется. Заполненное поле молчит —
+               там уже есть значение, и выпадающий список только мешал бы. */
+            if (state.text.value === "" && !state.items.length && state.timer === null) {
+                ask(box, state, "");
+            }
         });
         form.addEventListener("input", function (event) {
             var box = boxOf(event);
