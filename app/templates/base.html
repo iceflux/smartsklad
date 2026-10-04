@@ -158,17 +158,37 @@
 <script>
 (function () {
     var DEBOUNCE_MS = 300;
+
+    function queryOf(form) {
+        return new URLSearchParams(new FormData(form)).toString();
+    }
+
     function liveFilterDebounce(form) {
         var field = form.querySelector("input[name=search]");
         if (!field) return;
         var list = document.querySelector("[data-live-list]");
+        if (!list) return;
         var timer = null;
         field.addEventListener("input", function () {
             if (timer !== null) clearTimeout(timer);
-            if (list) list.setAttribute("aria-busy", "true");
+            list.setAttribute("aria-busy", "true");
             timer = setTimeout(function () {
-                if (list) list.removeAttribute("aria-busy");
-                form.requestSubmit();
+                var sent = queryOf(form);
+                var url = form.action + "?" + sent;
+                fetch(url).then(function (response) {
+                    return response.text();
+                }).then(function (html) {
+                    /* Человек напечатал ещё, пока ответ летел: этот ответ уже не
+                       про то, что в поле, и затирать им свежий список нельзя. */
+                    if (queryOf(form) !== sent) return;
+                    var fresh = new DOMParser()
+                        .parseFromString(html, "text/html")
+                        .querySelector("[data-live-list]");
+                    if (!fresh) return;
+                    list.innerHTML = fresh.innerHTML;
+                    list.removeAttribute("aria-busy");
+                    window.history.replaceState(null, "", url);
+                });
             }, DEBOUNCE_MS);
         });
     }

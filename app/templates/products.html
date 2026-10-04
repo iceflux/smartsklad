@@ -58,7 +58,8 @@
     </form>
     {% endif %}
 
-    <div data-live-list class="overflow-x-auto">
+    <div data-live-list>
+    <div class="overflow-x-auto">
     <table class="w-full border-collapse">
         <thead>
             <tr class="border-b text-left">
@@ -117,6 +118,7 @@
         {% if page > 1 %}<a class="app-link text-accent" href="/products?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">Назад</a>{% endif %}
         <span>Стр. {{ page }} из {{ pages }}</span>
         {% if page < pages %}<a class="app-link text-accent" href="/products?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Вперёд</a>{% endif %}
+    </div>
     </div>
 </main>
 {% endblock %}
