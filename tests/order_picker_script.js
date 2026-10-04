@@ -74,7 +74,6 @@ function makeEl(tag, attrs) {
         children: [],
         parentNode: null,
         value: '',
-        textContent: '',
         className: (attrs && attrs.class) || '',
         _handlers: {},
     };
@@ -91,6 +90,18 @@ function makeEl(tag, attrs) {
         set: (raw) => {
             html = String(raw);
             if (html === '') el.children.length = 0;
+        },
+    });
+    /* `textContent` у настоящего элемента не только читается, но и ЗАМЕЩАЕТ
+       содержимое: присваивание вычищает детей. Плашка о недостающем праве
+       закрывается именно так — `textContent = ""`, — и без этого прибор счёл бы
+       плашку закрытой, когда на экране осталась бы кнопка «Скрыть». */
+    let text = '';
+    Object.defineProperty(el, 'textContent', {
+        get: () => text,
+        set: (raw) => {
+            text = String(raw);
+            el.children.length = 0;
         },
     });
     el.setAttribute = (key, raw) => {
@@ -148,6 +159,8 @@ function dispatch(target, type, extra, documentHandlers) {
     return event;
 }
 
+const NOTICE = 'Создание товара недоступно: нет права «Создание и изменение товаров».';
+
 function makePicker(kind, value, label, blocked) {
     const box = makeEl('div', {
         'class': 'app-picker',
@@ -166,7 +179,8 @@ function makePicker(kind, value, label, blocked) {
         box.appendChild(makeEl('button', {'class': 'app-btn', 'data-picker-browse': ''}));
         box.appendChild(makeEl('button', {
             'class': 'app-btn', 'data-picker-create': '',
-            ...(blocked ? {'disabled': 'disabled'} : {}),
+            'aria-disabled': blocked ? 'true' : 'false',
+            ...(blocked ? {'data-notice': NOTICE} : {}),
         }));
     }
     box.appendChild(makeEl('ul', {'class': 'app-picker-list'}));
@@ -268,6 +282,8 @@ function run(payloads, options) {
     const root = makeEl('body');
     form.appendChild(addButton);
     form.appendChild(items);
+    const notice = makeEl('p', {'class': 'app-notice', 'data-picker-notice': ''});
+    form.appendChild(notice);
     root.appendChild(form);
     root.appendChild(template);
     root.appendChild(browse.modal);
@@ -333,7 +349,7 @@ function run(payloads, options) {
     const fire = (target, type, extra) => dispatch(target, type, extra, documentHandlers);
     return {
         pickers, form, requests, calls, timers, outside, browse, create,
-        addButton, items, template, fire,
+        addButton, items, template, fire, notice,
         flush: () => {
             for (const timer of timers) {
                 if (!timer.cancelled) timer.fn();
@@ -666,13 +682,43 @@ const THREE = {
     assert.strictEqual(refused.pickers[0].hidden.value, '',
         'в строку попал товар, которого нет');
 
-    // 24. Погашенная кнопка не открывает ничего: `disabled` — не только картинка,
-    //     но и в разметке, и в обработчике.
+    // 24. Недоступная кнопка не открывает форму создания, а показывает плашку с
+    //     недостающим правом. Настоящий `disabled` сюда не годится: он не
+    //     получает события click, и объяснение показать было бы нечем.
     const blocked = run([{id: 41, name: 'Гвоздь'}],
                         {pickers: [makePicker('products', '', '', true)]});
+    assert.strictEqual(blocked.notice.textContent, '',
+        'плашка о недостающем праве висит до нажатия');
     blocked.click(blocked.pickers[0].create);
     assert.strictEqual(blocked.create.modal.getAttribute('data-open'), 'false',
-        'погашенная кнопка всё равно открыла форму создания');
+        'недоступная кнопка всё равно открыла форму создания');
+    assert.strictEqual(blocked.pickers[0].hidden.value, '',
+        'недоступная кнопка что-то выбрала в строке');
+    assert.strictEqual(blocked.notice.textContent, NOTICE,
+        'плашка не назвала недостающее право: ' + blocked.notice.textContent);
+    assert.strictEqual(blocked.notice.children.length, 1,
+        'в плашке не кнопка «Скрыть»: ' + blocked.notice.children.length);
+    const closer = blocked.notice.children[0];
+    assert.strictEqual(closer.getAttribute('data-notice-close'), '',
+        'плашка не закрывается');
+    blocked.click(closer);
+    assert.strictEqual(blocked.notice.textContent, '',
+        'плашка не закрылась: ' + blocked.notice.textContent);
+    assert.strictEqual(blocked.notice.children.length, 0,
+        'после закрытия в плашке осталась кнопка — textContent не чистит детей');
+
+    // 24a. Нажатие второй раз показывает плашку снова, а у кого права есть —
+    //      ничего не показывает и открывает форму.
+    blocked.click(blocked.pickers[0].create);
+    assert.strictEqual(blocked.notice.textContent, NOTICE,
+        'плашка не возвращается после закрытия');
+    const allowed = run([{id: 42, name: 'Шуруп'}],
+                        {pickers: [makePicker('products', '', '')]});
+    allowed.click(allowed.pickers[0].create);
+    assert.strictEqual(allowed.notice.textContent, '',
+        'у кого право есть, показана плашка: ' + allowed.notice.textContent);
+    assert.strictEqual(allowed.create.modal.getAttribute('data-open'), 'true',
+        'у кого право есть, форма не открылась');
 
     // 25. Строка, добавленная позже, работает: обработчики висят на форме, а не
     //     на кнопках, иначе клон из <template> остался бы с мёртвыми кнопками.

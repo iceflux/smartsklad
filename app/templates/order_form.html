@@ -6,10 +6,10 @@
     <input type="text" class="border p-2 w-full" role="combobox"
            aria-expanded="false" aria-autocomplete="list" aria-label="{{ aria }}"
            value="{{ current.label }}" placeholder="{{ hint }}" autocomplete="off">
-    {% if kind == "products" %}
-    <button type="button" class="app-btn border px-2 py-1 text-sm mt-1 mr-1" data-picker-browse>Выбрать товар</button>
-    <button type="button" class="app-btn border px-2 py-1 text-sm mt-1" data-picker-create{% if not can_create_products %} disabled{% endif %}>Создать товар</button>
-    {% endif %}
+{% if kind == "products" %}
+<button type="button" class="app-btn border px-2 py-1 text-sm mt-1 mr-1" data-picker-browse>Выбрать товар</button>
+<button type="button" class="app-btn border px-2 py-1 text-sm mt-1" data-picker-create aria-disabled="{{ "false" if can_create_products else "true" }}"{% if not can_create_products %} data-notice="{{ product_create_notice }}"{% endif %}>Создать товар</button>
+{% endif %}
     <ul class="app-picker-list" role="listbox" aria-label="{{ aria }}"></ul>
     <p class="app-picker-note" role="status"></p>
 </div>
@@ -25,7 +25,7 @@
     <h1 class="text-2xl font-bold mb-4">{% if is_new %}Новый заказ{% else %}Заказ {{ order.number }}{% endif %}</h1>
 
     {% if msg %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">{{ msg }}</p>{% endif %}
-    {% if product_create_notice %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">{{ product_create_notice }}</p>{% endif %}
+    <p class="app-notice mb-4 bg-danger-bg border border-danger-border p-2" data-picker-notice role="status"></p>
 
     <form method="post" data-picker-form
           action="{% if is_new %}/orders/new{% else %}/orders/{{ order.id }}/edit{% endif %}" class="space-y-4">
@@ -350,6 +350,32 @@
         return modal.querySelector("p");
     }
 
+    /* Права: кнопка не `disabled`, а `aria-disabled` — по двум причинам, и обе
+       поведенческие. Настоящий `disabled` не получает события click и не берётся
+       с клавиатуры, то есть «оставить гашеной и объяснить по клику» невозможно:
+       нажать не на что, а с клавиатуры до неё не дойти. С `aria-disabled`
+       кнопка остаётся видимой, доступной и фокусируемой, но ничего не делает и
+       показывает плашку с названием недостающего права — словами, из
+       PERMISSION_LABELS. Плашка появляется по клику, а не висит всегда: человек
+       без права не должен платить за чужое отсутствие права, и закрывается
+       крестиком, как любое сообщение страницы. */
+    var notice = document.querySelector("[data-picker-notice]");
+
+    function showNotice(text) {
+        if (!notice || !text) return;
+        notice.textContent = text;
+        var close = document.createElement("button");
+        close.type = "button";
+        close.className = "app-link ml-2";
+        close.setAttribute("data-notice-close", "");
+        close.textContent = "Скрыть";
+        notice.appendChild(close);
+    }
+
+    function hideNotice() {
+        if (notice) notice.textContent = "";
+    }
+
     function paintModal(modal, answer) {
         var list = modal.querySelector("ul");
         var note = noteOf(modal);
@@ -407,11 +433,19 @@
                 return;
             }
             var create = event.target.closest("[data-picker-create]");
-            if (create && create.getAttribute("disabled") === null) {
+            if (create) {
+                if (create.getAttribute("aria-disabled") === "true") {
+                    showNotice(create.getAttribute("data-notice"));
+                    return;
+                }
                 openModal("create", create.closest(".app-picker"));
             }
         });
     }
+
+    document.addEventListener("click", function (event) {
+        if (event.target.closest("[data-notice-close]")) hideNotice();
+    });
 
     modalQuery.addEventListener("input", function () {
         if (modalTimer !== null) clearTimeout(modalTimer);

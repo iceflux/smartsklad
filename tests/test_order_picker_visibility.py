@@ -187,8 +187,10 @@ def _chrome() -> str | None:
     return None
 
 
-def _render() -> str:
-    """Настоящая страница `/orders/new` с клиентом и товарами."""
+def _render(permissions: list[str] | None = None) -> str:
+    """Настоящая страница `/orders/new` с клиентом и товарами. `permissions` —
+    роль настраиваемая: проверке недоступной кнопки нужен человек без права на
+    товары, а у администратора оно есть всегда."""
     from fastapi.testclient import TestClient
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -196,7 +198,7 @@ def _render() -> str:
 
     from app.db import Base, get_db
     from app.main import create_app
-    from app.modules.auth.models import User
+    from app.modules.auth.models import Role, User
     from app.modules.auth.service import (
         ensure_default_roles, get_role_by_name, hash_password, login,
     )
@@ -232,8 +234,16 @@ def _render() -> str:
 
     app.dependency_overrides[get_db] = override
     with TestClient(app) as client, Session() as s:
+        if permissions is None:
+            role_id = get_role_by_name(s, "admin").id
+        else:
+            role = Role(name="clerk", is_system=False, is_super=False,
+                        permissions=list(permissions))
+            s.add(role)
+            s.flush()
+            role_id = role.id
         s.add(User(username="boss", password_hash=hash_password("password123"),
-                   role_id=get_role_by_name(s, "admin").id))
+                   role_id=role_id))
         s.add(Customer(name="Ромашка", personal_discount=0))
         unit_id = s.query(Unit).first().id
         for n in range(1, 4):
@@ -613,6 +623,89 @@ def added() -> dict:
     if _chrome() is None:
         pytest.skip("Chrome не установлен")
     return _measure_add_row()
+
+
+ORDER_RIGHTS = ["orders.view", "orders.create", "products.view"]
+
+BLOCKED_MEASURE = r"""
+/* Кнопка, которой право недоступно, обязана оставаться нажимаемой и видимой:
+   настоящий `disabled` не получает событий click и не берётся с клавиатуры, то
+   есть ни объяснения показать, ни с клавиатуры дойти. Прибор меряет и то, и
+   другое, и то, что плашка действительно появилась на экране. */
+var errors = [];
+window.onerror = function (message, source, line) { errors.push(message + ' @' + line); };
+function box(el) {
+  var r = el.getBoundingClientRect();
+  return {w: Math.round(r.width), h: Math.round(r.height), y: Math.round(r.y)};
+}
+var button = document.querySelector('[data-picker-create]');
+var notice = document.querySelector('[data-picker-notice]');
+var modal = document.querySelector('[data-modal=create]');
+var out = {
+  disabledAttribute: button.getAttribute('disabled'),
+  ariaDisabled: button.getAttribute('aria-disabled'),
+  noticeBefore: notice.textContent.trim(),
+  noticeBeforeBox: box(notice),
+};
+button.focus();
+out.focused = document.activeElement === button;
+out.clicked = button.click();
+setTimeout(function () {
+  out.noticeAfter = notice.textContent.trim();
+  out.noticeAfterBox = box(notice);
+  var closer = notice.querySelector('[data-notice-close]');
+  out.closer = closer ? closer.textContent : null;
+  out.modalOpen = modal.getAttribute('data-open');
+  out.errors = errors;
+  document.title = 'RESULT' + JSON.stringify(out) + 'END';
+}, 100);
+"""
+
+
+def _measure_blocked() -> dict:
+    page = _render(ORDER_RIGHTS)
+    body = page[page.index("<body"): page.index("</body>")]
+    css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
+    work = Path(tempfile.mkdtemp(prefix="picker-blocked-"))
+    inner = (INNER.replace("__CSS__", css).replace("__BODY__", body)
+             .replace("__MEASURE__", BLOCKED_MEASURE))
+    return json.loads(_dump(inner, work))
+
+
+@pytest.fixture(scope="module")
+def blocked() -> dict:
+    if _chrome() is None:
+        pytest.skip("Chrome не установлен")
+    return _measure_blocked()
+
+
+def test_the_unavailable_button_is_focusable(blocked):
+    """Главное поведение `aria-disabled`: кнопка берётся с клавиатуры. На
+    настоящем `disabled` `document.activeElement` остался бы на `<body>`, и
+    человек с клавиатуры (и с программой чтения) не узнал бы, что функция есть."""
+    assert blocked["disabledAttribute"] is None, "кнопка снова настоящий disabled"
+    assert blocked["ariaDisabled"] == "true", blocked
+    assert blocked["focused"], (
+        "кнопка не взялась фокусом: с клавиатуры до неё не дойти")
+
+
+def test_pressing_it_shows_the_missing_permission_on_the_screen(blocked):
+    assert blocked["noticeBefore"] == "", (
+        f"плашка висит до нажатия: {blocked['noticeBefore']!r}")
+    assert blocked["noticeBeforeBox"]["h"] == 0, (
+        f"пустая плашка занимает место: {blocked['noticeBeforeBox']}")
+    assert "недоступно" in blocked["noticeAfter"], blocked["noticeAfter"]
+    assert "Создание и изменение товаров" in blocked["noticeAfter"], blocked
+    assert "Изменение цен" in blocked["noticeAfter"], (
+        "плашка молчит про цену, а человек упрётся в отказ API: " + blocked["noticeAfter"])
+    assert "products.edit" not in blocked["noticeAfter"], (
+        "плашка называет код права, а человек на код не смотрит")
+    assert blocked["noticeAfterBox"]["h"] > 20, (
+        f"плашка не появилась на экране: {blocked['noticeAfterBox']}")
+    assert blocked["closer"] == "Скрыть", "плашку нечем закрыть"
+    assert blocked["modalOpen"] == "false", (
+        "недоступная кнопка открыла форму создания")
+    assert blocked["errors"] == [], blocked["errors"]
 
 
 def test_the_add_row_button_really_adds_a_row(added):
