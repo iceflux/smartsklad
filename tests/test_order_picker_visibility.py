@@ -627,6 +627,68 @@ def added() -> dict:
 
 ORDER_RIGHTS = ["orders.view", "orders.create", "products.view"]
 
+GEOM_MEASURE = r"""
+/* Где на самом деле стоят кнопки строки. Проверка на HTML здесь не годится:
+   «кнопки есть» ничего не скажет о том, рядом ли они с полем или под ним, —
+   а это и есть предмет пункта о вёрстке. Меряем настоящую раскладку. */
+window.onerror = function (message, source, line) { document.title = 'ERROR ' + message; };
+function r(el) {
+  var b = el.getBoundingClientRect();
+  return {x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width),
+          h: Math.round(b.height), bottom: Math.round(b.bottom),
+          right: Math.round(b.right)};
+}
+var line = document.querySelectorAll('.app-picker')[1];
+var field = line.querySelector('input[type=text]');
+var browse = line.querySelector('[data-picker-browse]');
+var create = line.querySelector('[data-picker-create]');
+document.title = 'RESULT' + JSON.stringify({
+  field: r(field), browse: r(browse), create: r(create),
+  sameRow: browse.parentElement === create.parentElement,
+  ownRow: browse.parentElement !== field.parentElement,
+  rowParent: browse.parentElement.className,
+  fieldParent: field.parentElement.className,
+  gap: r(create).x - r(browse).right,
+}) + 'END';
+"""
+
+
+def _measure_geom(width: int) -> dict:
+    page = _render()
+    body = page[page.index("<body"): page.index("</body>")]
+    css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
+    work = Path(tempfile.mkdtemp(prefix="picker-geom-"))
+    inner = (INNER.replace("__CSS__", css).replace("__BODY__", body)
+             .replace("__MEASURE__", GEOM_MEASURE))
+    return json.loads(_dump(inner, work, width))
+
+
+@pytest.fixture(scope="module")
+def geom() -> dict:
+    if _chrome() is None:
+        pytest.skip("Chrome не установлен")
+    return {"wide": _measure_geom(1440), "narrow": _measure_geom(375)}
+
+
+@pytest.mark.parametrize("width", ["wide", "narrow"])
+def test_the_two_buttons_sit_below_the_product_name_not_beside_it(geom, width):
+    """Пункт владельца о вёрстке: кнопки — на своей строке ПОД полем названия, а
+    не рядом с ним. Меряется настоящая раскладка и на широком экране, и на
+    телефоне, где колонка товара узкая и кнопки встают друг под другом."""
+    got = geom[width]
+    assert got["browse"]["y"] >= got["field"]["bottom"], (
+        f"кнопка стоит рядом с полем, а не под ним ({width}): {got}")
+    assert got["browse"]["x"] == got["field"]["x"], (
+        f"строка кнопок не выровнена по левому краю поля ({width}): {got}")
+    if width == "wide":
+        assert got["create"]["y"] == got["browse"]["y"], (
+            f"кнопки разъехались по разным строкам на широком экране: {got}")
+        assert got["gap"] == 4, f"промежуток между кнопками не равен gap-1: {got}"
+    assert got["sameRow"] is True, (
+        f"кнопки лежат в разных блоках, своей строки у них нет: {got}")
+    assert got["ownRow"] is True, (
+        f"своей строки у кнопок нет — они в блоке самого поля ({width}): {got}")
+
 BLOCKED_MEASURE = r"""
 /* Кнопка, которой право недоступно, обязана оставаться нажимаемой и видимой:
    настоящий `disabled` не получает событий click и не берётся с клавиатуры, то

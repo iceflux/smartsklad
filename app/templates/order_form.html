@@ -7,8 +7,10 @@
            aria-expanded="false" aria-autocomplete="list" aria-label="{{ aria }}"
            value="{{ current.label }}" placeholder="{{ hint }}" autocomplete="off">
 {% if kind == "products" %}
-<button type="button" class="app-btn border px-2 py-1 text-sm mt-1 mr-1" data-picker-browse>Выбрать товар</button>
-<button type="button" class="app-btn border px-2 py-1 text-sm mt-1" data-picker-create aria-disabled="{{ "false" if can_create_products else "true" }}"{% if not can_create_products %} data-notice="{{ product_create_notice }}"{% endif %}>Создать товар</button>
+<div class="flex flex-wrap gap-1 mt-1">
+<button type="button" class="app-btn border px-2 py-1 text-sm" data-picker-browse>Выбрать товар</button>
+<button type="button" class="app-btn border px-2 py-1 text-sm" data-picker-create aria-disabled="{{ "false" if can_create_products else "true" }}"{% if not can_create_products %} data-notice="{{ product_create_notice }}"{% endif %}>Создать товар</button>
+</div>
 {% endif %}
     <ul class="app-picker-list" role="listbox" aria-label="{{ aria }}"></ul>
     <p class="app-picker-note" role="status"></p>
