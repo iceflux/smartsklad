@@ -42,7 +42,7 @@
         <div>
             <div class="flex items-center justify-between mb-1">
                 <label>Позиции</label>
-                <button type="button" onclick="addItemRow()" class="app-btn border px-3 py-1">Добавить строку</button>
+                <button type="button" data-item-add class="app-btn border px-3 py-1">Добавить строку</button>
             </div>
             <div class="overflow-x-auto">
             <table class="w-full border-collapse">
@@ -395,6 +395,11 @@
        элементы, чем те, что были на странице при загрузке. */
     if (form) {
         form.addEventListener("click", function (event) {
+            var add = event.target.closest("[data-item-add]");
+            if (add) {
+                addItemRow();
+                return;
+            }
             var browse = event.target.closest("[data-picker-browse]");
             if (browse) {
                 openModal("browse", browse.closest(".app-picker"));

@@ -166,6 +166,32 @@ function makePicker(kind, value, label, blocked) {
     return picker;
 }
 
+function makeItemsBody() {
+    const body = makeEl('tbody', {id: 'items-body'});
+    body.appendChild(makeRow());
+    return body;
+}
+
+function makeRow() {
+    const tr = makeEl('tr');
+    const cell = makeEl('td');
+    cell.appendChild(makePicker('products', '', '').box);
+    tr.appendChild(cell);
+    return tr;
+}
+
+/* Настоящая страница добавляет строку из `<template id="item-row">`, и скрипт
+   берёт `tpl.content.firstElementChild.cloneNode(true)`. У выдуманных элементов
+   этого нет, и проверка «строка добавилась» прошла бы в пустоту: скрипт упал бы
+   на первом же `document.getElementById`. */
+function makeRowTemplate() {
+    const tpl = makeEl('template', {id: 'item-row'});
+    const sample = makeRow();
+    sample.cloneNode = () => makeRow();
+    tpl.content = {firstElementChild: sample};
+    return tpl;
+}
+
 function makeBrowseModal() {
     const modal = makeEl('div', {
         'class': 'app-modal', 'data-open': 'false', 'data-modal': 'browse',
@@ -218,8 +244,15 @@ function run(payloads, options) {
     }
     const browse = makeBrowseModal();
     const create = makeCreateModal();
+    const addButton = makeEl('button', {'class': 'app-btn', 'data-item-add': ''});
+    addButton.textContent = 'Добавить строку';
+    const items = makeItemsBody();
+    const template = makeRowTemplate();
     const root = makeEl('body');
+    form.appendChild(addButton);
+    form.appendChild(items);
     root.appendChild(form);
+    root.appendChild(template);
     root.appendChild(browse.modal);
     root.appendChild(create.modal);
     root.appendChild(outside);
@@ -244,6 +277,8 @@ function run(payloads, options) {
             return findIn(root, sel);
         },
         createElement: (tag) => makeEl(tag, {}),
+        getElementById: (id) => (id === 'items-body' ? items
+            : id === 'item-row' ? template : null),
         addEventListener: (type, fn) => {
             (documentHandlers[type] = documentHandlers[type] || []).push(fn);
         },
@@ -281,6 +316,7 @@ function run(payloads, options) {
     const fire = (target, type, extra) => dispatch(target, type, extra, documentHandlers);
     return {
         pickers, form, requests, calls, timers, outside, browse, create,
+        addButton, items, template, fire,
         flush: () => {
             for (const timer of timers) {
                 if (!timer.cancelled) timer.fn();
@@ -625,6 +661,35 @@ const THREE = {
     lateLine.click(lateLine.browse.list.children[1].children[0]);
     assert.strictEqual(extra.hidden.value, '22');
     assert.strictEqual(lateLine.pickers[0].hidden.value, '',
+        'выбор ушёл не в ту строку');
+
+    // 26. «Добавить строку» действительно добавляет строку. Раньше кнопка несла
+    //     `onclick="addItemRow()"`, а функция объявлена внутри IIFE и в глобальной
+    //     области не существует: настоящий Chrome даёт
+    //     `Uncaught ReferenceError: addItemRow is not defined` и кнопка молчит.
+    const grown = run([THREE]);
+    assert.strictEqual(grown.items.children.length, 1, 'изначально одна строка');
+    grown.click(grown.addButton);
+    assert.strictEqual(grown.items.children.length, 2,
+        'кнопка «Добавить строку» не добавила строку');
+    grown.click(grown.addButton);
+    assert.strictEqual(grown.items.children.length, 3, 'и второй раз тоже');
+
+    // 27. Добавленная строка — рабочая: её подстановка спрашивает и заполняется.
+    const freshRow = grown.items.children[2].children[0].children[0];
+    assert.strictEqual(freshRow.getAttribute('data-lookup'), '/api/lookup/products',
+        'в добавленной строке не та подстановка');
+    freshRow.querySelector('input[type=text]').value = 'Гвозд';
+    grown.fire(freshRow.querySelector('input[type=text]'), 'input');
+    await grown.flush();
+    assert.ok(/%D0%93%D0%B2%D0%BE%D0%B7%D0%B4/.test(grown.requests[0]),
+        'добавленная строка не ищет: ' + grown.requests[0]);
+    assert.strictEqual(freshRow.querySelector('.app-picker-list').children.length, 3);
+    grown.click(freshRow.querySelector('.app-picker-list').children[0]);
+    assert.strictEqual(freshRow.querySelector('input[type=hidden]').value, '3',
+        'выбор в добавленной строке не записался');
+    assert.strictEqual(grown.items.children[0].children[0]
+        .querySelector('input[type=hidden]').value, '',
         'выбор ушёл не в ту строку');
 
     console.log('ok');

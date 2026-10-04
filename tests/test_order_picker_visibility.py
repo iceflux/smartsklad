@@ -422,6 +422,70 @@ setTimeout(function () {
 
 CREATED_JSON = json.dumps({"id": 77, "name": "Гвоздь 3мм"}, ensure_ascii=False)
 
+ADD_ROW_MEASURE = r"""
+/* Ошибка скрипта собирается в отчёт, а не только в заголовок: кнопка «Добавить
+   строку» зовёт `addItemRow()`, объявленную внутри IIFE, и в глобальной области
+   её нет — Chrome даёт `Uncaught ReferenceError` и кнопка молчит. Проверка
+   «кнопка есть в разметке» на такой странице проходит, а строки не появляется. */
+var errors = [];
+window.onerror = function (message, source, line) { errors.push(message + ' @' + line); };
+function rows() { return document.getElementById('items-body').querySelectorAll('tr').length; }
+/* Кнопка ищется по новому признаку, а если его нет — по прежнему тексту среди
+   кнопок с inline-обработчиком. Иначе прибор упал бы на `null.click()` и
+   сообщил бы пустым выводом, то есть молча, а на самой странице до правки
+   именно так и было. */
+var add = document.querySelector('[data-item-add]');
+if (!add) {
+  var inline = document.querySelectorAll('button[onclick]');
+  for (var i = 0; i < inline.length; i += 1) {
+    if (inline[i].textContent.indexOf('Добавить строку') !== -1) { add = inline[i]; }
+  }
+}
+var before = rows();
+var found = !!add;
+if (add) {
+  add.click();
+  add.click();
+}
+setTimeout(function () {
+  var body = document.getElementById('items-body');
+  document.title = 'RESULT' + JSON.stringify({
+    found: found, before: before, after: rows(), errors: errors,
+    defined: typeof window.addItemRow,
+    inlineHandler: add ? add.getAttribute('onclick') : null,
+    cells: body.querySelectorAll('tr input[type=hidden]').length,
+    pickers: body.querySelectorAll('.app-picker').length,
+  }) + 'END';
+}, 120);
+"""
+
+
+def _dump(inner_html: str, work: Path, width: int = 1440) -> str:
+    inner = work / "inner.html"
+    inner.write_text(inner_html, encoding="utf-8")
+    outer = work / "outer.html"
+    outer.write_text(OUTER.replace("__WIDTH__", str(width))
+                     .replace("__INNER__", inner.resolve().as_uri()), encoding="utf-8")
+    shell = (f'"{_chrome()}" --headless=new --disable-gpu --no-sandbox '
+             f'--allow-file-access-from-files --window-size={width + 160},1400 '
+             f'--virtual-time-budget=8000 --dump-dom "{outer.resolve().as_uri()}"')
+    out = subprocess.run(shell, capture_output=True, text=True, encoding="utf-8")
+    match = re.search(r'<pre id="out">(.*?)</pre>', out.stdout, re.DOTALL)
+    assert match, out.stdout[-3000:] + out.stderr[-2000:]
+    raw = html_mod.unescape(match.group(1))
+    assert raw.startswith("RESULT"), repr(raw[:400])
+    return raw[len("RESULT"):-len("END")]
+
+
+def _measure_add_row() -> dict:
+    page = _render()
+    body = page[page.index("<body"): page.index("</body>")]
+    css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
+    work = Path(tempfile.mkdtemp(prefix="picker-addrow-"))
+    inner = (INNER.replace("__CSS__", css).replace("__BODY__", body)
+             .replace("__MEASURE__", ADD_ROW_MEASURE))
+    return json.loads(_dump(inner, work))
+
 
 def _measure_modal() -> dict:
     page = _render()
@@ -542,3 +606,35 @@ def test_the_list_is_repositioned_on_scroll_and_on_resize():
         "нет переноса на прокрутке"
     assert 'addEventListener("resize", reposition)' in script, \
         "нет переноса на изменении размера окна"
+
+
+@pytest.fixture(scope="module")
+def added() -> dict:
+    if _chrome() is None:
+        pytest.skip("Chrome не установлен")
+    return _measure_add_row()
+
+
+def test_the_add_row_button_really_adds_a_row(added):
+    """Главная проверка пункта «Добавить строку»: на настоящей странице кнопка
+    добавляет строку. Проверка «кнопка есть в разметке» прошла бы на странице,
+    где по ней нельзя нажать."""
+    assert added["found"], "на странице нет кнопки «Добавить строку» вовсе"
+    assert added["before"] == 1, f"изначально строк не одна: {added}"
+    assert added["after"] == 3, (
+        f"два нажатия дали {added['after']} строк вместо трёх: {added}")
+    assert added["errors"] == [], (
+        "страница бросила ошибку скрипта: " + "; ".join(added["errors"]))
+    assert added["pickers"] == 3 and added["cells"] == 3, (
+        f"добавленные строки без подстановки: {added}")
+
+
+def test_the_add_row_button_does_not_call_a_function_that_is_not_there(added):
+    """Причина, найденная в консоли: `onclick="addItemRow()"` ищет функцию в
+    глобальной области, а она объявлена внутри IIFE страницы. Кнопка звала
+    `addItemRow is not defined`, и нажатие ничего не делало. Поэтому обработчик
+    висит на форме, как у остальных кнопок подстановки."""
+    assert added["inlineHandler"] is None, (
+        f"кнопка снова зовёт inline-обработчик: {added['inlineHandler']!r}")
+    assert added["defined"] == "undefined", (
+        "функция addItemRow снова в глобальной области — проверяем не то")
