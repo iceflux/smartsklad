@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import log_action
@@ -268,7 +269,17 @@ def list_orders(db, *, date_from=None, date_to=None, customer_id=None, status=No
                 search=None, sort=None, direction=None):
     q = db.query(Order)
     if search:
-        q = q.filter(Order.number.ilike(f"%{search}%"))
+        # Поиск идёт по номеру заказа И по имени клиента. Имя пришло тем же полем
+        # `search`, а не новым параметром: на странице заказов клиента выбирали из
+        # списка первых 25, то есть из двадцатки при 995 клиентах, и клиента
+        # двадцать шестого было не достать. Подзапрос, а не присоединение: у
+        # `ORDER_JOINS` уже есть своё присоединение по сортировке клиента, и второе
+        # такое же в том же запросе было бы пустым дублированием.
+        pattern = f"%{search}%"
+        q = q.filter(or_(
+            Order.number.ilike(pattern),
+            Order.customer_id.in_(select(Customer.id).where(Customer.name.ilike(pattern))),
+        ))
     if date_from is not None:
         q = q.filter(Order.created_at >= date_from)
     if date_to is not None:

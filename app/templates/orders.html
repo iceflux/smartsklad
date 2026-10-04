@@ -15,7 +15,7 @@
         <input type="hidden" name="sort" value="{{ sort or '' }}">
         <input type="hidden" name="dir" value="{{ direction or '' }}">
         <div>
-            <label class="block text-sm">Номер</label>
+            <label class="block text-sm">Поиск (номер/клиент)</label>
             <input name="search" value="{{ search }}" class="border p-2">
         </div>
         <div>
@@ -24,15 +24,6 @@
                 <option value="">Все</option>
                 {% for s in statuses %}
                     <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ status_labels[s] }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div>
-            <label class="block text-sm">Клиент</label>
-            <select name="customer_id" class="border p-2">
-                <option value="">Все</option>
-                {% for c in clients %}
-                    <option value="{{ c.id }}" {% if customer_id == c.id %}selected{% endif %}>{{ c.name }}</option>
                 {% endfor %}
             </select>
         </div>

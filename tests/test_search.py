@@ -328,10 +328,14 @@ def test_hits_are_grouped_by_section_in_the_sidebar_order(client, db_session):
     """
     _login_as(client, db_session, "boss", "admin")
     _seed(db_session)
+    # «100» есть и в названии клиента, и в названии товара, и — с 04.10 — в имени
+    # клиента заказа: поиск заказов смотрит и в имя клиента, а не только в номер.
     both = _titles(client.get("/search", params={"q": "100"}).text)
-    assert both == ["Клиенты", "Товары"], both
+    assert both == ["Клиенты", "Товары", "Заказы"], both
     one = _titles(client.get("/search", params={"q": "Гвозди"}).text)
     assert one == ["Товары"], one
+    number = _titles(client.get("/search", params={"q": "00001"}).text)
+    assert number == ["Заказы"], number
 
 
 def test_every_hit_carries_its_own_label_and_a_real_link(client, db_session):

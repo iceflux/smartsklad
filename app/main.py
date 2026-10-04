@@ -164,17 +164,6 @@ def _parse_date(value: str | None) -> date | None:
         return None
 
 
-def _client_options(db: Session, include_deleted: bool = False, order=None) -> list[dict]:
-    items, _ = list_customers(db, include_deleted=include_deleted)
-    options = [{"id": c.id, "name": c.name, "deleted": False} for c in items]
-    if order is not None and order.customer_id not in {o["id"] for o in options}:
-        current = db.get(Customer, order.customer_id)
-        bisect.insort(options, {"id": current.id, "name": current.name,
-                                "deleted": bool(current.is_deleted)},
-                      key=lambda o: o["name"])
-    return options
-
-
 PRODUCT_CREATE_PERMS = (Permission.products_edit, Permission.price_change)
 """Права, без которых товар из заказа не создать. `price.change` — не украшение:
 `POST /api/products` требует его вместе с `products.edit`, если в теле есть цена,
@@ -1362,8 +1351,6 @@ def create_app() -> FastAPI:
         status = request.query_params.get("status") or None
         if status not in VALID_STATUSES:
             status = None
-        raw_customer = request.query_params.get("customer_id")
-        customer_id = _to_int(raw_customer, None)
         d_from = _parse_date(request.query_params.get("date_from"))
         d_to = _parse_date(request.query_params.get("date_to"))
         raw_amount = request.query_params.get("min_amount")
@@ -1376,7 +1363,7 @@ def create_app() -> FastAPI:
         page = _page_param(raw_page)
         sort, direction = _sort_params(request)
         items, total = list_orders(
-            db, search=search, customer_id=customer_id, status=status,
+            db, search=search, status=status,
             date_from=datetime.combine(d_from, time.min) if d_from else None,
             date_to=datetime.combine(d_to, time.max) if d_to else None,
             min_amount=min_amount, include_deleted=include_deleted, page=page,
@@ -1391,7 +1378,7 @@ def create_app() -> FastAPI:
             "created_at": o.created_at,
         } for o in items]
         base_qs = urlencode({k: v for k, v in {
-            "search": search, "customer_id": customer_id, "status": status,
+            "search": search, "status": status,
             "date_from": request.query_params.get("date_from"),
             "date_to": request.query_params.get("date_to"),
             "min_amount": request.query_params.get("min_amount"),
@@ -1401,13 +1388,12 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "orders.html", {
             "title": "Заказы", "user": user, "orders": orders, "total": total,
             "page": page, "pages": pages, "base_qs": base_qs,
-            "search": search or "", "status": status, "customer_id": customer_id,
+            "search": search or "", "status": status,
             "date_from": request.query_params.get("date_from", ""),
             "date_to": request.query_params.get("date_to", ""),
             "min_amount": min_amount or "", "include_deleted": include_deleted,
             "sort": sort, "direction": direction,
             "msg": request.query_params.get("msg"),
-            "clients": _client_options(db, include_deleted=include_deleted),
             "statuses": list(VALID_STATUSES), "status_labels": STATUS_LABELS,
             "can_create": user_has_permission(user, Permission.orders_create),
             **_page_context(user),

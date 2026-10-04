@@ -12,6 +12,10 @@
 Фильтрация приходит настоящим ответом сервера (его отдаёт TestClient), подменена
 только сеть: из `file://` настоящий `fetch` не ходит, а разбирать HTML должен
 настоящий `DOMParser`.
+
+Страниц две, и это не украшение: живая фильтрация привязана к
+`input[name=search]`, и страница заказов отдаёт его по тому же `search`, что и
+товары. Проверка на товарах доказала бы только свойство товаров.
 """
 
 import html as html_mod
@@ -111,6 +115,11 @@ var timer = setInterval(function () {
 
 QUERY = "Гво"
 
+SECTIONS = ("products", "orders")
+"""Одна и та же пауза и одно и то же поле на обеих страницах: скрипт общий. На
+заказах «Гво» — это имя клиента: после снятия списка «Клиент» страница ищет
+именно по нему, и набор сужает список заказов."""
+
 
 def _chrome() -> str | None:
     found = shutil.which("google-chrome") or shutil.which("chromium")
@@ -122,8 +131,8 @@ def _chrome() -> str | None:
     return None
 
 
-def _render() -> tuple[str, str]:
-    """Страница `/products` и настоящий ответ сервера на отфильтрованный запрос."""
+def _render(section: str) -> tuple[str, str]:
+    """Страница раздела и настоящий ответ сервера на отфильтрованный запрос."""
     from fastapi.testclient import TestClient
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -176,9 +185,32 @@ def _render() -> tuple[str, str]:
                           price=10.0, rest=5, unit_id=unit_id))
         s.commit()
         client.cookies.set("session", login(s, "boss", "password123").token)
+        if section == "orders":
+            _orders(s, unit_id)
+            page = client.get("/orders").text
+            answer = client.get("/orders", params={"search": QUERY}).text
+            return page, answer
         page = client.get("/products").text
         answer = client.get("/products", params={"search": QUERY}).text
     return page, answer
+
+
+def _orders(session, unit_id) -> None:
+    """Четыре заказа на четырёх клиентов: два названия содержат «Гво», поэтому
+    набор сужает список, а вторую колонку («Клиент») видно в измерении."""
+    from app.modules.customers.models import Customer
+    from app.modules.inventory.models import Product
+    from app.modules.orders.service import create_order
+
+    product = Product(name="Гвоздь", sku="o-1", price=10.0, rest=50, unit_id=unit_id)
+    session.add(product)
+    session.commit()
+    for index, name in enumerate(("Гвоздь", "Гвоздь усиленный", "Шуруп", "Доска")):
+        customer = Customer(name=name)
+        session.add(customer)
+        session.commit()
+        create_order(session, customer_id=customer.id, discount=0,
+                     items=[{"product_id": product.id, "quantity": 1, "discount": 0}])
 
 
 def _js_string(raw: str) -> str:
@@ -193,8 +225,8 @@ def _js_string(raw: str) -> str:
     return json.dumps(raw, ensure_ascii=False).replace("</", "<\\/")
 
 
-def _measure() -> dict:
-    page, answer = _render()
+def _measure(section: str) -> dict:
+    page, answer = _render(section)
     body = page[page.index("<body"): page.index("</body>")]
     css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
     work = Path(tempfile.mkdtemp(prefix="live-filter-focus-"))
@@ -221,11 +253,11 @@ def _measure() -> dict:
     return json.loads(raw[len("RESULT"):-len("END")])
 
 
-@pytest.fixture(scope="module")
-def filtered() -> dict:
+@pytest.fixture(scope="module", params=SECTIONS)
+def filtered(request) -> dict:
     if _chrome() is None:
         pytest.skip("Chrome не установлен")
-    return _measure()
+    return _measure(request.param)
 
 
 def test_the_search_box_keeps_the_focus_after_the_list_is_redrawn(filtered):
