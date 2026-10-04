@@ -97,9 +97,23 @@
         state.note.textContent = message;
     }
 
+    function place(state) {
+        var field = state.text.getBoundingClientRect();
+        state.list.style.left = field.left + "px";
+        state.list.style.width = field.width + "px";
+        var room = document.documentElement.clientHeight - 8 - state.list.offsetHeight;
+        state.list.style.top = Math.min(field.bottom + 2, Math.max(8, room)) + "px";
+    }
+
     function show(box, state, on) {
         box.setAttribute("data-open", on ? "true" : "false");
         state.text.setAttribute("aria-expanded", on ? "true" : "false");
+        if (on) place(state);
+    }
+
+    function reposition() {
+        Array.prototype.forEach.call(document.querySelectorAll('.app-picker[data-open="true"]'),
+            function (box) { place(stateOf(box)); });
     }
 
     function mark(state) {
@@ -233,6 +247,9 @@
                 show(each, stateOf(each), false);
             });
     });
+
+    document.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
 
     function addItemRow() {
         var tpl = document.getElementById("item-row");

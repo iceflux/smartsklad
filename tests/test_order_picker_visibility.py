@@ -1,0 +1,342 @@
+"""Список подстановки должен быть виден на самом деле, а не только в разметке.
+
+Дефект, который этот тест ловит, не ловится проверкой «в разметке есть `<ul>`»:
+список **был** в разметке, **был** `position: absolute` и **не был виден** —
+его обрезал предок `div.overflow-x-auto` вокруг таблицы позиций. `overflow-x: auto`
+по спецификации тянет за собой `overflow-y: auto`, то есть обёртка становится
+контейнером прокрутки по обеим осям и обрезает даже абсолютно позиционированных
+потомков. Замером: при высоте списка 110px показывалось 6.
+
+Поэтому проверка здесь одна и она поведенческая: `document.elementFromPoint` в
+центре списка обязан вернуть сам список или его потомка. На обрезанном списке он
+вернёт то, что под ним, — на элемент, который виден. Проверка «список есть в DOM»
+прошла бы на той же поломанной странице.
+
+Тест гоняет настоящий рендер `/orders/new` через TestClient и собранный
+`app/static/app.css` в headless Chrome — выдуманный DOM ничего не знает о
+раскладке, а раскладка здесь и есть предмет проверки.
+
+Пропускается, если Chrome не установлен. Node не нужен: этот тест не fake-DOM
+харнесс, и без node он всё равно выполняется.
+"""
+
+import html as html_mod
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+CHROME_CANDIDATES = (
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+)
+
+MEASURE = r"""
+function own(el, node) {
+  for (var n = node; n; n = n.parentElement) { if (n === el) return true; }
+  return false;
+}
+function rect(el) {
+  var r = el.getBoundingClientRect();
+  return {x: Math.round(r.x), y: Math.round(r.y),
+          w: Math.round(r.width), h: Math.round(r.height),
+          bottom: Math.round(r.bottom), right: Math.round(r.right)};
+}
+var boxes = document.querySelectorAll('.app-picker');
+for (var b = 0; b < boxes.length; b++) {
+  var text = boxes[b].querySelector('input[type=text]');
+  text.value = 'Гво';
+  text.dispatchEvent(new Event('input', {bubbles: true}));
+}
+
+function measure() {
+  var out = [];
+  for (var b = 0; b < boxes.length; b++) {
+    var box = boxes[b];
+    var list = box.querySelector('.app-picker-list');
+    var r = rect(list);
+    var field = box.querySelector('input[type=text]').getBoundingClientRect();
+    var hit = (document.elementFromPoint(Math.round(r.x + r.w / 2),
+                                          Math.round(r.y + r.h / 2)) || {});
+    out.push({
+      where: b === 0 ? 'customer' : 'line',
+      open: box.getAttribute('data-open'),
+      list: r,
+      hitsItself: own(list, hit),
+      hitClass: hit.className || hit.tagName || '(нет)',
+      insideViewport: r.y >= 0 && r.bottom <= document.documentElement.clientHeight,
+      gap: Math.round(r.y - field.bottom),
+      fieldLeft: Math.round(field.left),
+    });
+  }
+  return out;
+}
+
+function fill() {
+  for (var b = 0; b < boxes.length; b++) {
+    if (!boxes[b].querySelector('.app-picker-list').children.length) return false;
+  }
+  return boxes.length > 0;
+}
+
+var tries = 0;
+var timer = setInterval(function () {
+  tries += 1;
+  if (!fill() && tries < 300) return;
+  var first = measure();
+  /* Распорка снизу нужна, чтобы документ стал прокручиваемым: без неё окно
+     нельзя сдвинуть и проверять, что список остался при поле. Это подпорка
+     прибора, а не правка приложения. */
+  var spacer = document.createElement('div');
+  spacer.style.height = '900px';
+  document.body.appendChild(spacer);
+  window.scrollTo(0, 150);
+  /* Событие прокрутки шлём сами: под `--virtual-time-budget` Chrome не доставляет
+     своё собственное событие прокрутки (проверено — без этой строки зазор остаётся
+     154px, с ней 4px, при реально сдвинутом окне). Проверяется поведение скрипта
+     «на прокрутке список возвращается под поле», а не доставка события браузером. */
+  document.dispatchEvent(new Event('scroll'));
+  setTimeout(function () {
+    var after = measure();
+    document.title = 'RESULT' + JSON.stringify({
+      first: first, afterScroll: after,
+      scrolled: window.scrollY,
+      viewport: {w: document.documentElement.clientWidth,
+                 h: document.documentElement.clientHeight},
+    }) + 'END';
+  }, 60);
+}, 10);
+"""
+
+INNER = """<!doctype html><html><head><meta charset="utf-8">
+<style>__CSS__</style>
+<script>
+/* Подмена fetch ДО скрипта подстановки: предмет проверки — раскладка, а не сеть,
+   а data:-URL ломается о хвост ?q=. Настоящие `paint()` и `place()` при этом
+   отрабатывают по-настоящему, то есть замер идёт по рабочему коду. */
+window.fetch = function () {
+  return Promise.resolve({json: function () {
+    return Promise.resolve(__ANSWER__);
+  }});
+};
+</script></head>
+<body class="bg-surface text-primary" data-sidebar="expanded" data-nav="closed">
+__BODY__
+<script>__MEASURE__</script>
+</body></html>"""
+
+OUTER = """<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;padding:0}iframe{border:0;display:block;height:1200px}
+</style></head><body>
+<iframe id="f" width="__WIDTH__" src="__INNER__"></iframe>
+<pre id="out"></pre>
+<script>
+var timer = setInterval(function () {
+  var f = document.getElementById('f');
+  var d = f && f.contentDocument;
+  if (!d || d.title.indexOf('RESULT') !== 0) { return; }
+  clearInterval(timer);
+  document.getElementById('out').textContent = d.title;
+}, 5);
+</script>
+</body></html>"""
+
+WIDTH = 1440
+
+ANSWER_JSON = json.dumps({
+    "items": [
+        {"id": 1, "label": "Гвоздь 1", "hint": "10.00 руб"},
+        {"id": 2, "label": "Гвоздь 2", "hint": "10.00 руб"},
+        {"id": 3, "label": "Гвоздь 3", "hint": "10.00 руб"},
+    ],
+    "total": 3, "limit": 10,
+}, ensure_ascii=False)
+
+
+def _chrome() -> str | None:
+    found = shutil.which("google-chrome") or shutil.which("chromium")
+    if found:
+        return found
+    for path in CHROME_CANDIDATES:
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def _render() -> str:
+    """Настоящая страница `/orders/new` с клиентом и товарами."""
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.db import Base, get_db
+    from app.main import create_app
+    from app.modules.auth.models import User
+    from app.modules.auth.service import (
+        ensure_default_roles, get_role_by_name, hash_password, login,
+    )
+    from app.modules.customers.models import Customer
+    from app.modules.inventory.models import Product, Unit
+    from app.modules.inventory.service import ensure_default_units
+    from app.modules.settings.service import ensure_default_settings
+
+    import app.modules.audit.models  # noqa: F401
+    import app.modules.backup.models  # noqa: F401
+    import app.modules.importer.models  # noqa: F401
+    import app.modules.notifications.models  # noqa: F401
+    import app.modules.settings.models  # noqa: F401
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    with Session() as s:
+        ensure_default_roles(s)
+        ensure_default_settings(s)
+        ensure_default_units(s)
+
+    app = create_app()
+    app.state.skip_seed_admin = True
+
+    def override():
+        db = Session()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override
+    with TestClient(app) as client, Session() as s:
+        s.add(User(username="boss", password_hash=hash_password("password123"),
+                   role_id=get_role_by_name(s, "admin").id))
+        s.add(Customer(name="Ромашка", personal_discount=0))
+        unit_id = s.query(Unit).first().id
+        for n in range(1, 4):
+            s.add(Product(name=f"Гвоздь {n}", sku=str(n), price=10.0, rest=5,
+                          unit_id=unit_id))
+        s.commit()
+        client.cookies.set("session", login(s, "boss", "password123").token)
+        return client.get("/orders/new").text
+
+
+def _measure() -> dict:
+    page = _render()
+    body = page[page.index("<body"): page.index("</body>")]
+    css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
+    work = Path(tempfile.mkdtemp(prefix="picker-visibility-"))
+    inner = work / "inner.html"
+    inner.write_text(
+        INNER.replace("__CSS__", css).replace("__ANSWER__", ANSWER_JSON)
+             .replace("__BODY__", body).replace("__MEASURE__", MEASURE),
+        encoding="utf-8")
+    outer = work / "outer.html"
+    outer.write_text(
+        OUTER.replace("__WIDTH__", str(WIDTH)).replace("__INNER__", inner.resolve().as_uri()),
+        encoding="utf-8")
+    # `--allow-file-access-from-files` обязателен: каждый file:// в Chrome — свой
+    # непрозратый origin, и без флага contentDocument из родителя недостижим.
+    shell = (f'"{_chrome()}" --headless=new --disable-gpu --no-sandbox '
+             f'--allow-file-access-from-files --window-size=1600,1400 '
+             f'--virtual-time-budget=8000 --dump-dom "{outer.resolve().as_uri()}"')
+    out = subprocess.run(shell, capture_output=True, text=True, encoding="utf-8")
+    match = re.search(r'<pre id="out">(.*?)</pre>', out.stdout, re.DOTALL)
+    assert match, out.stdout[-3000:] + out.stderr[-2000:]
+    raw = html_mod.unescape(match.group(1))
+    assert raw.startswith("RESULT"), repr(raw[:400])
+    return json.loads(raw[len("RESULT"):-len("END")])
+
+
+@pytest.fixture(scope="module")
+def measured() -> dict:
+    if _chrome() is None:
+        pytest.skip("Chrome не установлен")
+    return _measure()
+
+
+def _row(rows: list, where: str) -> dict:
+    return next(r for r in rows if r["where"] == where)
+
+
+def test_the_product_line_sits_outside_the_scrolling_table_wrapper(measured):
+    """Список позиции заказа лежит внутри `div.overflow-x-auto`, то есть внутри
+    контейнера прокрутки по обеим осям. `position: absolute` оттуда не спасает —
+    спасает только выход из потока обрезания, то есть `fixed`."""
+    css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
+    rule = re.search(r"\.app-picker-list\{([^}]*)\}", css)
+    assert rule, "правило .app-picker-list не доехало до сборки"
+    assert "position:fixed" in rule.group(1).replace(" ", ""), (
+        "список подстановки остался в потоке обрезания: "
+        f"{rule.group(1)[:120]}")
+
+
+def test_the_list_of_a_product_line_is_really_on_the_screen(measured):
+    """Главная проверка: в центре списка должен лежать сам список. На обрезанном
+    списке там лежит то, что под ним, — при 110px высоты показывалось 6."""
+    line = _row(measured["first"], "line")
+    assert line["open"] == "true", f"список не открылся: {line}"
+    assert line["list"]["h"] > 40, f"список пустой или схлопнулся: {line['list']}"
+    assert line["hitsItself"], (
+        f"в центре списка лежит {line['hitClass']!r}, а не он сам: {line['list']}")
+    assert line["insideViewport"], f"список ушёл за пределы экрана: {line['list']}"
+
+
+def test_the_customer_list_is_not_made_worse_by_the_fix(measured):
+    """Клиент лежит вне таблицы и был виден всегда. Правка позиционирования
+    не должна сломать и его — иначе «починил одно, сломал второе»."""
+    customer = _row(measured["first"], "customer")
+    assert customer["hitsItself"], (
+        f"список клиента перестал быть виден: {customer['list']} → {customer['hitClass']!r}")
+    assert customer["insideViewport"], f"список клиента ушёл за экран: {customer['list']}"
+
+
+def test_the_list_stays_attached_to_its_field_when_the_page_scrolls(measured):
+    """`position: fixed` без переноса координат оставляет список на месте, а поле
+    уезжает: список остаётся висеть в пустоте. Поэтому скрипт переставляет его на
+    прокрутке и на изменении размера окна."""
+    assert measured["scrolled"] > 0, "страница не прокрутилась, проверка ни о чём"
+    for where in ("customer", "line"):
+        after = _row(measured["afterScroll"], where)
+        # 4, а не 2: зазор считается как разность двух Math.round, то есть сам
+        # плюс-минус пиксель округления на каждом конце.
+        assert abs(after["gap"]) <= 4, (
+            f"список {where} оторвался от поля после прокрутки: "
+            f"поле ушло, список остался, зазор {after['gap']}px")
+
+
+def test_the_list_is_placed_by_the_script_under_its_field():
+    """Без координат, которые ставит скрипт, список `position: fixed` повис бы в
+    углу вьюпорта: `fixed` без `top`/`left` — это угол. Проверка на исходнике
+    скрипта, а не на поведении браузера, — она ловит само удаление координат
+    даже тогда, когда Chrome на машине нет."""
+    form = (ROOT / "app" / "templates" / "order_form.html").read_text(encoding="utf-8")
+    script = form[form.index("<script>"):]
+    assert "getBoundingClientRect" in script, "скрипт не меряет поле"
+    for prop in ("top", "left", "width"):
+        assert re.search(r"list\.style\." + prop, script), (
+            f"скрипт не ставит list.style.{prop}: список оторвётся от поля")
+    show = re.search(r"function show\([^)]*\)\s*\{(.*?)\n    \}", script, re.DOTALL)
+    assert show, "не нашёл функцию show"
+    assert "place(state)" in show.group(1), (
+        "открытие списка не переставляет его под поле: place() не вызывается из show()")
+
+
+def test_the_list_is_repositioned_on_scroll_and_on_resize():
+    """Список `fixed` без этого остаётся на экране, а поле уезжает."""
+    form = (ROOT / "app" / "templates" / "order_form.html").read_text(encoding="utf-8")
+    script = form[form.index("<script>"):]
+    assert re.search(r'addEventListener\("scroll",\s*reposition,\s*true\)', script), \
+        "нет переноса на прокрутке"
+    assert 'addEventListener("resize", reposition)' in script, \
+        "нет переноса на изменении размера окна"

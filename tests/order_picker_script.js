@@ -78,6 +78,14 @@ function makeEl(tag, attrs) {
     };
     el.focus = () => { el.focused = true; };
     el.select = () => { el.selected = true; };
+    /* Список подстановки `position: fixed`, и скрипт ставит ему координаты из
+       поля. У выдуманных элементов этих трёх вещей не было, и скрипт падал на
+       первом же открытом списке. */
+    el.style = {};
+    el.offsetHeight = 96;
+    el.getBoundingClientRect = () => (el.rect || {
+        left: 40, right: 240, top: 100, bottom: 140, width: 200, height: 40,
+    });
     return el;
 }
 
@@ -129,6 +137,11 @@ function run(payloads, options) {
     const documentHandlers = {};
     const documentStub = {
         querySelectorAll: (sel) => {
+            if (sel === '.app-picker') return pickers.map(p => p.box);
+            if (sel === '.app-picker[data-open="true"]') {
+                return pickers.map(p => p.box)
+                    .filter(b => b.getAttribute('data-open') === 'true');
+            }
             assert.strictEqual(sel, '.app-picker');
             return pickers.map(p => p.box);
         },
@@ -141,9 +154,16 @@ function run(payloads, options) {
         addEventListener: (type, fn) => {
             (documentHandlers[type] = documentHandlers[type] || []).push(fn);
         },
+        documentElement: {clientHeight: 900},
     };
+    const windowHandlers = {};
     const sandbox = {
         document: documentStub,
+        window: {
+            addEventListener: (type, fn) => {
+                (windowHandlers[type] = windowHandlers[type] || []).push(fn);
+            },
+        },
         setTimeout: (fn, delay) => {
             timers.push({fn, delay, cancelled: false});
             return timers.length - 1;
@@ -179,6 +199,19 @@ function run(payloads, options) {
         submit: () => fire(form, 'submit'),
         clickList: (picker, index) => fire(picker.list.children[index], 'click'),
         clickOutside: () => fire(outside, 'click'),
+        scroll: (dy) => {
+            for (const picker of pickers) {
+                picker.text.rect = Object.assign({}, picker.text.rect, {
+                    top: 100 + dy, bottom: 140 + dy,
+                });
+            }
+            for (const fn of (documentHandlers.scroll || [])) {
+                fn({type: 'scroll'});
+            }
+        },
+        resize: () => {
+            for (const fn of (windowHandlers.resize || [])) fn({type: 'resize'});
+        },
     };
 }
 
@@ -320,6 +353,25 @@ const THREE = {
     await away.flush();
     away.clickOutside();
     assert.strictEqual(away.pickers[0].box.getAttribute('data-open'), 'false');
+
+    // 14. Открытый список встаёт под своё поле: без координат список `fixed`
+    //     повис бы в углу, а при прокрутке оторвался бы от поля.
+    const placed = run([THREE]);
+    placed.type(placed.pickers[0], 'Гвозд');
+    await placed.flush();
+    assert.deepStrictEqual(
+        {
+            top: placed.pickers[0].list.style.top,
+            left: placed.pickers[0].list.style.left,
+            width: placed.pickers[0].list.style.width,
+        },
+        {top: '142px', left: '40px', width: '200px'},
+        'список не встал под поле');
+    placed.scroll(150);
+    assert.strictEqual(placed.pickers[0].list.style.top, '292px',
+        'прокрутка не вернула список под поле');
+    placed.resize();
+    assert.strictEqual(placed.pickers[0].list.style.top, '292px');
 
     console.log('ok');
 })().catch((e) => {
