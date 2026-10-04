@@ -14,6 +14,11 @@
 Колонки из таблиц связи («Клиент» у заказа, «Категория» и «Ед.» у товара)
 сортируются не своими колонками, а присоединением. Присоединение внешнее и
 делается по требованию: внутреннее убрало бы из списка товар без категории.
+
+Строки, посчитанные в Python (таблица прогноза: остаток, прогноз и рекомендация
+собираются из истории продаж), сортируются `apply_row_sort` — `order_by` к ним
+неприменим. Граница та же: ключ ищется в белом списке раздела, направление
+умеет только `asc` и `desc`, а второй ключ обязателен.
 """
 
 from sqlalchemy import ColumnElement
@@ -44,3 +49,19 @@ def apply_sort(query, model: DeclarativeMeta, sorts: dict, default_sort: str,
         _direction(sorts[key], direction if direction in ("asc", "desc") else default_direction),
         _direction(model.id, direction if direction in ("asc", "desc") else default_direction),
     )
+
+
+def apply_row_sort(rows, sorts, fallback, sort, direction, secondary):
+    """То же для строк, посчитанных в Python.
+
+    `sorts` — белый список раздела: значения там берутся из словарей, и подставить
+    можно только то, что перечислено. `fallback(rows)` — порядок страницы по
+    умолчанию; он не зависит от `direction`, потому что направление относится к
+    выбранной колонке, а не к запасному порядку. `secondary` — второй ключ, и он
+    обязателен: строки, равные по выбранной колонке, без него не имеют
+    определённого порядка, и постраничный разбор начинает их терять и
+    дублировать."""
+    if sort not in sorts:
+        return fallback(rows)
+    return sorted(rows, key=lambda row: (sorts[sort](row), secondary(row)),
+                  reverse=direction == "desc")

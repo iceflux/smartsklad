@@ -1025,17 +1025,23 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.analytics_view)
         only_purchase = request.query_params.get("only_purchase") == "1"
         page = _page_param(request.query_params.get("page"))
+        sort, direction = _sort_params(request)
         rows, total = forecast_rows(
             db,
             only_purchase=only_purchase,
             page=page,
+            sort=sort, direction=direction,
             min_stock_days=get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),
         )
         pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-        base_qs = urlencode({"only_purchase": "1"} if only_purchase else {})
+        base_qs = urlencode({k: v for k, v in {
+            "only_purchase": "1" if only_purchase else None,
+            "sort": sort, "dir": direction,
+        }.items() if v not in (None, "")})
         return templates.TemplateResponse(request, "forecast.html", {
             "title": "Прогноз спроса", "user": user, "rows": rows, "total": total,
             "page": page, "pages": pages, "base_qs": base_qs, "only_purchase": only_purchase,
+            "sort": sort, "direction": direction,
             "msg": request.query_params.get("msg"),
             **_page_context(user),
         })

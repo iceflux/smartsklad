@@ -4,11 +4,50 @@ from datetime import date, datetime, time, timedelta
 from app.modules.inventory.models import Product
 from app.modules.orders.models import Order, OrderItem
 from app.modules.settings.service import DEFAULT_MIN_STOCK_DAYS
+from app.sorting import apply_row_sort
 
 LOOKBACK_DAYS = 90
 MIN_DAYS_FOR_FORECAST = 14
 FORECAST_HORIZONS = (7, 14, 30)
 RECOMMENDATION_HORIZON = 30
+
+
+def _number(value):
+    """Прочерк в порядке — это ноль. Иначе строки «мало данных» оказывались бы то
+    выше, то ниже в зависимости от направления, а человек, сортирующий прогноз
+    по убыванию, получал бы в конце списка именно те строки, где данных нет."""
+    return 0 if value is None else value
+
+
+FORECAST_SORTS = {
+    "name": lambda row: row["name"],
+    "sku": lambda row: row["sku"],
+    "rest": lambda row: row["rest"],
+    "min_stock": lambda row: row["min_stock"],
+    "daily": lambda row: row["avg_daily_sold"],
+    "f7": lambda row: _number(row["forecast_7"]),
+    "f14": lambda row: _number(row["forecast_14"]),
+    "f30": lambda row: _number(row["forecast_30"]),
+    "buy": lambda row: _number(row["recommended_qty"]),
+}
+"""Белый список колонок таблицы прогноза. Все девять колонок здесь — значения,
+исключать нечего: колонок-действий на этой таблице нет в отличие от страниц
+разделов."""
+
+
+def _second_key(row):
+    """Второй ключ сортировки — сам товар, и он обязателен: строки, равные по
+    выбранной колонке, без него не имеют определённого порядка, и постраничный
+    разбор начинает дублировать и терять их. Именно поэтому он назван, а не
+    написано прямо в вызове: по странице его не отличить — строки и так приходят
+    в порядке товаров, а сортировка Python устойчива."""
+    return row["product_id"]
+
+
+def _default_order(rows):
+    """Порядок, который был до появления сортировки: рекомендация по убыванию,
+    затем имя. Страница при загрузке обязана выглядеть как вчера."""
+    return sorted(rows, key=lambda row: (-_number(row["recommended_qty"]), row["name"]))
 
 
 def _linear_forecast(series: list[int], horizon: int) -> int | None:
@@ -61,7 +100,7 @@ def _sales_by_product(db, start: date, end: date) -> dict[int, dict[date, int]]:
 def forecast_rows(
     db, *, lookback_days=LOOKBACK_DAYS, min_days=MIN_DAYS_FOR_FORECAST,
     only_purchase=False, product_id=None, min_stock_days=None,
-    page=1, page_size=25,
+    page=1, page_size=25, sort=None, direction=None,
 ) -> tuple[list[dict], int]:
     page = max(1, page or 1)
     page_size = min(100, max(1, page_size or 25))
@@ -112,7 +151,8 @@ def forecast_rows(
         })
     if only_purchase:
         rows = [r for r in rows if r["recommended_qty"] is not None]
-    rows.sort(key=lambda r: (-(r["recommended_qty"] or 0), r["name"]))
+    rows = apply_row_sort(rows, FORECAST_SORTS, _default_order, sort, direction,
+                          _second_key)
     total = len(rows)
     offset = (max(1, page) - 1) * page_size
     return rows[offset:offset + page_size], total

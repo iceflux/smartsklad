@@ -1,9 +1,12 @@
 {% extends "base.html" %}
+{% from "macros.html" import sort_head %}
 {% block content %}
 <main class="max-w-6xl mx-auto p-4">
     <h1 class="text-2xl font-bold mb-4">Прогноз спроса</h1>
     {% if msg %}<p class="mb-4 bg-success-bg border border-success-border p-2">{{ msg }}</p>{% endif %}
     <form method="get" action="/forecast" class="mb-4">
+        <input type="hidden" name="sort" value="{{ sort or '' }}">
+        <input type="hidden" name="dir" value="{{ direction or '' }}">
         <label class="mr-4">
             <input type="checkbox" name="only_purchase" value="1" {% if only_purchase %}checked{% endif %}>
             только к закупке
@@ -15,15 +18,15 @@
     <table class="w-full bg-surface-raised border">
         <thead>
             <tr class="border-b">
-                <th class="p-2 text-left">Товар</th>
-                <th class="p-2 text-left">Артикул</th>
-                <th class="p-2 text-right">Остаток</th>
-                <th class="p-2 text-right">Запас</th>
-                <th class="p-2 text-right">Продажи/сутки</th>
-                <th class="p-2 text-right">7 дней</th>
-                <th class="p-2 text-right">14 дней</th>
-                <th class="p-2 text-right">30 дней</th>
-                <th class="p-2 text-right">К закупке</th>
+                {{ sort_head("Товар", "name", "/forecast", sort, direction, base_qs) }}
+                {{ sort_head("Артикул", "sku", "/forecast", sort, direction, base_qs) }}
+                {{ sort_head("Остаток", "rest", "/forecast", sort, direction, base_qs) }}
+                {{ sort_head("Запас", "min_stock", "/forecast", sort, direction, base_qs) }}
+                {{ sort_head("Продажи/сутки", "daily", "/forecast", sort, direction, base_qs) }}
+                {{ sort_head("7 дней", "f7", "/forecast", sort, direction, base_qs) }}
+                {{ sort_head("14 дней", "f14", "/forecast", sort, direction, base_qs) }}
+                {{ sort_head("30 дней", "f30", "/forecast", sort, direction, base_qs) }}
+                {{ sort_head("К закупке", "buy", "/forecast", sort, direction, base_qs) }}
             </tr>
         </thead>
         <tbody>
