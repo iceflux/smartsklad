@@ -6,8 +6,14 @@
 запись в неё принадлежит исключительно экрану импорта приложения.
 
 Единицы берутся из DEFAULT_UNITS приложения: любая единица вне справочника остановила бы
-импорт экраном решения, и демо не запустилось бы с первого раза. Даты заказов отсчитываются
-от текущего дня, поэтому при одинаковом --seed файл воспроизводится байт в байт в течение дня.
+импорт экраном решения, и демо не запустилось бы с первого раза. Окно прогноза берётся из
+модуля прогноза (LOOKBACK_DAYS), чтобы демо-каталог продавался ровно в том диапазоне, который
+смотрит /forecast. Даты заказов отсчитываются от текущего дня, поэтому при одинаковом --seed
+файл воспроизводится байт в байт в течение дня.
+
+Форма продаж повторяет складскую: пятая часть каталога продаётся регулярно, с трендом и
+недельной сезонностью, у части этих товаров пустой склад (прогноз выдаёт «к закупке»), а
+остальной каталог не продаётся почти вовсе — он и даёт контраст состоянию «мало данных».
 
 Запускается тем же интерпретатором, что и приложение, из корня репозитория:
 
@@ -26,6 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.modules.ai.service import LOOKBACK_DAYS  # noqa: E402
 from app.modules.inventory.service import DEFAULT_UNITS  # noqa: E402
 
 PRODUCTS = (
@@ -98,6 +105,23 @@ DEFAULT_PRODUCTS = 200
 DEFAULT_CUSTOMERS = 60
 DEFAULT_ORDERS = 400
 DEFAULT_SEED = 1
+# Продающийся товар. Демо-каталог повторяет форму настоящего склада: хвост из
+# редких позиций и несколько ходовых. Прогнозу спроса нужны не все товары, а
+# те, у которых есть продажи; остальные дают контраст состояния «мало данных».
+MOVER_SHARE = 0.2
+# Продажи раскидываются по заказам кусками не больше MAX_LINES, поэтому заказа
+# на день выходит меньше, чем событий: бюджет считается в строках, а не в
+# заказах, иначе движущиеся товары не добирали бы дней с продажами.
+MOVER_LINE_SHARE = 0.6
+# Дней с продажами у движущегося товара должно быть заведомо больше порога
+# прогноза, иначе демо снова покажет сплошные прочерки.
+MIN_SELLING_DAYS = 20
+# Запас ходового товара: часть товаров намеренно с пустым складом (их прогноз
+# выдаёт «к закупке»), часть с полным (прогноз есть, а покупать не надо).
+MOVER_LOW_REST = (1, 40)
+MOVER_HIGH_REST = (200, 600)
+# Недельная сезонность, Пн..Вс: в субботу и воскресенье склад отдыхает.
+WEEKLY = (0.55, 0.8, 1.0, 1.1, 1.35, 0.6, 0.25)
 
 
 def _digits(rng: random.Random, length: int) -> str:
@@ -151,36 +175,80 @@ def _customers(rng: random.Random, count: int) -> list[dict]:
 
 def _orders(rng: random.Random, count: int, products: list[dict],
             customers: list[dict]) -> list[dict]:
+    """Заказы: сначала продажи ходовых товаров, потом фон по всему каталогу.
+
+    Порядок важен: продажи считаются по дням и упаковываются в заказы кусками не
+    больше MAX_LINES, поэтому они и дают товару нужное число ДНЕЙ с продажами, а
+    не просто число строк. Остальные заказы добираются до запрошенного числа и
+    размазаны по ORDER_DAYS: они дают длинные редкие продажи хвоста каталога.
+    """
     today = date.today()
-    product_ids = [row["id"] for row in products]
     by_id = {row["id"]: row for row in products}
+    product_ids = list(by_id)
     customer_ids = [row["id"] for row in customers]
-    rows = []
-    for index in range(1, count + 1):
+    rows: list[dict] = []
+    index = 0
+
+    movers = rng.sample(products, min(len(products), max(1, round(len(products) * MOVER_SHARE))))
+    line_budget = max(len(movers) * MIN_SELLING_DAYS, int(count * MAX_LINES * MOVER_LINE_SHARE))
+    per_mover = line_budget // max(1, len(movers))
+    probability = min(0.7, per_mover / LOOKBACK_DAYS)
+    by_day: dict[date, list[tuple[dict, int]]] = {}
+    for mover in movers:
+        mover["rest"] = rng.randint(*(MOVER_LOW_REST if rng.random() < 0.6 else MOVER_HIGH_REST))
+        base = rng.uniform(0.8, 4.0)
+        trend = rng.uniform(-0.4, 0.5)
+        for back in range(LOOKBACK_DAYS):
+            if rng.random() >= probability:
+                continue
+            day = today - timedelta(days=back)
+            level = base * (1 + trend * (LOOKBACK_DAYS - 1 - back) / LOOKBACK_DAYS)
+            level *= WEEKLY[day.weekday()]
+            by_day.setdefault(day, []).append((mover, max(1, round(level * rng.uniform(0.55, 1.45)))))
+
+    for day in sorted(by_day, reverse=True):
+        lines = by_day[day]
+        rng.shuffle(lines)
+        for start in range(0, len(lines), MAX_LINES):
+            if len(rows) >= count:
+                break
+            index += 1
+            rows.append(_order(rng, day, lines[start:start + MAX_LINES], customer_ids, index))
+        if len(rows) >= count:
+            break
+
+    while len(rows) < count:
+        index += 1
         day = today - timedelta(days=rng.randrange(ORDER_DAYS))
-        moment = datetime(int(day.year), int(day.month), int(day.day),
-                          int(ORDER_HOURS[rng.randrange(len(ORDER_HOURS))]),
-                          rng.randrange(60), rng.randrange(60))
-        lines = []
-        for product_id in rng.sample(product_ids, min(rng.randint(1, MAX_LINES), len(product_ids))):
-            product = by_id[product_id]
-            lines.append({
-                "product_id": product_id,
+        picks = rng.sample(product_ids, min(rng.randint(1, 3), len(product_ids)))
+        lines = [(by_id[pid], rng.randint(1, MAX_QUANTITY)) for pid in picks]
+        rows.append(_order(rng, day, lines, customer_ids, index))
+    return rows
+
+
+def _order(rng: random.Random, day: date, lines: list[tuple[dict, int]],
+           customer_ids: list[str], index: int) -> dict:
+    moment = datetime(day.year, day.month, day.day,
+                      int(ORDER_HOURS[rng.randrange(len(ORDER_HOURS))]),
+                      rng.randrange(60), rng.randrange(60))
+    row = {
+        "id": f"o{index}",
+        "number": f"0000-{index:06d}",
+        "date": moment.strftime("%Y-%m-%d %H:%M:%S"),
+        "items": [
+            {
+                "product_id": product["id"],
                 "name": product["name"],
                 "unit": product["unit"],
-                "quantity": rng.randint(1, MAX_QUANTITY),
+                "quantity": quantity,
                 "price": product["price"],
-            })
-        row = {
-            "id": f"o{index}",
-            "number": f"0000-{index:06d}",
-            "date": moment.strftime("%Y-%m-%d %H:%M:%S"),
-            "items": lines,
-        }
-        if customer_ids:
-            row["customer_id"] = customer_ids[rng.randrange(len(customer_ids))]
-        rows.append(row)
-    return rows
+            }
+            for product, quantity in lines
+        ],
+    }
+    if customer_ids:
+        row["customer_id"] = customer_ids[rng.randrange(len(customer_ids))]
+    return row
 
 
 def build_payload(products: int, customers: int, orders: int, seed: int) -> dict:

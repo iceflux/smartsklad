@@ -3,6 +3,7 @@ import random
 from datetime import datetime
 from pathlib import Path
 
+from app.modules.ai.service import forecast_rows
 from app.modules.audit.models import AuditLog
 from app.modules.customers.models import Customer
 from app.modules.importer.orders import DATE_FORMATS, parse_order_date
@@ -169,6 +170,35 @@ def test_a_new_order_goes_through_on_a_demo_product(db_session, tmp_path):
     assert order.items[0].product_price_snapshot == product.price
     assert order.total_amount > 0
     assert db_session.query(Order).filter(Order.id == order.id).one().items[0].quantity == 3
+
+
+def test_the_demo_file_gives_the_forecast_page_real_numbers(db_session, tmp_path):
+    """Прогноз на демо-данных обязан показывать числа, а не сплошные прочерки.
+
+    Причина прежнего «везде мало данных» измерена на боевой базе, а не выведена из
+    кода: 180 дней и 150 заказов на 300 товаров давали в среднем 1,5 дня с
+    продажами товара при пороге 14, то есть дело в ПЛОТНОСТИ продаж, а не в длине
+    ряда. Проверка идёт через настоящий импорт и настоящий прогноз — обе половины
+    по отдельности прошли бы, а вместе ловят именно эту поломку.
+    """
+    path = _file(tmp_path, products=100, customers=20, orders=300, seed=5)
+    run_import(db_session, tmp_path, [path.name])
+    rows, total = forecast_rows(db_session, page_size=100)
+    with_numbers = [row for row in rows if row["has_data"]]
+    assert total == 100
+    assert len(with_numbers) >= 10, (
+        f"прогноз показал числа только у {len(with_numbers)} товаров из 100"
+    )
+    assert any(row["recommended_qty"] for row in with_numbers), (
+        "нет ни одной рекомендации к закупке: фильтр «только к закупке» будет пуст"
+    )
+    assert any(row["forecast_7"] and row["forecast_30"] for row in with_numbers), (
+        "горизонты прогноза пустые"
+    )
+    assert any(not row["has_data"] for row in rows), (
+        "все товары с прогнозом: нечем показать состояние «мало данных»"
+    )
+    assert len(rows) == 100
 
 
 def test_the_generator_writes_nothing_to_the_database(db_session, tmp_path):
