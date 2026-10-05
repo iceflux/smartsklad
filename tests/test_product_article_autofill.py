@@ -10,6 +10,8 @@ from app.modules.inventory.service import create_product, get_unit_by_name, upda
 
 PASSWORD = "password123"
 FORM = Path("app/templates/product_form.html").read_bytes().decode("utf-8")
+PARTIAL = Path("app/templates/partials/product_form.html").read_bytes().decode("utf-8")
+BODY_SCRIPT = PARTIAL[PARTIAL.index("window.smartskladProductBody"):]
 SERVICE = Path("app/modules/inventory/service.py").read_bytes().decode("utf-8")
 
 
@@ -135,6 +137,12 @@ def test_the_generator_is_the_one_the_importer_already_uses():
 
 
 def test_the_form_sends_the_article_even_when_it_is_blank():
-    assert "body.sku = f.sku.value;" in FORM, (
-        "форма не отправляет артикул — сервер не увидит, что поле пустое"
-    )
+    """Пустой артикул должен ДОЙТИ до сервера: иначе сервер решит, что поле не
+    прислано, и не подставит следующий свободный номер.
+
+    Сборка тела уехала в `partials/product_form.html` — оттуда её читают обе формы
+    (карточка товара и окно создания в заказе), поэтому проверяется тот кусок."""
+    body = BODY_SCRIPT
+    assert "body.sku = form.sku.value;" in body, (
+        "форма не отправляет артикул — сервер не увидит, что поле пустое")
+    assert 'name="sku"' in PARTIAL, "в форме товара нет поля артикула"

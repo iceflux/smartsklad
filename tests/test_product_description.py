@@ -12,6 +12,11 @@ from app.modules.inventory.service import get_unit_by_name, update_product
 
 PASSWORD = "password123"
 FORM = Path("app/templates/product_form.html").read_bytes().decode("utf-8")
+PARTIAL = Path("app/templates/partials/product_form.html").read_bytes().decode("utf-8")
+FIELDS = PARTIAL[PARTIAL.index('{% macro product_fields'):PARTIAL.index("{% macro product_body_script")]
+"""Поля формы товара живут в партиале: их читают и карточка товара, и окно
+создания товара в заказе. Проверяется именно он, а не страница, которая его
+подключает."""
 BODY = {"name": "Гвозди", "sku": "NAIL-D", "price": 10.0, "rest": 5}
 TEXT = "Оцинкованный гвоздь 3×35, пачка 100 шт."
 
@@ -101,7 +106,7 @@ def test_the_form_sends_the_description(client, db_session):
     product_id = _create(client, description=TEXT)
     body = client.get(f"/products/{product_id}/edit").text
     assert f">{TEXT}</textarea>" in body, "сохранённое описание не вернулось в форму"
-    assert "body.description = f.description.value;" in body, (
+    assert "body.description = form.description.value;" in body, (
         "форма не отправляет описание — поле есть, а сохранить его нечем"
     )
 
@@ -122,14 +127,14 @@ def test_the_description_is_disabled_for_a_role_that_only_changes_the_price(clie
 
 def test_the_json_field_is_the_last_one_in_the_form():
     names = [(match.start(), match.group(1)) for match in
-             re.finditer(r'<(?:input|select|textarea)[^>]*\sname="([^"]+)"', FORM)]
+             re.finditer(r'<(?:input|select|textarea)[^>]*\sname="([^"]+)"', FIELDS)]
     last = names[-1]
     assert last[1] == "characteristic", (
         f"последнее поле формы — {last[1]!r}, а характеристики должны быть в самом конце"
     )
-    assert '<textarea name="description"' in FORM
-    assert FORM.index('name="description"') < last[0]
-    assert "Характеристики (JSON)" in FORM, "подпись поля, которое владелец назвал, поехала"
+    assert '<textarea name="description"' in FIELDS
+    assert FIELDS.index('name="description"') < last[0]
+    assert "Характеристики (JSON)" in FIELDS, "подпись поля, которое владелец назвал, поехала"
 
 
 MULTILINE = "Оцинкованный гвоздь 3×35\nПачка 100 шт\nОцинковка цинком"

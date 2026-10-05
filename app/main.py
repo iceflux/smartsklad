@@ -224,9 +224,17 @@ def _order_form_context(db: Session, user: User, order) -> dict:
         "PRODUCTS_TABLE": PRODUCTS_TABLE,
         "CUSTOMERS_TABLE": CUSTOMERS_TABLE,
         # Фильтр и форма товара в окнах читают те же значения, что и страницы
-        # разделов; без них список в окне открылся бы с пустым запросом и без
-        # дерева категорий.
+        # разделов; без них список в окне открылся бы с пустым запросом, без дерева
+        # категорий и без справочника единиц.
         "tree": get_category_tree(db),
+        "units": list_units(db),
+        "next_sku": next_sku(db),
+        "stock_track_default": get_setting(db, STOCK_TRACK_DEFAULT_KEY),
+        "min_stock_days_hint": get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),
+        "characteristic_json": "",
+        "can_edit": user_has_permission(user, Permission.products_edit),
+        "can_price": user_has_permission(user, Permission.price_change),
+        "can_stock": user_has_permission(user, Permission.stock_change),
         "search": "", "category_id": None, "include_deleted": False,
         "sort": None, "direction": None,
         **_product_create(user),

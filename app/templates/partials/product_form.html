@@ -1,0 +1,138 @@
+{% macro product_fields(product, is_new, tree, units, next_sku, stock_track_default,
+                        min_stock_days_hint, characteristic_json,
+                        can_edit, can_price, can_stock) %}
+{#
+  ПОЛЯ ФОРМЫ ТОВАРА — один кусок на карточку товара и на окно создания товара в
+  заказе. Вторая копия этой разметки была бы второй формой: новое поле, добавленное
+  в карточку, молча не появилось бы в окне, и человек ушёл бы дополнять товар
+  отдельной страницей. Проверяет это
+  `tests/test_shared_order_surfaces.py::test_the_create_window_has_every_field_the_section_form_has`.
+
+  Аргументы названы явно, а не берутся из контекста: у страницы заказа свои
+  `is_new` и `product`, и молчаливое перекрытие переменных дало бы окну создания
+  товара поля товара на редактирование.
+#}
+<div>
+    <label class="block mb-1">Название</label>
+    <input name="name" required value="{{ product.name if product else '' }}" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
+</div>
+<div>
+    <label class="block mb-1">Артикул</label>
+    <input name="sku" value="{{ product.sku if product else '' }}" {% if is_new %}placeholder="{{ next_sku }}"{% endif %} class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
+    <p class="text-sm text-muted">Пусто — подставится следующий свободный номер.</p>
+</div>
+<div>
+    <label class="block mb-1">Категория</label>
+    <select name="category_id" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
+        <option value="">— без категории —</option>
+        {% for root in tree %}
+            {% if root.children %}
+            <optgroup label="{{ root.name }}">
+                <option value="{{ root.id }}" {% if product and product.category_id == root.id %}selected{% endif %}>{{ root.name }}</option>
+                {% for child in root.children %}
+                    <option value="{{ child.id }}" {% if product and product.category_id == child.id %}selected{% endif %}>{{ child.name }}</option>
+                {% endfor %}
+            </optgroup>
+            {% else %}
+            <option value="{{ root.id }}" {% if product and product.category_id == root.id %}selected{% endif %}>{{ root.name }}</option>
+            {% endif %}
+        {% endfor %}
+    </select>
+</div>
+<div>
+    <label class="block mb-1">Единица измерения</label>
+    <select name="unit_id" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
+        <option value="">— выберите —</option>
+        {% for u in units %}
+        <option value="{{ u.id }}" {% if product and product.unit_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+    </select>
+</div>
+<div>
+    <label class="block mb-1">Минимальный запас</label>
+    <input name="min_stock" type="number" min="0" value="{{ product.min_stock if product and product.min_stock is not none else '' }}" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
+    <p class="text-sm text-muted">Пусто — брать запас из настроек ({{ min_stock_days_hint }} дней продаж).</p>
+</div>
+<div>
+    <label class="block mb-1">Цена</label>
+    <input name="price" type="number" step="0.01" value="{{ product.price if product else '0' }}" class="w-full border p-2" {% if not can_price %}disabled{% endif %}>
+</div>
+{% if can_stock %}
+<div>
+    <label class="block mb-1">Остаток</label>
+    <input name="rest" type="number" value="{{ product.rest if product else '0' }}" class="w-full border p-2">
+</div>
+{% endif %}
+{% if can_stock %}
+<div>
+    <label class="block mb-1">Учитывать остатки</label>
+    <input type="checkbox" name="track_rest" {% if product and product.track_rest %}checked{% elif is_new and stock_track_default != "false" %}checked{% endif %}>
+    <p class="text-sm text-muted">{% if is_new %}По умолчанию — значение из настроек.{% else %}Переопределение учёта остатков для этого товара.{% endif %}</p>
+</div>
+{% endif %}
+<div>
+    <label class="block mb-1">Описание</label>
+    <textarea name="description" rows="4" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>{{ product.description or '' }}</textarea>
+</div>
+<div>
+    <label class="block mb-1">Характеристики (JSON)</label>
+    <textarea name="characteristic" rows="5" class="w-full border p-2 font-mono text-sm" {% if not can_edit %}disabled{% endif %}>{{ characteristic_json }}</textarea>
+    <p class="text-sm text-muted">Заполняют редко — поэтому поле в самом конце формы.</p>
+</div>
+<p data-product-error class="text-danger hidden"></p>
+{% endmacro %}
+
+{% macro product_body_script() %}
+{#
+  Сборка тела запроса из полей формы товара — тоже одна функция на обе формы.
+  Значимое здесь не DRY, а другое: второе место, где пишется эта разметка, было бы
+  вторым местом, где пишется и разбор полей. Новое поле доехало бы до API с одной
+  формы и молча пропало бы с другой.
+#}
+<script>
+window.smartskladProductBody = function (form, options) {
+    function bad(text) {
+        var note = form.querySelector('[data-product-error]');
+        if (note) {
+            note.textContent = text;
+            note.classList.remove('hidden');
+        }
+        return null;
+    }
+    var body = {};
+    if (options.canEdit) {
+        body.name = form.name.value;
+        body.sku = form.sku.value;
+        body.unit_id = form.unit_id.value ? parseInt(form.unit_id.value) : null;
+        body.category_id = form.category_id.value ? parseInt(form.category_id.value) : null;
+        body.description = form.description.value;
+        var msRaw = form.min_stock.value.trim();
+        if (msRaw === '') {
+            body.min_stock = null;
+        } else {
+            var ms = form.min_stock.valueAsNumber;
+            if (!Number.isInteger(ms) || ms < 0) {
+                return bad('Минимальный запас: целое неотрицательное число');
+            }
+            body.min_stock = ms;
+        }
+        var raw = form.characteristic.value.trim();
+        if (raw) {
+            try { body.characteristic = JSON.parse(raw); }
+            catch (err) { return bad('Характеристики: некорректный JSON'); }
+        } else {
+            body.characteristic = null;
+        }
+    }
+    if (options.canPrice) { body.price = parseFloat(form.price.value); }
+    if (options.canStock) {
+        body.rest = parseInt(form.rest.value);
+        body.track_rest = options.isNew
+            ? (form.track_rest.checked !== options.newDefaultTrackRest
+               ? form.track_rest.checked : null)
+            : form.track_rest.checked;
+    }
+    return body;
+};
+</script>
+{% endmacro %}

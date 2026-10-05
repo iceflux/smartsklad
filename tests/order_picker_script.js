@@ -3,27 +3,16 @@ const fs = require('fs');
 const vm = require('vm');
 
 const template = fs.readFileSync(process.argv[2], 'utf8');
-const blocks = [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
-assert.strictEqual(blocks.length, 1,
-    'ожидался ровно один блок <script>, получено ' + blocks.length);
-let block = blocks[0];
 
-/* Прибор гоняет исходник шаблона, а не отрендеренную страницу, поэтому
-   подстановки Jinja в нём остаются. Значения приходят из приложения (третий
-   аргумент) — иначе прибор проверял бы свою копию числа, а расхождение
-   заметил бы только владелец, молча, отказом на первой букве. Неизвестная
-   подстановка — ошибка прибора, а не «undefined»: молчаливый undefined прогонял
-   бы сценарий на несуществующем коде. */
-const VALUES = JSON.parse(process.argv[3] || '{}');
-const unknown = [];
-block = block.replace(/\{\{\s*([A-Za-z_]\w*)\s*\}\}/g, (whole, name) => {
-    if (!(name in VALUES)) { unknown.push(name); return 'undefined'; }
-    /* Значения — числа и голые идентификаторы, поэтому подставляем их как есть.
-   Строка в кавычках пришла бы в скрипт вместе с кавычками. */
-    return String(VALUES[name]);
-});
-assert.deepStrictEqual(unknown, [],
-    'в скрипте подстановки, которых нет в приборе: ' + unknown.join(', '));
+/* Прибор получает ОТРЕНДЕРЕННЫЙ скрипт страницы (его готовит python-тест через
+   TestClient). Блоков на странице может быть несколько: общий кусок
+   `partials/product_form.html` подключается отдельным блоком и тоже исполняется
+   браузером, поэтому исполняется всё, что пришло. Иначе прибор проверял бы не
+   тот код, который реально работает на странице. */
+assert.ok(template.trim(), 'скрипт страницы пуст');
+assert.ok(!/%\}|\{\{/.test(template),
+    'в скрипте осталась подстановка Jinja — прибор взял бы неразобранный код');
+const block = template;
 
 function matches(el, sel) {
     const cls = sel.match(/^\.([\w-]+)$/);
@@ -88,6 +77,11 @@ function makeEl(tag, attrs) {
         parentNode: null,
         value: '',
         checked: false,
+        /* `valueAsNumber` у настоящего поля — это число из строки, а не строка,
+           и различение тут не украшение: минимальный запас проверяется на
+           целое именно числом. */
+        get valueAsNumber() { return Number(this.value); },
+        classList: {add() {}, remove() {}},
         className: (attrs && attrs.class) || '',
         _handlers: {},
     };
@@ -144,6 +138,11 @@ function makeEl(tag, attrs) {
     el.appendChild = (child) => {
         child.parentNode = el;
         el.children.push(child);
+        /* Настоящая форма отдаёт поля по имени: `form.name` — это поле `name`, а
+           не имя самой формы. Скрипт на этом стоит, и без такой подмены прибор
+           проверял бы падение вместо разбора полей. */
+        const named = child.getAttribute ? child.getAttribute('name') : null;
+        if (named && !(named in el)) el[named] = child;
         return child;
     };
     el.querySelector = (sel) => findIn(el, sel);
@@ -324,29 +323,51 @@ function makeBrowseModal(options) {
              nodes: function () { return table.children; }};
 }
 
+/* Форма создания товара — ВСЯ форма, а не два поля: окно отдаёт те же поля, что и
+   карточка товара, и собирает их той же функцией. Прибор повторяет этот набор
+   (плюс проверка ниже, что скрипт действительно требует все поля). */
 function makeCreateModal() {
     const modal = makeEl('div', {
         'class': 'app-modal', 'data-open': 'false', 'data-modal': 'create-products',
     });
     const panel = makeEl('div', {'class': 'app-modal-panel'});
     const close = makeEl('button', {'class': 'app-btn', 'data-modal-close': '',
-                                  'data-modal-kind': 'create-products'});
+                                    'data-modal-kind': 'create-products'});
     close.textContent = 'Закрыть';
     const form = makeEl('form', {'class': 'space-y-2', 'data-create-form': ''});
-    const name = makeEl('input', {name: 'name'});
-    const price = makeEl('input', {name: 'price'});
-    price.value = '12.50';
-    const note = makeEl('p', {'class': 'app-picker-note'});
+    const field = (name, value, extra) => {
+        const el = makeEl('input', Object.assign({name: name}, extra || {}));
+        el.value = value === undefined ? '' : String(value);
+        form.appendChild(el);
+        return el;
+    };
+    const name = field('name');
+    field('sku');
+    const category = makeEl('select', {name: 'category_id'});
+    form.appendChild(category);
+    const unit = makeEl('select', {name: 'unit_id'});
+    form.appendChild(unit);
+    field('min_stock');
+    const price = field('price', '12.50', {type: 'number'});
+    field('rest', '0', {type: 'number'});
+    field('track_rest', null, {type: 'checkbox'});
+    const description = makeEl('textarea', {name: 'description'});
+    form.appendChild(description);
+    const characteristic = makeEl('textarea', {name: 'characteristic'});
+    form.appendChild(characteristic);
+    const error = makeEl('p', {'data-product-error': '', 'class': 'text-danger hidden'});
+    form.appendChild(error);
+    const note = makeEl('p', {'class': 'app-picker-note', 'data-create-note': ''});
     const submit = makeEl('button', {'class': 'app-btn-accent'});
     submit.textContent = 'Создать';
-    form.appendChild(name);
-    form.appendChild(price);
     form.appendChild(note);
     form.appendChild(submit);
     panel.appendChild(close);
     panel.appendChild(form);
     modal.appendChild(panel);
-    return {modal, close, form, name, price, note, submit};
+    return {modal, close, form, name, price, note, submit, error,
+            fields: ['name', 'sku', 'category_id', 'unit_id', 'min_stock', 'price',
+                     'rest', 'track_rest', 'description', 'characteristic']};
 }
 
 const COLUMNS = [['Название', 'name'], ['Артикул', 'sku'], ['Категория', 'category'],
@@ -837,7 +858,9 @@ const THREE = {
     assert.strictEqual(escModal.pickers[0].hidden.value, '9', 'Escape подменил товар');
     assert.strictEqual(escModal.create.modal.getAttribute('data-open'), 'false');
 
-    // 22. Созданный товар сразу становится выбранным в этой строке.
+    // 22. Созданный товар сразу становится выбранным в этой строке. Тело собирает ТА
+    //     ЖЕ функция, что и карточка товара, поэтому уходит вся форма, а не два
+    //     поля: копия разбора здесь была бы второй формой без половины полей.
     const created = run([{id: 31, name: 'Гвоздь 3мм'}],
                         {pickers: [makePicker('products', '', '')]});
     created.click(created.pickers[0].create);
@@ -849,12 +872,23 @@ const THREE = {
     const sent = created.calls[0];
     assert.strictEqual(sent.url, '/api/products', 'создание пошло не в API товаров');
     assert.strictEqual(sent.sent.method, 'POST');
-    assert.deepStrictEqual(JSON.parse(sent.sent.body),
-        {name: 'Гвоздь 3мм', price: 12.5}, sent.sent.body);
+    assert.deepStrictEqual(JSON.parse(sent.sent.body), {
+        name: 'Гвоздь 3мм', sku: '', unit_id: null, category_id: null,
+        description: '', min_stock: null, characteristic: null,
+        price: 12.5, rest: 0, track_rest: false,
+    }, sent.sent.body);
     assert.strictEqual(created.pickers[0].hidden.value, '31',
         'новый товар не стал выбранным в строке заказа');
     assert.strictEqual(created.pickers[0].text.value, 'Гвоздь 3мм');
     assert.strictEqual(created.create.modal.getAttribute('data-open'), 'false');
+
+    // 22a. Каждое поле формы доезжает до тела запроса. Список полей повторяет
+    //      форму раздела, и скрипт обязан читать их все: поле, забытое в сборе,
+    //      молча потерялось бы у товара, созданного из заказа.
+    for (const field of created.create.fields) {
+        assert.ok(JSON.parse(sent.sent.body)[field] !== undefined,
+            `поле ${field} не доехало до тела запроса: ${sent.sent.body}`);
+    }
 
     // 23. Отказ сервера виден словами и строку не трогает.
     const refused = run([{ok: false, detail: 'Название обязательно'}],

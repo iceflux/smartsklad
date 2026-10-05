@@ -1,4 +1,11 @@
 {% extends "base.html" %}
+{#
+  Окно выбора товара — список товаров, окно создания — вся форма товара: обе
+  поверхности собираются из `partials/`, а не копируются в шаблон заказа. Второй
+  копии здесь нет, и `tests/test_shared_order_surfaces.py` падает, если она
+  появится.
+#}
+{% from "partials/product_form.html" import product_fields, product_body_script %}
 {% macro picker(kind, field, current, aria, hint) -%}
 <div class="app-picker" data-lookup="/api/lookup/{{ kind }}" data-open="false"
      data-value="{{ current.id }}" data-label="{{ current.label }}">
@@ -94,15 +101,9 @@
                 <button type="button" class="app-btn border px-2 py-1" data-modal-close data-modal-kind="create-products">Закрыть</button>
             </div>
             <form class="space-y-2" data-create-form>
-                <div>
-                    <label class="block text-sm" for="new-product-name">Название</label>
-                    <input id="new-product-name" name="name" class="border p-2 w-full" autocomplete="off">
-                </div>
-                <div>
-                    <label class="block text-sm" for="new-product-price">Цена</label>
-                    <input id="new-product-price" name="price" type="number" min="0" step="0.01"
-                           value="0" class="border p-2 w-full">
-                </div>
+                {{ product_fields(None, True, tree, units, next_sku, stock_track_default,
+                                   min_stock_days_hint, characteristic_json,
+                                   can_edit, can_price, can_stock) }}
                 <p class="app-picker-note" role="status" data-create-note></p>
                 <button class="app-btn-accent bg-accent text-on-accent px-3 py-2">Создать</button>
             </form>
@@ -117,6 +118,13 @@
     var MIN_QUERY = {{ LOOKUP_MIN_QUERY }};
     var DEBOUNCE_MS = 300;
     var CREATE_PRODUCT = "/api/products";
+    /* Права товара для окна создания — те же флаги, что у карточки товара.
+       Объявлены оператором Jinja, а не подстановкой выражения: прибор гоняет
+       скрипт страницы, и выражение в строке осталось бы неразобранным JS. */
+    var CAN_EDIT = {% if can_edit %}true{% else %}false{% endif %};
+    var CAN_PRICE = {% if can_price %}true{% else %}false{% endif %};
+    var CAN_STOCK = {% if can_stock %}true{% else %}false{% endif %};
+    var DEFAULT_TRACK_REST = {% if stock_track_default != "false" %}true{% else %}false{% endif %};
     var states = new WeakMap();
     var target = null;
     var modalTimer = null;
@@ -348,10 +356,6 @@
         closeModal(name);
     }
 
-    function noteOf(modal) {
-        return modal.querySelector("p");
-    }
-
     /* Права: кнопка не `disabled`, а `aria-disabled` — по двум причинам, и обе
        поведенческие. Настоящий `disabled` не получает события click и не берётся
        с клавиатуры, то есть «оставить гашеной и объяснить по клику» невозможно:
@@ -507,23 +511,38 @@ var createModal = modalByName("create-products");
         if (createModal.getAttribute("data-open") === "true") closeModal("create-products");
     });
 
+    /* Создание товара. Тело собирает ТА ЖЕ функция, что и карточка товара
+       (`partials/product_form.html`), поэтому поле, добавленное в форму товара,
+       доезжает и сюда: своя сборка здесь была бы второй копией разбора полей.
+
+       Отказ сервера идёт в подпись под формой, а не в поле разбора полей:
+       сообщение должно быть под формой, а не рядом с описанием. Подпись ищется
+       по признаку, а не «первый `<p>` в окне» — после появления полей формы
+       первым `<p>` стал именно разбор полей. */
+    var createNote = createModal.querySelector("[data-create-note]");
     createModal.querySelector("form").addEventListener("submit", function (event) {
         event.preventDefault();
-        var note = noteOf(createModal);
+        var form = event.target;
+        var body = window.smartskladProductBody(form, {
+            canEdit: CAN_EDIT, canPrice: CAN_PRICE, canStock: CAN_STOCK,
+            isNew: true, newDefaultTrackRest: DEFAULT_TRACK_REST,
+        });
+        if (body === null) {
+            createNote.textContent = "";
+            return;
+        }
+        createNote.textContent = "";
         fetch(CREATE_PRODUCT, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                name: createModal.querySelector("input[name=name]").value.trim(),
-                price: Number(createModal.querySelector("input[name=price]").value) || 0,
-            }),
+            body: JSON.stringify(body),
         }).then(function (response) {
-            return response.json().then(function (body) {
-                return {ok: response.ok, body: body};
+            return response.json().then(function (answer) {
+                return {ok: response.ok, body: answer};
             });
         }).then(function (answer) {
             if (!answer.ok) {
-                note.textContent = answer.body.detail || "Не удалось создать товар";
+                createNote.textContent = answer.body.detail || "Не удалось создать товар";
                 return;
             }
             choose({id: answer.body.id, label: answer.body.name}, "create-products");
@@ -531,4 +550,5 @@ var createModal = modalByName("create-products");
     });
 })();
 </script>
+{{ product_body_script() }}
 {% endblock %}

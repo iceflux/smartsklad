@@ -13,6 +13,7 @@
 
 import re
 from html.parser import HTMLParser
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +22,9 @@ from app.modules.auth.service import get_role_by_name, hash_password, login
 from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.inventory.service import get_unit_by_name
+
+ROOT = Path(__file__).resolve().parents[1]
+TEMPLATE_DIR = ROOT / "app" / "templates"
 
 PASSWORD = "password123"
 ORDER_RIGHTS = ["orders.view", "orders.create", "products.view", "customers.manage"]
@@ -112,6 +116,33 @@ class _Modal(HTMLParser):
     def handle_data(self, data):
         if self._cell is not None:
             self._cell.append(data)
+
+
+class _FormFields(HTMLParser):
+    """Имена полей формы — все, а не только по записке: окно создания товара
+    обязано нести столько же полей, сколько карточка."""
+
+    def __init__(self):
+        super().__init__()
+        self.in_form = False
+        self.names = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "form" and (attrs.get("id") == "product-form"
+                              or "data-create-form" in attrs):
+            self.in_form = True
+            return
+        if not self.in_form:
+            return
+        if tag in ("input", "select", "textarea"):
+            name = attrs.get("name")
+            if name:
+                self.names.append(name)
+
+    def handle_endtag(self, tag):
+        if tag == "form" and self.in_form:
+            self.in_form = False
 
 
 class _Fields(HTMLParser):
@@ -407,3 +438,83 @@ def test_the_window_sorts_and_pages_like_the_products_page(client, db_session):
 def test_an_anonymous_visitor_gets_nothing_from_the_window(client):
     assert client.get("/api/lookup/products/table").status_code == 401
     assert client.get("/api/lookup/customers/table").status_code == 401
+
+
+# --- Форма товара --------------------------------------------------------------
+
+
+def _form_fields(form_html):
+    parser = _FormFields()
+    parser.feed(form_html)
+    return parser.names
+
+
+def _form_with(html, marker):
+    for form in _forms(html):
+        if marker in form:
+            return form
+    raise AssertionError(f"нет формы с «{marker}»")
+
+
+def test_the_create_window_has_every_field_the_product_form_has(client, db_session):
+    """Главная проверка пункта 3: окно создания товара — вся форма товара.
+
+    Сравниваются списки полей двух ОТРЕНДЕРЕННЫХ форм. Копия разметки, добавленная
+    в окно (или, наоборот, поле, забытое в окне), рассыплется здесь, а не
+    обнаружится у человека, который создаст товар без единицы измерения."""
+    _admin(client, db_session)
+    _seed(db_session)
+    page = client.get("/products/new").text
+    window = _modals(client.get("/orders/new").text)["create-products"]
+    section = _form_fields(_form_with(page, 'name="characteristic"'))
+    in_window = _form_fields(window.html)
+    assert sorted(section) == sorted(in_window), (
+        f"форма товара {sorted(section)}, окно {sorted(in_window)}")
+
+
+def test_the_create_window_keeps_the_whole_product_form_not_two_fields(client, db_session):
+    """Проверка на словах, а не только на списке полей: у окна обязаны быть
+    единица измерения, минимальный запас, остаток, описание и характеристики —
+    ровно то, чего не было в прошлой двухполевой форме."""
+    _admin(client, db_session)
+    _seed(db_session)
+    window = _modals(client.get("/orders/new").text)["create-products"]
+    text = window.html
+    for label in ("Единица измерения", "Минимальный запас", "Цена", "Остаток",
+                  "Описание", "Характеристики (JSON)", "Категория", "Артикул"):
+        assert label in text, f"в окне создания нет поля «{label}»"
+    assert "Пусто — подставится следующий свободный номер." in text, (
+        "в окне нет подсказки про автоартикул — человек не знает, что поле можно "
+        "оставить пустым")
+    assert text.index('name="description"') < text.index('name="characteristic"'), (
+        "характеристики должны остаться последним полем формы")
+
+
+def test_the_both_product_forms_share_one_body_builder(client, db_session):
+    """Тело запроса собирает одна функция из `partials/product_form.html`, и обе
+    формы её зовут. Своя сборка в окне означала бы второе место, где пишется
+    разбор полей, а новое поле доезжало бы до API с одной формы и молча пропадало
+    бы с другой."""
+    partial = (TEMPLATE_DIR / "partials" / "product_form.html").read_text(encoding="utf-8")
+    builder = partial[partial.index("window.smartskladProductBody"):]
+    for page in ("app/templates/product_form.html", "app/templates/order_form.html"):
+        body = (ROOT / page).read_text(encoding="utf-8")
+        assert "window.smartskladProductBody(form" in body, (
+            f"{page}: форма не зовёт общий разбор полей")
+        assert "JSON.stringify({" not in body or "canEdit" in body, (
+            f"{page}: у формы своя сборка тела запроса рядом с общей")
+    for word in ("form.name.value", "form.sku.value", "form.description.value",
+                 "form.min_stock", "form.characteristic", "form.price.value",
+                 "form.rest.value", "form.track_rest"):
+        assert word in builder, f"общий разбор забыл поле: {word}"
+
+
+def test_the_window_form_and_the_section_form_read_the_same_permissions(client, db_session):
+    """Окно создания отдаёт те же поля, что и карточка товара, поэтому и права на
+    них те же: у кого нет права на цены, в обоих местах она недоступна."""
+    _user(client, db_session, ["orders.view", "orders.create", "products.view",
+                              "products.edit"], "noprice")
+    page = _modals(client.get("/orders/new").text)["create-products"]
+    assert 'name="price" type="number" step="0.01" value="0" class="w-full border p-2" disabled' \
+        in page.html, "в окне цена доступна без права на неё"
+    assert 'name="name" required' in page.html

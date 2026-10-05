@@ -1,80 +1,23 @@
 {% extends "base.html" %}
+{#
+  Карточка товара и окно создания товара в заказе собирают поля из
+  `partials/product_form.html` и разбирают их одной функцией оттуда же. Второй
+  копии формы в проекте нет; расхождение поймал бы
+  `tests/test_shared_order_surfaces.py`.
+#}
+{% from "partials/product_form.html" import product_fields, product_body_script %}
 {% block content %}
 <main class="max-w-2xl mx-auto p-4">
     {% if msg %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">{{ msg }}</p>{% endif %}
     <h1 class="text-2xl font-bold mb-4">{% if is_new %}Новый товар{% else %}Редактирование товара {{ product.name }}{% endif %}</h1>
     <form id="product-form" class="space-y-4">
-        <div>
-            <label class="block mb-1">Название</label>
-            <input name="name" required value="{{ product.name if product else '' }}" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
-        </div>
-        <div>
-            <label class="block mb-1">Артикул</label>
-            <input name="sku" value="{{ product.sku if product else '' }}" {% if is_new %}placeholder="{{ next_sku }}"{% endif %} class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
-            <p class="text-sm text-muted">Пусто — подставится следующий свободный номер.</p>
-        </div>
-        <div>
-            <label class="block mb-1">Категория</label>
-            <select name="category_id" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
-                <option value="">— без категории —</option>
-                {% for root in tree %}
-                    {% if root.children %}
-                    <optgroup label="{{ root.name }}">
-                        <option value="{{ root.id }}" {% if product and product.category_id == root.id %}selected{% endif %}>{{ root.name }}</option>
-                        {% for child in root.children %}
-                            <option value="{{ child.id }}" {% if product and product.category_id == child.id %}selected{% endif %}>{{ child.name }}</option>
-                        {% endfor %}
-                    </optgroup>
-                    {% else %}
-                    <option value="{{ root.id }}" {% if product and product.category_id == root.id %}selected{% endif %}>{{ root.name }}</option>
-                    {% endif %}
-                {% endfor %}
-            </select>
-        </div>
-        <div>
-            <label class="block mb-1">Единица измерения</label>
-            <select name="unit_id" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
-                <option value="">— выберите —</option>
-                {% for u in units %}
-                <option value="{{ u.id }}" {% if product and product.unit_id == u.id %}selected{% endif %}>{{ u.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div>
-            <label class="block mb-1">Минимальный запас</label>
-            <input name="min_stock" type="number" min="0" value="{{ product.min_stock if product and product.min_stock is not none else '' }}" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>
-            <p class="text-sm text-muted">Пусто — брать запас из настроек ({{ min_stock_days_hint }} дней продаж).</p>
-        </div>
-        <div>
-            <label class="block mb-1">Цена</label>
-            <input name="price" type="number" step="0.01" value="{{ product.price if product else '0' }}" class="w-full border p-2" {% if not can_price %}disabled{% endif %}>
-        </div>
-        {% if can_stock %}
-        <div>
-            <label class="block mb-1">Остаток</label>
-            <input name="rest" type="number" value="{{ product.rest if product else '0' }}" class="w-full border p-2">
-        </div>
-        {% endif %}
-        {% if can_stock %}
-        <div>
-            <label class="block mb-1">Учитывать остатки</label>
-            <input type="checkbox" name="track_rest" {% if product and product.track_rest %}checked{% elif is_new and stock_track_default != "false" %}checked{% endif %}>
-            <p class="text-sm text-muted">{% if is_new %}По умолчанию — значение из настроек.{% else %}Переопределение учёта остатков для этого товара.{% endif %}</p>
-        </div>
-        {% endif %}
-        <div>
-            <label class="block mb-1">Описание</label>
-            <textarea name="description" rows="4" class="w-full border p-2" {% if not can_edit %}disabled{% endif %}>{{ product.description or '' }}</textarea>
-        </div>
-        <div>
-            <label class="block mb-1">Характеристики (JSON)</label>
-            <textarea name="characteristic" rows="5" class="w-full border p-2 font-mono text-sm" {% if not can_edit %}disabled{% endif %}>{{ characteristic_json }}</textarea>
-            <p class="text-sm text-muted">Заполняют редко — поэтому поле в самом конце формы.</p>
-        </div>
-        <p id="error" class="text-danger hidden"></p>
+        {{ product_fields(product, is_new, tree, units, next_sku, stock_track_default,
+                           min_stock_days_hint, characteristic_json,
+                           can_edit, can_price, can_stock) }}
         <button class="app-btn-accent bg-accent text-on-accent px-4 py-2">Сохранить</button>
         <a href="/products" class="app-btn ml-2 border px-4 py-2">Отмена</a>
     </form>
+    {{ product_body_script() }}
     <script>
         var productId = {{ product.id if product else 'null' }};
         var isNew = {{ 'true' if is_new else 'false' }};
@@ -83,52 +26,22 @@
         var canStock = {{ 'true' if can_stock else 'false' }};
         var newDefaultTrackRest = {{ 'true' if stock_track_default != "false" else 'false' }};
 
-        function showError(text) {
-            var err = document.getElementById('error');
-            err.textContent = text;
-            err.classList.remove('hidden');
-        }
-
         document.getElementById('product-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            var f = e.target;
-            var body = {};
-            if (canEdit) {
-                body.name = f.name.value;
-                body.sku = f.sku.value;
-                body.unit_id = f.unit_id.value ? parseInt(f.unit_id.value) : null;
-                body.category_id = f.category_id.value ? parseInt(f.category_id.value) : null;
-                body.description = f.description.value;
-                var msRaw = f.min_stock.value.trim();
-                if (msRaw === '') {
-                    body.min_stock = null;
-                } else {
-                    var ms = f.min_stock.valueAsNumber;
-                    if (!Number.isInteger(ms) || ms < 0) { showError('Минимальный запас: целое неотрицательное число'); return; }
-                    body.min_stock = ms;
-                }
-                var raw = f.characteristic.value.trim();
-                if (raw) {
-                    try { body.characteristic = JSON.parse(raw); }
-                    catch (err) { showError('Характеристики: некорректный JSON'); return; }
-                } else {
-                    body.characteristic = null;
-                }
-            }
-            if (canPrice) { body.price = parseFloat(f.price.value); }
-            if (canStock) { body.rest = parseInt(f.rest.value); }
-            if (canStock) {
-                if (isNew) { body.track_rest = (f.track_rest.checked !== newDefaultTrackRest) ? f.track_rest.checked : null; }
-                else { body.track_rest = f.track_rest.checked; }
-            }
-
+            var form = e.target;
+            var body = window.smartskladProductBody(form, {
+                canEdit: canEdit, canPrice: canPrice, canStock: canStock,
+                isNew: isNew, newDefaultTrackRest: newDefaultTrackRest});
+            if (body === null) { return; }
             var url = productId ? '/api/products/' + productId : '/api/products';
             var method = productId ? 'PATCH' : 'POST';
             var res = await fetch(url, {method: method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
             if (res.ok) { window.location.href = '/products'; }
             else {
                 var d = await res.json().catch(function () { return {}; });
-                showError(d.detail || 'Ошибка');
+                var err = form.querySelector('[data-product-error]');
+                err.textContent = d.detail || 'Ошибка';
+                err.classList.remove('hidden');
             }
         });
     </script>
