@@ -23,7 +23,6 @@ from app.modules.customers.models import Customer
 from app.modules.inventory.models import Product
 from app.modules.inventory.service import get_unit_by_name
 from app.modules.orders.service import create_order
-from tests.test_interactive_states import STATE_CLASSES
 
 PASSWORD = "password123"
 
@@ -146,18 +145,17 @@ def test_the_magnifier_lives_in_the_header_block_between_collapse_and_add_order(
     _login_as(client, db_session, "boss", "admin")
     header = _header(client.get("/").text)
     collapse = header.index('action="/ui/sidebar"')
-    search = header.index('action="/search"')
+    search = header.index("data-search-open")
     add = header.index('href="/orders/new"')
     assert collapse < search < add, header[collapse:add]
-    assert '<details class="app-search' in header
     spacer = header.index('class="ml-auto')
     assert spacer < search < header.index("</div>", add), "поиск обязан лежать в блоке кнопок"
 
 
 def test_the_magnifier_is_hidden_from_an_anonymous_visitor(client):
     body = client.get("/login").text
-    assert 'action="/search"' not in body
-    assert "app-search" not in body
+    assert "<button type=\"button\" data-search-open" not in body, "лупа попала на страницу входа"
+    assert 'data-modal="search" data-table' not in body, "окно поиска попало на страницу входа"
 
 
 def test_the_search_answers_an_anonymous_visitor_with_the_login_page(client, db_session):
@@ -165,45 +163,116 @@ def test_the_search_answers_an_anonymous_visitor_with_the_login_page(client, db_
     r = client.get("/search", params={"q": "Гвозди"}, follow_redirects=False)
     assert r.status_code == 303
     assert r.headers["location"] == "/login"
+    r = client.get("/api/search/table", params={"q": "Гвозди"}, follow_redirects=False)
+    assert r.status_code == 303, "окно поиска анонимному тоже обязано уводить на вход"
+    assert r.headers["location"] == "/login"
 
 
-def test_the_magnifier_is_open_on_the_results_page_and_keeps_the_query(client, db_session):
-    _login_as(client, db_session, "boss", "admin")
-    _seed(db_session)
-    header = _header(client.get("/search", params={"q": "Гвозди"}).text)
-    assert "<details" in header and " open>" in header, "поле должно быть раскрыто на странице ответа"
-    assert 'name="q" value="Гвозди"' in header, "поле обязано сохранить введённое"
+def test_the_window_sits_outside_the_header_so_the_header_cannot_grow(client, db_session):
+    """Дефект, который эта проверка защищает.
 
-
-def test_the_input_is_a_details_element_and_needs_no_script(client, db_session):
-    _login_as(client, db_session, "boss", "admin")
-    header = _header(client.get("/").text)
-    assert "<summary" in header and "</summary>" in header
-    assert header.count("<script") == 0, "раскрытие поиска сделано скриптом, а оно не нужно"
-
-
-def test_the_magnifier_carries_exactly_one_state_class(client, db_session):
-    """`<summary>` не входит в TAG сторожа интерактивных состояний.
-
-    Ссылка и кнопка там проверяются, а раскрывающий элемент — нет, поэтому его
-    состояние проверяется здесь: без `app-btn` у лупы не будет ни наведения, ни
-    рамки, и она выглядела бы как чужеродная точка в ряду кнопок.
+    Поиск был `<details>` ВНУТРИ шапки, и раскрытое поле ломало вёрстку: шапка —
+    flex-строка, растущее поле выталкивало кнопки, и высота шапки менялась. Теперь
+    окно живёт после `</header>`, и расти ему не на чем: строка проверяет, что
+    разметка окна начинается позже конца шапки, а не где-нибудь рядом с ней.
     """
     _login_as(client, db_session, "boss", "admin")
-    header = _header(client.get("/").text)
-    tag = re.search(r"<summary\b[^>]*>", header).group(0)
-    classes = set(re.search(r'class="([^"]*)"', tag).group(1).split())
-    assert len(classes & STATE_CLASSES) == 1, tag
+    body = client.get("/orders").text
+    modal = body.index('data-modal="search"')
+    assert body.index("</header>") < modal, "окно поиска снова оказалось в шапке"
+    assert "</header>" not in body[modal:], "окно поиска не должно содержать шапку"
 
 
-def test_the_disclosure_marker_is_removed_from_the_built_stylesheet(client, db_session):
-    """Штатный треугольник сдвинул бы значок лупы внутри квадрата 44 на 44."""
+def test_the_window_is_closed_by_default_and_keeps_the_query(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    _seed(db_session)
+    body = client.get("/search", params={"q": "Гвозди"}).text
+    modal = body[body.index('id="app-search-modal"'):]
+    assert 'data-open="false"' in modal, "окно обязано приезжать закрытым"
+    assert 'value="Гвозди"' in modal, "поле обязано сохранить введённое"
+    assert "Гвозди 100" in body, "страница поиска обязана показывать результаты без скрипта"
+
+
+def test_the_window_works_without_javascript(client, db_session):
+    """Форма в окне отправляется на страницу поиска обычной отправкой.
+
+    Это не запасной путь «на всякий случай»: без него окно было бы надстройкой,
+    которой обязателен скрипт, и его поломка выглядела бы как пропавший поиск.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    _seed(db_session)
+    body = client.get("/orders").text
+    modal = body[body.index('id="app-search-modal"'):]
+    form = modal[modal.index("<form"): modal.index("</form>")]
+    assert 'action="/search"' in form and 'method="get"' in form
+    assert 'name="q"' in form
+    assert "onclick" not in modal, "в разметке окна не должно быть инлайновых обработчиков"
+
+
+def test_the_magnifier_is_a_button_naming_the_dialog_it_opens(client, db_session):
+    """Лупа стала кнопкой, а `<summary>` больше нет: кнопка, открывающая окно,
+    обязана называть это окно и объявлять, что именно она открывает.
+
+    Имя берётся из заголовка окна, а не пишется дважды: переименование заголовка
+    не оставило бы подпись кнопки старой.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    body = client.get("/orders").text
+    opener = re.search(r"<button[^>]*data-search-open[^>]*>", body).group(0)
+    assert 'aria-haspopup="dialog"' in opener, opener
+    assert 'aria-expanded="false"' in opener, opener
+    assert 'aria-controls="app-search-modal"' in opener, opener
+    panel = re.search(r"<div[^>]*class=\"app-modal-panel[^>]*>", body).group(0)
+    assert 'role="dialog"' in panel, panel
+    labelled = re.search(r'aria-labelledby="([^"]+)"', panel).group(1)
+    heading = re.search(r'<h2 id="' + labelled + r'"[^>]*>([^<]+)</h2>', body)
+    assert heading, f"окно ссылается на заголовок {labelled!r}, которого нет"
+    assert heading.group(1).strip(), "у окна должно быть имя, иначе оно безымянное"
+    assert "<details" not in body and "<summary" not in body, (
+        "раскрывающийся поиск вернулся: он и был причиной растущей шапки"
+    )
+
+
+def test_the_search_thresholds_live_in_the_page_script_and_only_there(client, db_session):
+    """Одно число на паузу во всём приложении, и порог ручного режима виден.
+
+    Числа читаются из исходника скрипта, а не из Python: Jinja-константа в
+    `base.html` попала бы в печатный шаблон, который тоже extends `base.html`,
+    и там она оказалась бы пустой строкой внутри скрипта. Проверяются все
+    шаблоны, а не только `base.html`: пауза живёт в трёх скриптах, и «одно
+    число» — это утверждение обо всех трёх сразу.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "app" / "templates"
+    declared = {}
+    for path in sorted(root.rglob("*.html")):
+        for number in re.findall(r"DEBOUNCE_MS = (\d+)", path.read_text(encoding="utf-8")):
+            declared.setdefault(number, []).append(path.relative_to(root).as_posix())
+    assert declared, "пауза перестала быть объявлена в скриптах"
+    assert list(declared) == ["300"], f"пауза разъехалась: {declared}"
+    assert "base.html" in declared["300"], "в шапке паузы больше нет"
+    base = (root / "base.html").read_text("utf-8")
+    assert base.count("DEBOUNCE_MS = 300") == 2, (
+        "в шапке объявлено не две паузы, а столько-то: один из скриптов потерял "
+        "свою или получил чужую"
+    )
+    assert "SEARCH_SLOW_MS = 800" in base, "порог ручного режима поменялся — перечитай отчёт"
+    assert base.index("SEARCH_SLOW_MS = 800") < base.index("var opener"), (
+        "порог объявлен вне скрипта окна"
+    )
+
+
+def test_the_disclosure_rules_are_gone_and_the_window_rules_are_shipped(client, db_session):
+    """Правила `<summary>` удалены вместе с `<details>`: оставшиеся были бы
+    мёртвым CSS, а правила окна обязаны доехать до сборки непустыми."""
     from pathlib import Path
 
     css = (Path(__file__).resolve().parents[1] / "app" / "static" / "app.css").read_text("utf-8")
-    assert re.search(r"\.app-search summary\{[^}]*list-style:none", css), "маркер не убран"
-    assert re.search(r"\.app-search summary::?-webkit-details-marker\{display:none\}", css), (
-        "маркер убран только для одного движка, в вебкит-браузере он останется"
+    assert "app-search" not in css, "правила раскрывающегося поиска остались в сборке"
+    assert re.search(r"\.app-modal\{[^}]*display:none", css), "окно без правила не спрячется"
+    assert re.search(r'\.app-modal\[data-open=("?)true\1\]\{[^}]*display:flex', css), (
+        "окно не научилось открываться: сборщик снял кавычки со значения атрибута"
     )
 
 
@@ -212,8 +281,8 @@ def test_the_focus_ring_covers_the_magnifier(client, db_session):
 
     css = (Path(__file__).resolve().parents[1] / "app" / "static" / "app.css").read_text("utf-8")
     assert re.search(r":where\(a,button,input,select,textarea,summary\):focus-visible\{", css), (
-        "раскрывающая кнопка поиска не входит в кольцо фокуса и осталась с "
-        "обводкой браузера"
+        "кольцо фокуса пропало: лупа стала обычной кнопкой и попала под это правило "
+        "сама, но поле в окне обязано быть в нём тоже"
     )
 
 
@@ -364,3 +433,95 @@ def test_a_search_is_not_a_mutation(client, db_session):
     client.get("/search", params={"q": "Гвозди"})
     client.get("/search", params={"q": "Ромашка"})
     assert db_session.query(AuditLog).count() == before, "поиск не должен писать в аудит"
+
+
+def _table(client, q):
+    return client.get("/api/search/table", params={"q": q}).text
+
+
+def test_the_window_and_the_page_answer_identically(client, db_session):
+    """Окно и страница обязаны совпадать, и совпадение построено, а не проверено
+    текстом: обе зовут `_search_scan` и рисуют один кусок шаблона.
+
+    Проверяется кусок, а не вид страницы целиком: у страницы вокруг есть заголовок
+    и шапка, которых в окне нет по построению, — сравнивать их нельзя.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    product, _customer, _order = _seed(db_session)
+    for q in ("Гвозди", "Ромашка", "00001", "ZZZ-нет"):
+        page = client.get("/search", params={"q": q}).text
+        page = page[page.index('<div data-search-results>'): page.index("</main>")].rstrip()
+        assert _table(client, q).rstrip() == page, f"окно и страница разошлись на запросе {q!r}"
+    assert f'href="/products/{product.id}"' in _table(client, "Гвозди")
+
+
+def test_the_window_address_matches_the_markup_in_the_header(client, db_session):
+    """Скрипт берёт адрес из `data-table`, и страница сравнивается с ним.
+
+    Расхождение означало бы, что окно спрашивает несуществующий адрес, а тест
+    сравнения выше — что проверяет не то, что спрашивает скрипт.
+    """
+    from app.main import SEARCH_TABLE
+
+    _login_as(client, db_session, "boss", "admin")
+    body = client.get("/orders").text
+    assert f'data-table="{SEARCH_TABLE}"' in body
+    assert client.get(SEARCH_TABLE, params={"q": "Гвозди"}).status_code == 200
+
+
+def test_an_empty_window_query_scans_nothing(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    _seed(db_session)
+    for q in ("", "   "):
+        body = _table(client, q)
+        assert "Введите запрос" in body
+        assert "Гвозди 100" not in body and "ООО Ромашка" not in body
+        assert "Ничего не найдено" not in body
+
+
+def test_a_short_window_query_is_refused_before_the_search(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    _seed(db_session)
+    body = _table(client, "Г")
+    assert f"хотя бы {SEARCH_MIN_QUERY} символа" in body
+    assert "Гвозди 100" not in body
+
+
+def test_the_window_hides_a_section_the_user_cannot_open(client, db_session):
+    _login_as(client, db_session, "wh", "warehouseman")
+    _seed(db_session)
+    body = _table(client, "Ромашка")
+    assert "Клиенты" not in body and 'href="/customers/' not in body
+    body = _table(client, "Гвозди")
+    assert "Гвозди 100" in body
+
+
+def test_the_window_shows_the_cap_and_the_found_count(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    unit = _unit_id(db_session)
+    for n in range(25):
+        db_session.add(Product(name=f"Гвозди {n:02d}", sku=f"ART-{n:02d}",
+                               unit_id=unit, price=1.0, rest=1))
+    db_session.commit()
+    body = _table(client, "Гвозди")
+    assert body.count('href="/products/') == 10
+    assert "показано 10 из 25" in body
+
+
+def test_the_window_links_go_to_the_entity_and_not_back_to_the_search(client, db_session):
+    _login_as(client, db_session, "boss", "admin")
+    _seed(db_session)
+    hrefs = re.findall(r'<a href="([^"]+)" class="app-link text-accent">', _table(client, "Гвозди"))
+    assert hrefs, "в окне нет ни одной ссылки"
+    for href in hrefs:
+        assert re.fullmatch(r"/(customers|products|orders)/\d+", href), href
+
+
+def test_the_window_is_not_a_mutation(client, db_session):
+    from app.modules.audit.models import AuditLog
+
+    _login_as(client, db_session, "boss", "admin")
+    _seed(db_session)
+    before = db_session.query(AuditLog).count()
+    client.get("/api/search/table", params={"q": "Гвозди"})
+    assert db_session.query(AuditLog).count() == before

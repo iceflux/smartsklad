@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 import pytest
 
@@ -315,11 +316,12 @@ def test_the_header_block_holds_theme_then_collapse_then_search_then_add_order(c
     spacer = header.index('class="ml-auto', start)
     theme = header.index('action="/ui/theme"', spacer)
     collapse = header.index('action="/ui/sidebar"', spacer)
-    search = header.index('action="/search"', spacer)
+    search = header.index("data-search-open", spacer)
     add = header.index('href="/orders/new"', spacer)
     assert spacer < theme < collapse < search < add, header[spacer:]
     block = header[spacer: header.index("</div>", add)]
-    assert block.count("<form") == 3 and block.count("<a ") == 1, block
+    assert block.count("<form") == 2 and block.count("<a ") == 1, block
+    assert block.count("<button") == 3, block
 
 
 def test_the_collapse_control_in_the_header_stays_hidden_on_a_phone(client, db_session):
@@ -368,13 +370,11 @@ def test_the_add_order_control_is_absent_without_the_permission(client, db_sessi
 
 
 def test_every_icon_only_control_in_the_header_is_named(client, db_session):
-    """Четыре значковые кнопки в ряд, одна раскрывающая кнопка и одна ссылка, и у
-    каждого должно быть имя.
+    """Четыре значковые кнопки в ряд и одна ссылка, и у каждого должно быть имя.
 
     Внутри кнопки только SVG с `aria-hidden`, то есть имя на самой кнопке —
     единственное, что её называет. Пустое имя хуже отсутствующего: значок у
-    чтеца всё равно молчит, а имя на месте. Раскрывающий поиск сделан на
-    `<summary>`, и он не кнопка, но имя нужно ему ровно так же.
+    чтеца всё равно молчит, а имя на месте.
     """
     _login_as(client, db_session, "boss", "admin")
     header = _header(client.get("/").text)
@@ -383,9 +383,6 @@ def test_every_icon_only_control_in_the_header_is_named(client, db_session):
     for tag in buttons:
         label = re.search(r'aria-label="([^"]*)"', tag)
         assert label and label.group(1).strip(), f"кнопка без имени: {tag}"
-    summary = re.search(r"<summary\b[^>]*>", header)
-    assert summary, "в шапке нет раскрывающего поиска"
-    assert re.search(r'aria-label="[^"]+"', summary.group(0)), summary.group(0)
     assert header.count('role="group"') == 1
     assert 'aria-label="Панель действий"' in header
 
@@ -425,8 +422,18 @@ def test_no_full_height_column_of_markup_sits_left_of_the_content(client, db_ses
         f"шапку отодвинул посторонний блок: {head[:head.index('<header')]!r}"
     )
     layout = head[head.index("</header>") + len("</header>"):]
-    assert layout.count("<div") == 1 and "<div" in layout, (
-        f"слева от сайдбара лишние блоки растягиваются на всю высоту: {layout!r}"
+    assert layout.strip().startswith('<div class="app-modal"'), (
+        f"между шапкой и колонкой что-то ещё: {layout[:120]!r}"
+    )
+    assert layout.rindex('<div class="flex min-h-0 flex-1"') >= 0 and \
+        layout.rindex("<div") == layout.rindex('<div class="flex min-h-0 flex-1"'), (
+        "после окна поиска колонку отодвинул ещё один блок: "
+        f"{layout[layout.rindex('<div'):][:120]!r}"
+    )
+    css = (Path(__file__).resolve().parents[1] / "app" / "static" / "app.css").read_text("utf-8")
+    rule = re.search(r"\.app-modal\{[^}]*\}", css)
+    assert rule and "position:fixed" in rule.group(0), (
+        f"окно поиска перестало быть вне потока и растянуло колонку: {rule}"
     )
 
 

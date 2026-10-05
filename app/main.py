@@ -157,6 +157,11 @@ LOOKUP_MIN_QUERY = 1
 намеренно ниже, чем у глобального поиска, и почему — в `_lookup_query`; здесь
 только число, чтобы клиентский скрипт и сервер держали одно и то же (это
 проверяет тест)."""
+SEARCH_TABLE = "/api/search/table"
+"""Адрес, отдающий РАЗМЕТКУ результатов глобального поиска для окна в шапке. Не
+второй путь к данным: сканирует та же `_search_scan`, что и страница `/search`, и
+рисуется тем же куском шаблона — по двум причинам сразу. Без скрипта ссылка на
+этот адрес открывает обычные результаты, то есть окно не обязано для работы."""
 
 STATUS_LABELS = {
     "new": "Новый",
@@ -386,6 +391,53 @@ def _sort_params(request: Request) -> tuple[str | None, str | None]:
     return request.query_params.get("sort"), request.query_params.get("dir")
 
 
+def _search_scan(db: Session, user: User, q: str) -> tuple[str | None, list[dict], int]:
+    """Один скан по трём разделам — и для страницы `/search`, и для окна поиска
+    в шапке.
+
+    Одна функция на оба вызова, потому что окно обязано показать ровно то же,
+    что страница: два экземпляра разошлись бы при первой же правке запроса, и
+    человек искал бы одно и то же дважды, ничего не заметив. Права читаются те
+    же, что требует роутер каждого раздела, и запрещённый раздел в ответе
+    отсутствует вовсе — не значится как запрещённый.
+
+    Пустой и пробельный запрос не сканируют таблицы вовсе: возвращается подсказка
+    и ноль разделов, то есть ноль запросов в базу.
+    """
+    prompt = None
+    if not q:
+        prompt = "Введите запрос: пустой поиск ничего не ищет."
+    elif len(q) < SEARCH_MIN_QUERY:
+        prompt = f"Слишком короткий запрос: нужно хотя бы {SEARCH_MIN_QUERY} символа."
+    groups: list[dict] = []
+    total = 0
+    if prompt is None:
+        if user_has_permission(user, Permission.customers_manage):
+            items, found = list_customers(db, search=q, page_size=SEARCH_LIMIT)
+            if found:
+                groups.append({"title": "Клиенты", "total": found, "hits": [
+                    {"href": f"/customers/{c.id}", "title": c.name,
+                     "hint": " · ".join(part for part in (c.phone, c.inn) if part)}
+                    for c in items]})
+            total += found
+        if user_has_permission(user, Permission.products_view):
+            items, found = list_products(db, search=q, page_size=SEARCH_LIMIT)
+            if found:
+                groups.append({"title": "Товары", "total": found, "hits": [
+                    {"href": f"/products/{p.id}", "title": p.name,
+                     "hint": f"Артикул {p.sku} · остаток {p.rest}"} for p in items]})
+            total += found
+        if user_has_permission(user, Permission.orders_view):
+            items, found = list_orders(db, search=q, page_size=SEARCH_LIMIT)
+            if found:
+                groups.append({"title": "Заказы", "total": found, "hits": [
+                    {"href": f"/orders/{o.id}", "title": o.number,
+                     "hint": f"{o.created_at:%d.%m.%Y} · {STATUS_LABELS.get(o.status, o.status)}"
+                             f" · {group_number(o.total_amount, 2)}"} for o in items]})
+            total += found
+    return prompt, groups, total
+
+
 def _safe_next(raw: str) -> str:
     if raw.startswith("/") and not raw.startswith("//"):
         return raw
@@ -451,6 +503,7 @@ def create_app() -> FastAPI:
     templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
     templates.env.globals["maintenance_state"] = maintenance_state
     templates.env.globals["nav_is_current"] = nav_is_current
+    templates.env.globals["SEARCH_TABLE"] = SEARCH_TABLE
     templates.env.filters["num"] = group_number
     templates.env.filters["dt"] = human_date
     app.state.templates = templates
@@ -1797,43 +1850,26 @@ def create_app() -> FastAPI:
     def search_page(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
         if user is None:
             return RedirectResponse("/login", status_code=303)
-        raw = request.query_params.get("q") or ""
-        q = raw.strip()
-        prompt = None
-        if not q:
-            prompt = "Введите запрос: пустой поиск ничего не ищет."
-        elif len(q) < SEARCH_MIN_QUERY:
-            prompt = f"Слишком короткий запрос: нужно хотя бы {SEARCH_MIN_QUERY} символа."
-        groups: list[dict] = []
-        total = 0
-        if prompt is None:
-            if user_has_permission(user, Permission.customers_manage):
-                items, found = list_customers(db, search=q, page_size=SEARCH_LIMIT)
-                if found:
-                    groups.append({"title": "Клиенты", "total": found, "hits": [
-                        {"href": f"/customers/{c.id}", "title": c.name,
-                         "hint": " · ".join(part for part in (c.phone, c.inn) if part)}
-                        for c in items]})
-                total += found
-            if user_has_permission(user, Permission.products_view):
-                items, found = list_products(db, search=q, page_size=SEARCH_LIMIT)
-                if found:
-                    groups.append({"title": "Товары", "total": found, "hits": [
-                        {"href": f"/products/{p.id}", "title": p.name,
-                         "hint": f"Артикул {p.sku} · остаток {p.rest}"} for p in items]})
-                total += found
-            if user_has_permission(user, Permission.orders_view):
-                items, found = list_orders(db, search=q, page_size=SEARCH_LIMIT)
-                if found:
-                    groups.append({"title": "Заказы", "total": found, "hits": [
-                        {"href": f"/orders/{o.id}", "title": o.number,
-                         "hint": f"{o.created_at:%d.%m.%Y} · {STATUS_LABELS.get(o.status, o.status)}"
-                                 f" · {group_number(o.total_amount, 2)}"} for o in items]})
-                total += found
+        q = (request.query_params.get("q") or "").strip()
+        prompt, groups, total = _search_scan(db, user, q)
         return templates.TemplateResponse(request, "search.html", {
             "title": "Поиск", "user": user, "q": q, "prompt": prompt, "groups": groups,
             "total": total, "limit": SEARCH_LIMIT,
             "msg": request.query_params.get("msg"), **_page_context(user),
+        })
+
+    @app.get(SEARCH_TABLE)
+    def search_table(request: Request, user: Annotated[User | None, Depends(_page_user)] = None, db: Annotated[Session, Depends(get_db)] = None):
+        """Разметка результатов для окна поиска в шапке. Тот же кусок шаблона, что
+        на странице поиска, и тот же `_search_scan` — то есть расхождение между
+        окном и страницей исключено по построению, а не проверкой."""
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        q = (request.query_params.get("q") or "").strip()
+        prompt, groups, total = _search_scan(db, user, q)
+        return templates.TemplateResponse(request, "partials/search_results.html", {
+            "q": q, "prompt": prompt, "groups": groups, "total": total,
+            "limit": SEARCH_LIMIT,
         })
 
     return app

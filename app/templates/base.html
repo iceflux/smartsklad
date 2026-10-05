@@ -74,17 +74,9 @@
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M6.5 6.5v7"/></svg>
                 </button>
             </form>
-            <details class="app-search min-w-0"{% if path == '/search' %} open{% endif %}>
-                <summary class="app-btn border list-none p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="Поиск">
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5 18 18"/></svg>
-                </summary>
-                <form method="get" action="/search" class="flex items-center gap-1">
-                    <input type="search" name="q" value="{{ q_now }}" class="border p-2 w-32 min-w-0" placeholder="Клиент, товар, заказ" aria-label="Поисковый запрос">
-                    <button type="submit" class="app-btn border p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="Найти">
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5"/></svg>
-                    </button>
-                </form>
-            </details>
+<button type="button" data-search-open aria-haspopup="dialog" aria-expanded="false" aria-controls="app-search-modal" class="app-btn border p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="Поиск">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5 18 18"/></svg>
+            </button>
             {% if can_create_orders|default(false) %}
             <a href="/orders/new" class="app-btn-accent bg-accent text-on-accent p-0 h-11 w-11 inline-flex items-center justify-center" aria-label="Новый заказ">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M10 6.5v7M6.5 10h7"/></svg>
@@ -93,6 +85,21 @@
             {% endif %}
             </div>
         </header>
+{% if user %}
+        <div class="app-modal" id="app-search-modal" data-open="false" data-modal="search" data-table="{{ SEARCH_TABLE }}">
+            <div class="app-modal-panel bg-surface-raised border border-line-strong p-4" role="dialog" aria-labelledby="app-search-modal-title">
+                <div class="mb-2 flex items-center justify-between gap-2">
+                    <h2 id="app-search-modal-title" class="font-semibold">Поиск по всем разделам</h2>
+                    <button type="button" class="app-btn border px-2 py-1" data-search-close>Закрыть</button>
+                </div>
+                <form method="get" action="/search" data-search-form class="mb-3 flex gap-1">
+                    <input type="search" name="q" value="{{ q_now }}" data-search-field class="border p-2 w-full min-w-0" placeholder="Клиент, товар, заказ" aria-label="Поисковый запрос">
+                    <button type="submit" data-search-submit class="app-btn-accent bg-accent text-on-accent px-3 py-2" hidden>Найти</button>
+                </form>
+                <div data-search-results aria-live="polite"></div>
+            </div>
+        </div>
+        {% endif %}
         {% endif %}
         <div class="flex min-h-0 flex-1">
             {% if chrome %}
@@ -194,6 +201,95 @@
     }
     Array.prototype.forEach.call(
         document.querySelectorAll("form[data-live-filter]"), liveFilterDebounce);
+})();
+</script>
+<script>
+(function () {
+    var DEBOUNCE_MS = 300;
+    var SEARCH_SLOW_MS = 800;
+    var opener = document.querySelector("[data-search-open]");
+    var modal = document.querySelector('[data-modal="search"]');
+    if (!opener || !modal) return;
+    var field = modal.querySelector("[data-search-field]");
+    var results = modal.querySelector("[data-search-results]");
+    var submit = modal.querySelector("[data-search-submit]");
+    var closeBtn = modal.querySelector("[data-search-close]");
+    var table = modal.getAttribute("data-table");
+    var timer = null;
+    var pending = null;
+    var manual = false;
+    var wasFocused = null;
+
+    function open() {
+        wasFocused = document.activeElement;
+        modal.setAttribute("data-open", "true");
+        opener.setAttribute("aria-expanded", "true");
+        field.focus();
+        field.setSelectionRange(field.value.length, field.value.length);
+        run();
+    }
+
+    function close() {
+        if (modal.getAttribute("data-open") !== "true") return;
+        modal.setAttribute("data-open", "false");
+        opener.setAttribute("aria-expanded", "false");
+        if (timer !== null) { clearTimeout(timer); timer = null; }
+        if (pending) { pending.abort(); pending = null; }
+        if (wasFocused && wasFocused.focus) wasFocused.focus();
+    }
+
+    function manualMode() {
+        manual = true;
+        submit.hidden = false;
+    }
+
+    function render(html) {
+        var fresh = new DOMParser()
+            .parseFromString(html, "text/html")
+            .querySelector("[data-search-results]");
+        if (!fresh) return;
+        results.innerHTML = fresh.innerHTML;
+    }
+
+    function run() {
+        var controller = new AbortController();
+        if (pending) pending.abort();
+        pending = controller;
+        var started = performance.now();
+        results.setAttribute("aria-busy", "true");
+        fetch(table + "?q=" + encodeURIComponent(field.value), {signal: controller.signal})
+            .then(function (response) { return response.text(); })
+            .then(function (html) {
+                if (performance.now() - started > SEARCH_SLOW_MS) manualMode();
+                render(html);
+            })
+            .catch(function (error) {
+                if (error && error.name === "AbortError") return;
+                results.innerHTML = '<p class="text-danger">Поиск не сработал. Попробуйте ещё раз.</p>';
+            })
+            .then(function () {
+                if (pending !== controller) return;
+                pending = null;
+                results.removeAttribute("aria-busy");
+            });
+    }
+
+    opener.addEventListener("click", open);
+    closeBtn.addEventListener("click", close);
+    modal.addEventListener("click", function (event) {
+        if (event.target === modal) close();
+    });
+    results.addEventListener("click", function (event) {
+        if (event.target.closest("a")) close();
+    });
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") close();
+    });
+    field.addEventListener("input", function () {
+        if (timer !== null) clearTimeout(timer);
+        if (manual) return;
+        timer = setTimeout(function () { timer = null; run(); }, DEBOUNCE_MS);
+    });
 })();
 </script>
 </body>

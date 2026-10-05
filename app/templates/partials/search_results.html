@@ -1,0 +1,23 @@
+<div data-search-results>
+    {% if prompt %}
+    <p class="text-secondary">{{ prompt }}</p>
+    {% else %}
+    <p class="mb-4 text-secondary">По запросу «{{ q }}» найдено: {{ total|num }}. Показаны первые {{ limit }} в каждом разделе.</p>
+    {% for group in groups %}
+    <section class="mb-4">
+        <h2 class="app-group-title">{{ group.title }}: показано {{ group.hits|length }} из {{ group.total|num }}</h2>
+        <ul>
+        {% for hit in group.hits %}
+            <li class="border-b border-line py-1">
+                <a href="{{ hit.href }}" class="app-link text-accent">{{ hit.title }}</a>
+                {% if hit.hint %}<span class="text-sm text-muted"> — {{ hit.hint }}</span>{% endif %}
+            </li>
+        {% endfor %}
+        </ul>
+    </section>
+    {% endfor %}
+    {% if not groups %}
+    <p class="text-secondary">Ничего не найдено.</p>
+    {% endif %}
+    {% endif %}
+</div>
