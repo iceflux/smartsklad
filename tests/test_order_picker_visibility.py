@@ -140,7 +140,6 @@ window.fetch = function () {
 __BODY__
 <script>__MEASURE__</script>
 </body></html>"""
-
 OUTER = """<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;padding:0}iframe{border:0;display:block;height:1200px}
 </style></head><body>
@@ -150,7 +149,9 @@ html,body{margin:0;padding:0}iframe{border:0;display:block;height:1200px}
 var timer = setInterval(function () {
   var f = document.getElementById('f');
   var d = f && f.contentDocument;
-  if (!d) { return; }
+  if (!d) {
+    return;
+  }
   /* Ошибка скрипта страницы видна иначе только пустым выводом: прибор молчал бы,
      и падение выглядело бы как «Chrome ничего не измерил». */
   if (d.title.indexOf('ERROR') === 0) {
@@ -164,6 +165,144 @@ var timer = setInterval(function () {
 }, 5);
 </script>
 </body></html>"""
+
+# Раскладка в трёх видах, и все три — настоящая страница заказа, а не выдуманный
+# DOM: место под полем решает браузер, и перевернутый список это проверяется
+# только его собственным прямоугольником.
+#
+# `#tall` — высокий экран, под полем место есть.
+# `#short` — низкий экран (клавиатура либо просто телефон), поле прижато к низу.
+# `#keyboard` — тот же высокий экран, но посреди работы окно САЖИМАЕТСЯ снаружи:
+#   так приходит клавиатура телефона, и проверяется, что открытый список это
+#   замечает и переезжает, а не остаётся под полем под клавиатурой.
+#
+# Ответ здесь ДЛИННЕЕ, чем в приборах видимости и окон: десять строк не влезают ни
+# вниз, ни вверх на коротком экране, и только так проверяется подрезка по месту с
+# прокруткой внутри. На трёх строках список помещался бы в любую сторону, и
+# проверка молчала бы мимо своего предмета.
+FLIP_ANSWER_JSON = json.dumps({
+    "items": [{"id": n, "label": f"Гвоздь {n}", "hint": "10.00 руб"}
+              for n in range(1, 11)],
+    "total": 10, "limit": 10,
+}, ensure_ascii=False)
+
+FLIP_INNER = """<!doctype html><html><head><meta charset="utf-8">
+<style>__CSS__</style>
+<script>
+var errors = [];
+window.onerror = function (message, source, line) {
+  errors.push(message + ' @' + line);
+  document.title = 'ERROR ' + message + ' @' + line;
+};
+/* Ошибка внутри промиса мимо `onerror` не проходит, и прибор молчал бы пустым
+   выводом — ровно тот класс молчания, о котором предупреждает бриф. */
+window.addEventListener('unhandledrejection', function (event) {
+  var reason = event.reason;
+  errors.push('promise: ' + (reason && (reason.message || reason)));
+});
+window.fetch = function () {
+  return Promise.resolve({ok: true, json: function () {
+    return Promise.resolve(__ANSWER__);
+  }});
+};
+</script></head>
+<body class="bg-surface text-primary" data-sidebar="expanded" data-nav="closed">
+__BODY__
+<script>__MEASURE__</script>
+</body></html>"""
+
+FLIP_MEASURE = r"""
+/* Список подстановки открывается вниз, когда под полем есть место на него, и вверх
+   — когда нет. Проверять тут нечего, кроме настоящей геометрии: «в коде есть
+   проверка высоты» ничего не говорит о том, с какой стороны поля встал список, —
+   а именно это и ломалось. */
+function r(el) {
+  var b = el.getBoundingClientRect();
+  return {x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width),
+          h: Math.round(b.height), top: Math.round(b.top),
+          bottom: Math.round(b.bottom),
+          scroll: el.scrollHeight};
+}
+function own(el, node) {
+  for (var n = node; n; n = n.parentElement) { if (n === el) return true; }
+  return false;
+}
+var boxes = document.querySelectorAll('.app-picker');
+var box = boxes[boxes.length - 1];
+var field = box.querySelector('input[type=text]');
+var list = box.querySelector('.app-picker-list');
+var mode = location.hash || '#tall';
+/* Правило списка из настоящего собранного CSS — тем же текстом, что видит
+   браузер: проверка на исходнике поймала бы правку `tailwind.css`, до сборки
+   которой дело не дошло бы. */
+function cssOf(name) {
+  for (var i = 0; i < document.styleSheets.length; i += 1) {
+    var rules = document.styleSheets[i].cssRules;
+    for (var j = 0; j < rules.length; j += 1) {
+      if (rules[j].selectorText === name) return rules[j].cssText;
+    }
+  }
+  return '';
+}
+
+function stage(edge) {
+  /* `edge` — на сколько пикселей от нижнего края экрана должно встать поле.
+     null — не трогаем прокрутку: на высоком экране место под полем и так есть. */
+  if (edge !== null) {
+    var now = field.getBoundingClientRect();
+    window.scrollTo(0, Math.max(0, window.scrollY + now.bottom
+        - (document.documentElement.clientHeight - edge)));
+    /* Chrome под `--virtual-time-budget` не доставляет своё событие прокрутки,
+       а проверяется поведение скрипта «на прокрутке список встаёт у поля». */
+    document.dispatchEvent(new Event('scroll'));
+  }
+  var f = field.getBoundingClientRect();
+  var l = list.getBoundingClientRect();
+  var probe = document.elementFromPoint(Math.round(l.x + l.width / 2),
+                                        Math.round(l.y + l.height / 2));
+  return {
+    open: box.getAttribute('data-open'),
+    field: r(field), list: r(list),
+    cap: list.style.maxHeight, placedTop: list.style.top,
+    hitsItself: own(list, probe),
+    scrollY: Math.round(window.scrollY),
+    viewport: {w: document.documentElement.clientWidth,
+               h: document.documentElement.clientHeight},
+    css: cssOf('.app-picker-list'),
+    errors: errors,
+  };
+}
+
+field.value = 'Гво';
+field.dispatchEvent(new Event('input', {bubbles: true}));
+
+var tries = 0;
+var timer = setInterval(function () {
+  tries += 1;
+  if (!list.children.length && tries < 300) { return; }
+  if (mode === '#keyboard') {
+    var first = stage(null);
+    document.title = 'FIRST' + JSON.stringify(first) + 'END';
+    var was = document.documentElement.clientHeight;
+    /* Ждём, пока снаружи сожмут окно: на телефоне это делает клавиатура. */
+    var waits = 0;
+    var again = setInterval(function () {
+      waits += 1;
+      if (document.documentElement.clientHeight === was) {
+        if (waits < 600) { return; }
+        document.title = 'RESULT' + JSON.stringify({first: first, second: null,
+          errors: errors.concat('окно так и не сжалось')}) + 'END';
+        return;
+      }
+      clearInterval(again);
+      document.title = 'RESULT' + JSON.stringify({first: first,
+        second: stage(20), errors: errors}) + 'END';
+    }, 10);
+    return;
+  }
+  document.title = 'RESULT' + JSON.stringify(stage(mode === '#short' ? 20 : null)) + 'END';
+}, 10);
+"""
 
 WIDTH = 1440
 
@@ -498,6 +637,207 @@ setTimeout(function () {
   }) + 'END';
 }, 120);
 """
+
+
+FLIP_OUTER = """<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;padding:0}iframe{border:0;display:block}
+</style></head><body>
+<iframe id="f" width="__WIDTH__" src="about:blank"></iframe>
+<pre id="out"></pre>
+<script>
+/* Три настоящие раскладки подстановки, по одной в том же окне: под полем есть
+   место, места нет, и окно сжали СНАРУЖИ посреди работы — так приходит клавиатура
+   телефона. Одновременно три окна держать не надо: с тремя прибор молчал бы на
+   любой из них, а ждать надо КАЖДОЙ, иначе вышел бы замер одного вида. */
+/* Высоты подобраны так, чтобы работал ИЗМЕРЯЕМЫЙ случай, а не только очевидный.
+   Потолок списка — `max-height: 16rem` = 256px, и он measured до решения о
+   стороне, то есть на низком экране подрезка нужна там, где 256 не влезает ни
+   вверх, ни вниз: 280px видимой части дают около 210px места сверху. На 430px
+   список влезал в любую сторону, и проверка молчала бы мимо своего предмета. */
+var STAGES = [
+  {mode: 'tall', height: 1200, squeeze: 0},
+  {mode: 'short', height: 280, squeeze: 0},
+  {mode: 'keyboard', height: 1200, squeeze: 280},
+];
+var frame = document.getElementById('f');
+var stage = 0;
+var ticks = 0;
+var squeezed = false;
+var results = {};
+function load() {
+  squeezed = false;
+  frame.style.height = STAGES[stage].height + 'px';
+  /* Хвост с номером обязателен: смена одного только якоря не перезагружает
+     документ, и прибор ждал бы прежнюю раскладку вечно. */
+  frame.src = '__INNER__?n=' + stage + '#' + STAGES[stage].mode;
+}
+function finish(value) {
+  clearInterval(timer);
+  document.getElementById('out').textContent = 'RESULT' + JSON.stringify(value) + 'END';
+}
+load();
+var timer = setInterval(function () {
+  ticks += 1;
+  var d = frame.contentDocument;
+  var title = (d && d.title) || '';
+  if (title.indexOf('ERROR') === 0) {
+    finish({error: 'стадия ' + STAGES[stage].mode + ': ' + title});
+    return;
+  }
+  if (title.indexOf('FIRST') === 0 && STAGES[stage].squeeze && !squeezed) {
+    squeezed = true;
+    frame.style.height = STAGES[stage].squeeze + 'px';
+    return;
+  }
+  if (title.indexOf('RESULT') === 0) {
+    results[STAGES[stage].mode] = title;
+    stage += 1;
+    if (stage >= STAGES.length) { finish(results); return; }
+    load();
+    return;
+  }
+  /* Прибор не имеет права выйти молча: пустой вывод читался бы как «Chrome
+     ничего не измерил», и падение осталось бы незамеченным. */
+  if (ticks > 4000) {
+    finish({error: 'стадия ' + STAGES[stage].mode + ' не ответила; видел: ' + title});
+  }
+}, 5);
+</script>
+</body></html>"""
+
+
+def _measure_flip() -> dict:
+    """Три раскладки подстановки в одном запуске Chrome: вниз, вверх и вверх после
+    того, как окно сжали снаружи."""
+    page = _render()
+    body = page[page.index("<body"): page.index("</body>")]
+    css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
+    work = Path(tempfile.mkdtemp(prefix="picker-flip-"))
+    inner = work / "inner.html"
+    inner.write_text(
+        FLIP_INNER.replace("__CSS__", css).replace("__ANSWER__", FLIP_ANSWER_JSON)
+                   .replace("__BODY__", body).replace("__MEASURE__", FLIP_MEASURE),
+        encoding="utf-8")
+    outer = work / "outer.html"
+    outer.write_text(
+        FLIP_OUTER.replace("__WIDTH__", str(WIDTH))
+                   .replace("__INNER__", inner.resolve().as_uri()), encoding="utf-8")
+    cmd = (f'"{_chrome()}" --headless=new --disable-gpu --no-sandbox '
+           f'--allow-file-access-from-files --window-size={WIDTH + 160},1400 '
+           f'--virtual-time-budget=12000 --dump-dom "{outer.resolve().as_uri()}"')
+    out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+    match = re.search(r'<pre id="out">(.*?)</pre>', out.stdout, re.DOTALL)
+    assert match, out.stdout[-3000:] + out.stderr[-2000:]
+    raw = html_mod.unescape(match.group(1))
+    assert raw.startswith("RESULT"), repr(raw[:400])
+    stages = json.loads(raw[len("RESULT"):-len("END")])
+    assert "error" not in stages, stages["error"]
+    assert set(stages) == {"tall", "short", "keyboard"}, (
+        f"прибор дождался не всех раскладок: {sorted(stages)}")
+    return {key: json.loads(value[len("RESULT"):-len("END")])
+            for key, value in stages.items()}
+
+
+@pytest.fixture(scope="module")
+def flip() -> dict:
+    if _chrome() is None:
+        pytest.skip("Chrome не установлен")
+    return _measure_flip()
+
+
+def _anchored(got: dict, field: dict) -> None:
+    """Список при.field: та же ширина и тот же левый край. Список `fixed`, и
+    прижатый к вьюпорту он оторвался бы от поля при любой прокрутке."""
+    assert abs(got["x"] - field["x"]) <= 1, (
+        f"левый край списка не от поля: {got['x']} против {field['x']}")
+    assert abs(got["w"] - field["w"]) <= 1, (
+        f"ширина списка не от поля: {got['w']} против {field['w']}")
+
+
+def test_the_list_opens_down_where_there_is_room_below(flip):
+    """Правило одно: под полем есть место на список целиком — он встаёт вниз.
+    Это и есть случай клиента, и его не должно сломать переворот у позиции."""
+    got = flip["tall"]
+    assert got["open"] == "true", got
+    assert got["errors"] == [], got["errors"]
+    assert got["list"]["top"] >= got["field"]["bottom"], (
+        "на высоком экране список встал не под поле: " + json.dumps(got, ensure_ascii=False))
+    assert abs(got["list"]["top"] - got["field"]["bottom"]) <= 4, (
+        f"список оторвался от поля на {got['field']['bottom'] - got['list']['top']}px")
+    _anchored(got["list"], got["field"])
+
+
+def test_the_list_opens_up_on_a_short_screen(flip):
+    """Тот же самый список на том же самом поле, где под полем места нет: вверх.
+    Проверка «в коде есть сравнение высот» прошла бы на списке, вставшем вниз и
+    накрывшем поле, — здесь меряется настоящий прямоугольник."""
+    got = flip["short"]
+    assert got["open"] == "true", got
+    assert got["errors"] == [], got["errors"]
+    assert got["list"]["bottom"] <= got["field"]["top"], (
+        "список накрыл своё поле: " + json.dumps(got, ensure_ascii=False))
+    assert abs(got["field"]["top"] - got["list"]["bottom"]) <= 4, (
+        f"список оторвался от поля сверху на {got['list']['bottom'] - got['field']['top']}px")
+    _anchored(got["list"], got["field"])
+    assert got["hitsItself"], (
+        "в центре перевёрнутого списка лежит не он сам: "
+        + json.dumps(got, ensure_ascii=False))
+    assert got["list"]["y"] >= 0 and got["list"]["bottom"] <= got["viewport"]["h"], (
+        "перевёрнутый список ушёл за верхний край: "
+        + json.dumps(got, ensure_ascii=False))
+    # Ответ длиннее, чем помещается в любую сторону: список подрезан по месту и
+    # прокручивается внутри себя. Подрезка без прокрутки показала бы половину
+    # ответа и ни одного последнего товара, и это единственное, что здесь
+    # остаётся, когда сверху и снизу места нет.
+    assert got["list"]["scroll"] > got["list"]["h"], (
+        "подрезанный список не прокручивается внутри: "
+        + json.dumps(got, ensure_ascii=False))
+    assert got["cap"] != "", (
+        "потолок не выставлен — длинный ответ ушёл бы за верхний край: "
+        + json.dumps(got, ensure_ascii=False))
+    # Зазор от поля задаёт скрипт, и в CSS его быть не должно: `margin-top` у
+    # перевёрнутого списка отодвинул бы его ОТ поля вниз, то есть накрыл бы его.
+    # Правило читается из собранного CSS через `cssRules` — тем же текстом, что
+    # применил браузер: проверка исходника поймала бы правку `tailwind.css`, до
+    # которой сборка не дошла бы.
+    assert "margin-top" not in got["css"], (
+        "у списка снова есть margin-top, перевёрнутый наедет на поле: "
+        + got["css"])
+
+
+def test_the_open_list_flips_when_the_screen_shrinks(flip):
+    """Клавиатура телефона: список был открыт вниз на высоком экране, окно сжали —
+    и он переехал вверх, а не остался под полем под клавиатурой. Без переноса на
+    изменение видимой части экрана здесь осталась бы первая запись, и человек
+    увидел бы список, которого уже нет."""
+    got = flip["keyboard"]
+    assert got["errors"] == [], got["errors"]
+    first, second = got["first"], got["second"]
+    assert first is not None and second is not None, got
+    assert first["list"]["top"] >= first["field"]["bottom"], (
+        "до сжатия список встал не под поле: " + json.dumps(first, ensure_ascii=False))
+    assert second["list"]["bottom"] <= second["field"]["top"], (
+        "после сжатия список накрыл поле: " + json.dumps(second, ensure_ascii=False))
+    assert second["list"]["y"] >= 0 and second["list"]["bottom"] <= second["viewport"]["h"], (
+        "после сжатия список ушёл за экран: " + json.dumps(second, ensure_ascii=False))
+    assert second["hitsItself"], (
+        "после сжатия в центре списка лежит не он сам: "
+        + json.dumps(second, ensure_ascii=False))
+    _anchored(second["list"], second["field"])
+
+
+def test_the_shipped_css_gives_the_list_room_to_scroll_inside():
+    """Список умеет прокручиваться внутри себя, и это единственное, что спасает
+    его, когда ни в одну сторону он не влезает: подрезка по месту без прокрутки
+    показала бы половину ответа и ни одного последнего товара."""
+    css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
+    rule = re.search(r"\.app-picker-list\{([^}]*)\}", css)
+    assert rule, "правило .app-picker-list не доехало до сборки"
+    body = rule.group(1).replace(" ", "")
+    assert "overflow-y:auto" in body, rule.group(1)
+    assert "max-height" in body, (
+        "у списка нет потолка высоты: на длинном ответе он ушёл бы за экран "
+        + rule.group(1))
 
 
 def _dump(inner_html: str, work: Path, width: int = 1440) -> str:

@@ -161,7 +161,11 @@
        абсолютно позиционированного потомка. Замером при высоте списка 110px
        показывалось 6px, а обёртка обрастала вертикальным скроллбаром.
        `fixed` из обрезания выходит; координаты (`top`/`left`/`width`) ставит
-       скрипт из `getBoundingClientRect` поля — без них список висит в углу. */
+       скрипт из `getBoundingClientRect` поля — без них список висит в углу.
+
+       Зазор от поля (`margin-top`) здесь не задаётся: список встаёт и вниз, и
+       вверх, и во втором случае `margin-top` отодвинул бы его от поля, а сверху
+       ещё и вытолкнул за край. Зазор один и задаёт его скрипт в обе стороны. */
     .app-picker {
         position: relative;
     }
@@ -169,7 +173,6 @@
         display: none;
         position: fixed;
         z-index: 20;
-        margin-top: 0.125rem;
         max-height: 16rem;
         overflow-y: auto;
         background-color: rgb(var(--color-surface-raised));

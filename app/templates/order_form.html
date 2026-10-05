@@ -185,12 +185,61 @@
         state.note.textContent = message;
     }
 
+    /* Список открывается ВНИЗ, когда под полем есть место на него целиком, и
+       ВВЕРХ — когда нет. Отдельного правила «у товара вверх, у клиента вниз» нет и
+       не нужно: у клиента под полем место есть, и он остаётся вниз сам собой,
+       а у строки позиции поля ниже экрана не остаётся, и она встаёт вверх.
+
+       Три числа, и все три — измерением, а не договорённостью:
+       `GAP` — зазор от поля, `EDGE` — от края экрана, `MIN_ROOM` — во что
+       подрезается список, когда ни в одну сторону он не влезает. */
+    var GAP = 2;
+    var EDGE = 8;
+    var MIN_ROOM = 2 * EDGE;
+
+    /* Видимая часть экрана. Клавиатура телефона уменьшает `visualViewport`, а
+       `documentElement.clientHeight` остаётся прежним: судить о месте по нему —
+       значит решить «под полем хватает» по высоте, которой уже нет, и список
+       накроет поле. */
+    function band() {
+        var view = window.visualViewport;
+        if (!view) return {top: 0, bottom: document.documentElement.clientHeight};
+        return {top: view.offsetTop, bottom: view.offsetTop + view.height};
+    }
+
     function place(state) {
         var field = state.text.getBoundingClientRect();
-        state.list.style.left = field.left + "px";
-        state.list.style.width = field.width + "px";
-        var room = document.documentElement.clientHeight - 8 - state.list.offsetHeight;
-        state.list.style.top = Math.min(field.bottom + 2, Math.max(8, room)) + "px";
+        var list = state.list;
+        /* Потолок прошлого обрезания снимается ДО замера, и это не бережливость:
+           подрезанный по месту список `offsetHeight` отдаст как свою высоту —
+           подрезанную, — и следующее решение «влезает ли он» будет принято по
+           прошлому решению, а не по нынешнему ответу. На экране это выглядит так:
+           короткий ответ встал вниз и был подрезан до 50px, длинный следующий —
+           тоже «влезает», остаётся вниз и показывает полторы строки. */
+        list.style.maxHeight = "";
+        var height = list.offsetHeight;
+        var view = band();
+        var below = view.bottom - (field.bottom + GAP) - EDGE;
+        var above = field.top - GAP - view.top - EDGE;
+        var down = below >= height;
+        /* Ни в одну сторону целиком не влезает (телефон с клавиатурой) — встаём туда,
+           где места больше, и подрезаем по нему: прокрутка внутри списка уже есть,
+           а накрыть поле — это ровно тот дефект, который здесь чинится. */
+        if (!down && above < height) down = below >= above;
+        var room = Math.max(down ? below : above, MIN_ROOM);
+        /* Потолок ставится ТОЛЬКО ниже того, что уже за measuring: `min(height,
+           room)`, а не `room`. Список высотой 16rem — это потолок из CSS, и
+           инлайновый потолок ВЫШЕ него его бы отменил: на коротком экране
+           впихнувшийся список в 358px накрыл бы поле, ради чего он и встал
+           вверх. Ниже — можно (там нужна подрезка с прокруткой), выше — нельзя. */
+        var cap = Math.min(height, room);
+        /* Ширина и левый край — от поля в обоих направлениях: список `fixed`, и
+           прижатый к вьюпорту он оторвался бы от поля при любой прокрутке. */
+        list.style.left = field.left + "px";
+        list.style.width = field.width + "px";
+        list.style.top = (down ? field.bottom + GAP
+                               : field.top - GAP - cap) + "px";
+        list.style.maxHeight = cap + "px";
     }
 
     function show(box, state, on) {
@@ -349,6 +398,15 @@
 
     document.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
+    /* Клавиатура телефона уменьшает ВИДИМУЮ часть экрана, и на телефоне размер
+       окна при этом может и не измениться — событие приходит от
+       `visualViewport`. Без этой подписки открытый список остался бы на месте,
+       под которым уже клавиатура, а с прокруткой страницы к полю он уехал бы
+       совсем. */
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", reposition);
+        window.visualViewport.addEventListener("scroll", reposition);
+    }
 
     function addItemRow() {
         var tpl = document.getElementById("item-row");

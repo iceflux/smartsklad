@@ -166,10 +166,22 @@ function makeEl(tag, attrs) {
     el.focus = () => { el.focused = true; };
     el.select = () => { el.selected = true; };
     /* Список подстановки `position: fixed`, и скрипт ставит ему координаты из
-       поля. У выдуманных элементов этих трёх вещей не было, и скрипт падал на
-       первом же открытом списке. */
+       поля, а высоту меряет и подрезает по месту. У выдуманных элементов этой
+       высоты не было, и скрипт падал на первом же открытом списке.
+       `offsetHeight` здесь — высота ПОСЛЕ всех потолков, и инлайновый потолок
+       предыдущего обрезания в неё входит, как в настоящем браузере: без этого
+       прибор после подрезки мерил бы натуральную высоту и проверял бы не то
+       поведение, которое увидит человек (а сценарий с двумя ответами разной
+       длины прошёл бы при сломанной подрезке). */
     el.style = {};
-    el.offsetHeight = 96;
+    let naturalHeight = 96;
+    Object.defineProperty(el, 'offsetHeight', {
+        get: () => {
+            const cap = parseFloat(el.style.maxHeight);
+            return isNaN(cap) ? naturalHeight : Math.min(naturalHeight, cap);
+        },
+        set: (value) => { naturalHeight = Number(value); },
+    });
     el.getBoundingClientRect = () => (el.rect || {
         left: 40, right: 240, top: 100, bottom: 140, width: 200, height: 40,
     });
@@ -444,8 +456,20 @@ function tableAnswer(kind, query, rows, options) {
     return {__nodes: nodes, query: query};
 }
 
-const DEFAULT_ROWS = {
-    products: [[21, 'Гвоздь'], [22, 'Шуруп']],
+/* Где список встал ПОСЛЕ того, как скрипт его переставил: координаты, которые он
+   записал в `style`, и высота, которой он при этом оказался. Проверять геометрию
+   надо по этому, а не по наличию `style.top`: сам факт, что координата записана,
+   ничего не говорит о том, с какой стороны поля она стоит. */
+function placeOf(picker) {
+    const top = parseFloat(picker.list.style.top);
+    const height = picker.list.offsetHeight;
+    assert.ok(!isNaN(top), 'скрипт не поставил список: ' + picker.list.style.top);
+    return {top: top, bottom: top + height, height: height,
+        cap: picker.list.style.maxHeight, left: picker.list.style.left,
+        width: picker.list.style.width};
+}
+
+const DEFAULT_ROWS = {    products: [[21, 'Гвоздь'], [22, 'Шуруп']],
     customers: [[31, 'ООО Строй'], [32, 'Ромашка']],
 };
 
@@ -481,6 +505,14 @@ function run(payloads, options) {
     const calls = [];
     const timers = [];
     const documentHandlers = {};
+    /* Видимая часть экрана. Настоящий телефон с клавиатурой уменьшает
+       `visualViewport`, и скрипт обязан судить о месте по нему, а не по
+       `documentElement.clientHeight`: по старой высоте он решил бы «под полем
+       хватает» там, где места уже нет, и накрыл бы поле.
+       `viewport: null` — браузер без `visualViewport` (запасной путь). */
+    const fullHeight = typeof options.viewport === 'number' ? options.viewport : 900;
+    const view = {height: fullHeight, offsetTop: 0};
+    const viewHandlers = {};
     const documentStub = {
         querySelectorAll: (sel) => {
             if (sel === '.app-picker') return pickers.map(p => p.box);
@@ -503,7 +535,7 @@ function run(payloads, options) {
         addEventListener: (type, fn) => {
             (documentHandlers[type] = documentHandlers[type] || []).push(fn);
         },
-        documentElement: {clientHeight: 900},
+        documentElement: {clientHeight: fullHeight},
     };
     const windowHandlers = {};
     const sandbox = {
@@ -512,6 +544,11 @@ function run(payloads, options) {
             addEventListener: (type, fn) => {
                 (windowHandlers[type] = windowHandlers[type] || []).push(fn);
             },
+            visualViewport: options.viewport === null ? undefined : Object.assign(view, {
+                addEventListener: (type, fn) => {
+                    (viewHandlers[type] = viewHandlers[type] || []).push(fn);
+                },
+            }),
         },
         setTimeout: (fn, delay) => {
             timers.push({fn, delay, cancelled: false});
@@ -603,6 +640,40 @@ function run(payloads, options) {
         resize: () => {
             for (const fn of (windowHandlers.resize || [])) fn({type: 'resize'});
         },
+        /* Прокрутка без сдвига самого поля: проверка «список остался при поле»
+           нужна сама по себе, а `scroll()` двигает поле на фиксированные
+           координаты и заменяла бы заданную раскладку. */
+        emitScroll: () => {
+            for (const fn of (documentHandlers.scroll || [])) fn({type: 'scroll'});
+        },
+        /* Клавиатура телефона. Здесь она воспроизводится честно, то есть так, как
+           её присылает телефон: `documentElement.clientHeight` НЕ меняется (у
+           телефона раскладка не влезает, сжимается только видимая часть), и
+           событие приходит ТОЛЬКО от `visualViewport`.
+
+           Из-за этого прибор проверяет то, чего headless Chrome проверить не
+           может: в нём обе величины равны, потому что экранной клавиатуры нет.
+           Подмена `clientHeight` вместо `visualViewport` и сломанная подписка
+           на `visualViewport` в Chrome выжили бы всегда, здесь — падают. И
+           наоборот: посылка ещё и `resize` окна проверяла бы перенос по более
+           щедрому поводу, чем бывает на телефоне. */
+        keyboard: (height, offsetTop, fieldTop) => {
+            view.height = height;
+            view.offsetTop = offsetTop;
+            if (fieldTop !== undefined) {
+                for (const picker of pickers) {
+                    picker.text.rect = Object.assign({}, picker.text.rect, {
+                        top: fieldTop, bottom: fieldTop + 40,
+                    });
+                }
+            }
+            for (const fn of (viewHandlers.resize || [])) fn({type: 'resize'});
+        },
+        /* Высота списка — ответ сервера, а она меняется от ответа к ответу.
+           Кладём её прямо в прибор, чтобы доказать, что скрипт меряет заново, а
+           не помнит прошлую. */
+        listHeight: (picker, height) => { picker.list.offsetHeight = height; },
+        view: view,
     };
 }
 
@@ -1071,6 +1142,156 @@ const THREE = {
         'новый клиент не стал выбранным');
     assert.strictEqual(madeClient.pickers[0].text.value, 'Ромашка');
     assert.strictEqual(madeClient.createClients.modal.getAttribute('data-open'), 'false');
+
+    // 29b. Запасной путь: браузер без `visualViewport` (старый вебкит). Решение
+    //      принимается по высоте окна, и переворот работает — иначе на нём
+    //      список просто не появился бы.
+    const noView = run([THREE], {pickers: [makePicker('products', '', '')],
+        viewport: null});
+    noView.pickers[0].text.rect = {left: 40, right: 240, top: 840, bottom: 880,
+        width: 200, height: 40};
+    noView.type(noView.pickers[0], 'Гвозд');
+    await noView.flush();
+    assert.ok(placeOf(noView.pickers[0]).bottom <= 840,
+        'без visualViewport список накрыл поле: ' + JSON.stringify(placeOf(noView.pickers[0])));
+
+    // 30. Правило ОДНО, а не «у товара вверх, у клиента вниз»: вниз — когда под
+    //     полем есть место на список целиком, иначе вверх. Под полем клиента
+    //     место есть, и он остаётся вниз сам собой; у строки позиции до нижнего
+    //     края экрана места не остаётся, и она встаёт вверх. Отдельное правило
+    //     для товара сломало бы клиента на том же экране — ровно та подмена,
+    //     которой этот пункт и запрещён.
+    const both = run([THREE], {pickers: [makePicker('customers', '', ''),
+        makePicker('products', '', '')]});
+    for (const [picker, top] of [[both.pickers[0], 100], [both.pickers[1], 840]]) {
+        picker.text.rect = {left: 40, right: 240, top: top, bottom: top + 40,
+            width: 200, height: 40};
+        both.type(picker, 'Гвозд');
+    }
+    await both.flush();
+    const client = placeOf(both.pickers[0]);
+    const line = placeOf(both.pickers[1]);
+    assert.ok(client.top >= 140,
+        'список клиента встал не под своё поле: ' + JSON.stringify(client));
+    assert.strictEqual(client.top - 140, 2, 'зазор у списка вниз не равен двум пикселям');
+    assert.ok(line.bottom <= 840,
+        'список позиции накрыл своё поле: ' + JSON.stringify(line));
+    assert.strictEqual(840 - line.bottom, 2, 'зазор у перевёрнутого списка не тот');
+    /* Ширина и левый край — от поля в обоих направлениях: список `fixed`, и
+       прижатый к вьюпорту он оторвался бы от поля при любой прокрутке. */
+    for (const [picker, got] of [[both.pickers[0], client], [both.pickers[1], line]]) {
+        assert.strictEqual(got.left, '40px', 'левый край не от поля: ' + JSON.stringify(got));
+        assert.strictEqual(got.width, '200px', 'ширина не от поля: ' + JSON.stringify(got));
+        assert.strictEqual(picker.list.style.left, '40px');
+        assert.strictEqual(picker.list.style.width, '200px');
+    }
+
+    // 31. Ни в одну сторону список целиком не влезает: встаём туда, где места
+    //     больше, и подрезаем по ней — прокрутка внутри списка уже есть. Накрыть
+    //     поле было бы возвратом того же дефекта с другой стороны.
+    const tight = run([THREE], {pickers: [makePicker('products', '', '')],
+        viewport: 300});
+    tight.pickers[0].text.rect = {left: 40, right: 240, top: 160, bottom: 200,
+        width: 200, height: 40};
+    tight.listHeight(tight.pickers[0], 400);
+    tight.type(tight.pickers[0], 'Гвозд');
+    await tight.flush();
+    const squeezed = placeOf(tight.pickers[0]);
+    assert.strictEqual(squeezed.cap, '150px',
+        'список не подрезан по месту: ' + JSON.stringify(squeezed));
+    assert.ok(squeezed.height < 400,
+        'список не ужался, а значит не прокручивается внутри: ' + JSON.stringify(squeezed));
+    assert.ok(squeezed.top >= 0 && squeezed.bottom <= 160,
+        'подрезанный список накрыл поле: ' + JSON.stringify(squeezed));
+
+    // 32. Клавиатура телефона: список, открытый вниз на высоком экране, после
+    //     появления клавиатуры переезжает вверх и остаётся в видимой части.
+    //     Первое место скрипт судит по `visualViewport` — по `clientHeight` решение
+    //     было бы «места хватает» там, где его уже нет.
+    const withKeyboard = run([THREE], {pickers: [makePicker('products', '', '')]});
+    withKeyboard.pickers[0].text.rect = {left: 40, right: 240, top: 400, bottom: 440,
+        width: 200, height: 40};
+    withKeyboard.listHeight(withKeyboard.pickers[0], 240);
+    withKeyboard.type(withKeyboard.pickers[0], 'Гвозд');
+    await withKeyboard.flush();
+    assert.ok(placeOf(withKeyboard.pickers[0]).top >= 440,
+        'на высоком экране список не встал под поле: ' + JSON.stringify(placeOf(withKeyboard.pickers[0])));
+    /* Видимая часть экрана 300px, страница доскроллилась, поле у нижнего края. */
+    withKeyboard.keyboard(300, 600, 800);
+    const afterKey = placeOf(withKeyboard.pickers[0]);
+    assert.ok(afterKey.bottom <= 800,
+        'список накрыл поле под клавиатурой: ' + JSON.stringify(afterKey));
+    assert.ok(afterKey.top >= 600,
+        'список ушёл под клавиатуру: ' + JSON.stringify(afterKey));
+    assert.ok(afterKey.top < 800,
+        'список остался под полем, хотя под полем места нет: ' + JSON.stringify(afterKey));
+
+    // 32a. Высота меряется заново при каждом переносе: короткий ответ влезает под
+    //      поле под клавиатурой, длинный — нет. Сохранив прошлую высоту, скрипт
+    //      держал бы неверную сторону.
+    withKeyboard.listHeight(withKeyboard.pickers[0], 40);
+    withKeyboard.keyboard(300, 600, 800);
+    const shortAnswer = placeOf(withKeyboard.pickers[0]);
+    assert.ok(shortAnswer.top >= 840,
+        'короткий список встал не под поле, хотя под ним есть место: '
+        + JSON.stringify(shortAnswer));
+    withKeyboard.listHeight(withKeyboard.pickers[0], 400);
+    withKeyboard.keyboard(300, 600, 800);
+    assert.ok(placeOf(withKeyboard.pickers[0]).bottom <= 800,
+        'длинный список встал не вверх, хотя вниз не влезает');
+
+    // 33. Перевёрнутый список — рабочий: стрелки, Enter, Escape и клик мимо в
+    //     нём не хуже, чем в прямом.
+    const flipped = run([THREE], {pickers: [makePicker('products', '', '')],
+        viewport: 320});
+    flipped.pickers[0].text.rect = {left: 40, right: 240, top: 200, bottom: 240,
+        width: 200, height: 40};
+    flipped.type(flipped.pickers[0], 'Гвозд');
+    await flipped.flush();
+    assert.ok(placeOf(flipped.pickers[0]).bottom <= 200, 'список не перевернулся');
+    flipped.key(flipped.pickers[0], 'ArrowDown');
+    assert.strictEqual(flipped.pickers[0].list.children[0]
+        .getAttribute('aria-selected'), 'true', 'стрелка не ведёт по перевёрнутому списку');
+    assert.ok(flipped.key(flipped.pickers[0], 'Enter').prevented);
+    assert.strictEqual(flipped.pickers[0].hidden.value, '3',
+        'Enter в перевёрнутом списке ничего не выбрал');
+    /* Открыт заново и закрыт: Escape и клик мимо. */
+    flipped.type(flipped.pickers[0], 'Гвоздь');
+    await flipped.flush();
+    assert.ok(flipped.pickers[0].box.getAttribute('data-open') === 'true'
+        || flipped.pickers[0].list.children.length > 0, 'список не открылся заново');
+    flipped.key(flipped.pickers[0], 'Escape');
+    assert.strictEqual(flipped.pickers[0].box.getAttribute('data-open'), 'false',
+        'Escape не закрыл перевёрнутый список');
+    const awayFlip = run([THREE], {pickers: [makePicker('products', '', '')],
+        viewport: 320});
+    awayFlip.pickers[0].text.rect = {left: 40, right: 240, top: 200, bottom: 240,
+        width: 200, height: 40};
+    awayFlip.type(awayFlip.pickers[0], 'Гвозд');
+    await awayFlip.flush();
+    awayFlip.clickOutside();
+    assert.strictEqual(awayFlip.pickers[0].box.getAttribute('data-open'), 'false',
+        'клик мимо не закрыл перевёрнутый список');
+
+    // 34. Перевёрнутый список остаётся при поле при прокрутке: `fixed` без
+    //     переноса координат оставил бы его висеть в стороне. Поле после прокрутки
+    //     по-прежнему у нижнего края — иначе перевернутым быть было бы нечего.
+    const drift = run([THREE], {pickers: [makePicker('products', '', '')],
+        viewport: 700});
+    drift.pickers[0].text.rect = {left: 40, right: 240, top: 640, bottom: 680,
+        width: 200, height: 40};
+    drift.type(drift.pickers[0], 'Гвозд');
+    await drift.flush();
+    assert.ok(placeOf(drift.pickers[0]).bottom <= 640, 'список не перевернулся');
+    drift.pickers[0].text.rect = Object.assign({}, drift.pickers[0].text.rect,
+        {top: 600, bottom: 640});
+    drift.emitScroll();
+    const moved = placeOf(drift.pickers[0]);
+    assert.ok(moved.bottom <= 600,
+        'перевёрнутый список оторвался от поля при прокрутке: '
+        + JSON.stringify(moved));
+    assert.strictEqual(600 - moved.bottom, 2,
+        'зазор у перевёрнутого списка после прокрутки не тот: ' + JSON.stringify(moved));
 
     console.log('ok');
 })().catch((e) => {
