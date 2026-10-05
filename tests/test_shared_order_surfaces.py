@@ -129,7 +129,7 @@ class _FormFields(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        if tag == "form" and (attrs.get("id") == "product-form"
+        if tag == "form" and (attrs.get("id") in ("product-form", "customer-form")
                               or "data-create-form" in attrs):
             self.in_form = True
             return
@@ -173,7 +173,8 @@ class _Fields(HTMLParser):
 def _modals(body):
     """Окна по одному: _Modal держит только последнее разобранное окно."""
     found = {}
-    for name in ("browse-products", "create-products"):
+    for name in ("browse-products", "create-products", "browse-customers",
+                 "create-customers"):
         mark = body.find(f'data-modal="{name}"')
         if mark == -1:
             continue
@@ -183,8 +184,12 @@ def _modals(body):
         start = body.rindex('<div class="app-modal"', 0, mark)
         single = _Modal()
         single.feed(body[start:])
-        end = body.index("</main>", start)
-        single.html = body[start:end]
+        # Окно кончается либо следующим окном, либо концом страницы. Иначе в срез
+        # попал бы следующее окно, и проверка полей сравнивала бы форму товара с
+        # формой клиента.
+        stops = [body.find('<div class="app-modal"', start + 1),
+                 body.index("</main>", start)]
+        single.html = body[start:min(at for at in stops if at != -1)]
         found[name] = single
     return found
 
@@ -518,3 +523,106 @@ def test_the_window_form_and_the_section_form_read_the_same_permissions(client, 
     assert 'name="price" type="number" step="0.01" value="0" class="w-full border p-2" disabled' \
         in page.html, "в окне цена доступна без права на неё"
     assert 'name="name" required' in page.html
+
+
+# --- Клиенты ------------------------------------------------------------------
+
+
+def test_the_customer_window_carries_the_customers_filter_verbatim(client, db_session):
+    """Фильтр в окне клиента — тот же фильтр, что на странице клиентов: те же поля
+    под тем же текстом. Сравниваются имена полей, а не класс и не порядок
+    атрибутов, потому что человек видит именно их."""
+    _admin(client, db_session)
+    _seed(db_session)
+    page = client.get("/customers").text
+    window = _modals(client.get("/orders/new").text)["browse-customers"]
+    page_filter = _form_with(page, "Поиск (имя/телефон/ИНН)")
+    window_filter = _form_with(window.html, "Поиск (имя/телефон/ИНН)")
+    assert _fields_of(page_filter) == _fields_of(window_filter), (
+        f"страница {_fields_of(page_filter)}, окно {_fields_of(window_filter)}")
+    assert "Показывать удалённые" in page_filter
+
+
+def test_the_customer_window_has_the_same_columns_as_the_customers_page(client, db_session):
+    _admin(client, db_session)
+    _seed(db_session)
+    page = client.get("/customers?sort=inn&dir=desc").text
+    fragment = client.get("/api/lookup/customers/table?sort=inn&dir=desc").text
+    assert _headers(page) == _headers(fragment) + ["Действия"], (
+        f"страница {_headers(page)}, окно {_headers(fragment)}")
+    assert _headers(fragment) == ["Имя", "Телефон", "ИНН", "Скидка"], _headers(fragment)
+
+
+def test_every_column_of_the_customer_window_is_sortable(client, db_session):
+    _admin(client, db_session)
+    _seed(db_session)
+    fragment = client.get("/api/lookup/customers/table").text
+    table = fragment[fragment.index("<thead>"):fragment.index("</thead>")]
+    cells = re.findall(r"<th[^>]*>(.*?)</th>", table, re.S)
+    assert len(cells) == 4, f"в окне {len(cells)} колонок: {cells}"
+    for cell, key in zip(cells, ["name", "phone", "inn", "discount"]):
+        assert f"sort={key}" in cell, f"колонка не сортируется: {cell}"
+        assert "/api/lookup/customers/table?" in cell, (
+            f"ссылка сортировки ведёт не в окно: {cell}")
+
+
+def test_the_customer_window_answers_with_the_same_rows_the_page_shows(client, db_session):
+    """Один и тот же запрос — один и тот же набор строк, и то же самое, что у
+    товаров: окно не «примерно то же», а ровно то же."""
+    _admin(client, db_session)
+    _seed(db_session)
+    page = _rows(client.get("/customers?search=Ромашка").text)
+    window = _rows(client.get("/api/lookup/customers/table?search=Ромашка").text)
+    assert page and window, (page, window)
+    assert [r[0] for r in page] == [r[0] for r in window], (page, window)
+    shared = 4
+    for one, other in zip(page, window):
+        assert one[:shared] == other[:shared], (one[:shared], other[:shared])
+
+
+def test_the_customer_window_keeps_the_actions_column_out(client, db_session):
+    _admin(client, db_session)
+    _seed(db_session)
+    window = _modals(client.get("/orders/new").text)["browse-customers"]
+    assert "Действия" not in window.headers, window.headers
+    fragment = client.get("/api/lookup/customers/table").text
+    assert "Удалить клиента" not in fragment
+    assert "/restore" not in fragment
+
+
+def test_the_customer_window_needs_the_same_rights_as_the_page(client, db_session):
+    _user(client, db_session, ["orders.view", "orders.create", "products.view",
+                               "products.edit", "price.change"], "noclients")
+    assert client.get("/api/lookup/customers/table").status_code == 403
+    _user(client, db_session, ["orders.view", "orders.create", "customers.manage"],
+          "withclients")
+    assert client.get("/api/lookup/customers/table").status_code == 200
+
+
+def test_the_create_client_window_has_every_field_the_customer_form_has(client, db_session):
+    """Окно создания клиента — вся форма клиента, и это сравнивается так же, как у
+    товара: копия разметки или забытое поле рассыплются здесь."""
+    _admin(client, db_session)
+    _seed(db_session)
+    page = client.get("/customers/new").text
+    window = _modals(client.get("/orders/new").text)["create-customers"]
+    section = _form_fields(_form_with(page, 'name="comment"'))
+    in_window = _form_fields(window.html)
+    assert sorted(section) == sorted(in_window), (
+        f"форма клиента {sorted(section)}, окно {sorted(in_window)}")
+    for label in ("Имя", "ИНН (10 цифр)", "Телефон", "Email", "Скидочная карта",
+                  "Персональная скидка, %", "Комментарий"):
+        assert label in window.html, f"в окне создания клиента нет поля «{label}»"
+
+
+def test_the_both_customer_forms_share_one_body_builder(client, db_session):
+    partial = (TEMPLATE_DIR / "partials" / "customer_form.html").read_text(encoding="utf-8")
+    builder = partial[partial.index("window.smartskladCustomerBody"):]
+    for page in ("app/templates/customer_form.html", "app/templates/order_form.html"):
+        body = (ROOT / page).read_text(encoding="utf-8")
+        assert "window.smartskladCustomerBody(" in body, (
+            f"{page}: форма не зовёт общий разбор полей клиента")
+    for word in ("form.name.value", "form.inn.value", "form.phone.value",
+                 "form.email.value", "form.discount_card.value",
+                 "form.personal_discount.value", "form.comment.value"):
+        assert word in builder, f"общий разбор забыл поле: {word}"

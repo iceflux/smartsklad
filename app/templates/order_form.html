@@ -6,6 +6,7 @@
   появится.
 #}
 {% from "partials/product_form.html" import product_fields, product_body_script %}
+{% from "partials/customer_form.html" import customer_fields, customer_body_script %}
 {% macro picker(kind, field, current, aria, hint) -%}
 <div class="app-picker" data-lookup="/api/lookup/{{ kind }}" data-open="false"
      data-value="{{ current.id }}" data-label="{{ current.label }}">
@@ -15,8 +16,13 @@
            value="{{ current.label }}" placeholder="{{ hint }}" autocomplete="off">
 {% if kind == "products" %}
 <div class="flex flex-wrap gap-1 mt-1">
-<button type="button" class="app-btn border px-2 py-1 text-sm" data-picker-browse>Выбрать товар</button>
-<button type="button" class="app-btn border px-2 py-1 text-sm" data-picker-create aria-disabled="{{ "false" if can_create_products else "true" }}"{% if not can_create_products %} data-notice="{{ product_create_notice }}"{% endif %}>Создать товар</button>
+<button type="button" class="app-btn border px-2 py-1 text-sm" data-picker-browse="products">Выбрать товар</button>
+<button type="button" class="app-btn border px-2 py-1 text-sm" data-picker-create="products" aria-disabled="{{ "false" if can_create_products else "true" }}"{% if not can_create_products %} data-notice="{{ product_create_notice }}"{% endif %}>Создать товар</button>
+</div>
+{% elif can_view_customers %}
+<div class="flex flex-wrap gap-1 mt-1">
+<button type="button" class="app-btn border px-2 py-1 text-sm" data-picker-browse="customers">Выбрать клиента</button>
+<button type="button" class="app-btn border px-2 py-1 text-sm" data-picker-create="customers">Создать клиента</button>
 </div>
 {% endif %}
     <ul class="app-picker-list" role="listbox" aria-label="{{ aria }}"></ul>
@@ -109,6 +115,34 @@
             </form>
         </div>
     </div>
+
+    <div class="app-modal" data-open="false" data-modal="browse-customers" data-table="{{ CUSTOMERS_TABLE }}">
+        <div class="app-modal-panel app-modal-panel-wide bg-surface-raised border border-line-strong p-4"
+             role="dialog" aria-modal="true" aria-label="Выбор клиента">
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="font-semibold">Выбор клиента</h2>
+                <button type="button" class="app-btn border px-2 py-1" data-modal-close data-modal-kind="browse-customers">Закрыть</button>
+            </div>
+            {% set form_action = "/customers" %}
+            {% include "partials/customers_filter.html" %}
+            <div data-modal-table></div>
+        </div>
+    </div>
+
+    <div class="app-modal" data-open="false" data-modal="create-customers">
+        <div class="app-modal-panel bg-surface-raised border border-line-strong p-4"
+             role="dialog" aria-modal="true" aria-label="Создание клиента">
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="font-semibold">Новый клиент</h2>
+                <button type="button" class="app-btn border px-2 py-1" data-modal-close data-modal-kind="create-customers">Закрыть</button>
+            </div>
+            <form class="space-y-2" data-create-form>
+                {{ customer_fields(None, True) }}
+                <p class="app-picker-note" role="status" data-create-note></p>
+                <button class="app-btn-accent bg-accent text-on-accent px-3 py-2">Создать</button>
+            </form>
+        </div>
+    </div>
 </main>
 <template id="item-row">
     <tr>{{ line("", "", 1, 0) }}</tr>
@@ -118,6 +152,7 @@
     var MIN_QUERY = {{ LOOKUP_MIN_QUERY }};
     var DEBOUNCE_MS = 300;
     var CREATE_PRODUCT = "/api/products";
+    var CREATE_CUSTOMER = "/api/customers";
     /* Права товара для окна создания — те же флаги, что у карточки товара.
        Объявлены оператором Jinja, а не подстановкой выражения: прибор гоняет
        скрипт страницы, и выражение в строке осталось бы неразобранным JS. */
@@ -127,7 +162,6 @@
     var DEFAULT_TRACK_REST = {% if stock_track_default != "false" %}true{% else %}false{% endif %};
     var states = new WeakMap();
     var target = null;
-    var modalTimer = null;
 
     function stateOf(box) {
         if (!states.has(box)) {
@@ -322,12 +356,16 @@
         body.appendChild(tpl.content.firstElementChild.cloneNode(true));
     }
 
-    /* Окно выбора товара и форма создания товара. Обе нужны рядом с подстановкой,
-       а не на странице товаров: опечатку в названии человек правит, не закрывая
-       заказ, а выбрать из тысяч строк можно просмотром. Список окна спрашивает
-       ТОТ ЖЕ `/api/lookup/products`, что и набор в поле: второй путь запросов
-       разошёлся бы с подстановкой, и заметил бы это только тот, кто искал одно
-       и то же дважды. */
+    /* Окна выбора и создания нужны рядом с подстановкой, а не на страницах разделов:
+       опечатку в названии человек правит, не закрывая заказ, а выбрать из тысяч
+       строк можно просмотром.
+
+       Окно со списком раздела и окно с формой описаны ОДИН раз и заводятся для
+       каждой пары: у товаров и клиентов механика одна, а вторая копия разметки
+       или обработчика разошлась бы при первом же изменении. Различаются они
+       адресом эндпоинта, формой и тем, что собирает тело запроса. */
+    var OPEN_MODALS = [];
+
     function modalByName(name) {
         return document.querySelector("[data-modal=" + name + "]");
     }
@@ -382,11 +420,12 @@
         if (notice) notice.textContent = "";
     }
 
-    /* Окно выбора товара — это список товаров, а не вторая его копия: та же
-       разметка `partials/products_table.html`, тот же фильтр и та же сортировка,
-       отнятые у страницы только колонкой действий. Данные приходят из
-       `/api/lookup/products/table`, который зовёт ту же `list_products`, что и
-       страница, поэтому один и тот же запрос даёт один и тот же набор строк. */
+    /* Окно со списком раздела: та же разметка, что в `partials/products_table`
+       и `partials/customers_table`, тот же фильтр и та же сортировка, отнятые у
+       страницы только колонкой действий. Данные приходят из
+       `/api/lookup/.../table`, который зовёт ту же `list_products` или
+       `list_customers`, что и страница, поэтому один и тот же запрос даёт один
+       и тот же набор строк. */
     function tableQuery(modal) {
         var parts = [];
         new FormData(modal.querySelector("form")).forEach(
@@ -421,38 +460,44 @@
         });
     }
 
-var browseModal = modalByName("browse-products");
-var createModal = modalByName("create-products");
-    var browseForm = browseModal.querySelector("form");
-    var browseField = browseForm.querySelector("input[name=search]");
+    function listModal(name) {
+        var modal = modalByName(name);
+        var form = modal.querySelector("form");
+        var timer = {handle: null};
+        OPEN_MODALS.push({modal: modal, name: name});
 
-    browseModal.addEventListener("click", function (event) {
-        var row = event.target.closest("tr[data-pick-id]");
-        if (row) {
+        modal.addEventListener("click", function (event) {
+            var row = event.target.closest("tr[data-pick-id]");
+            if (row) {
+                event.preventDefault();
+                choose({id: row.dataset.pickId, label: row.dataset.pickLabel}, name);
+                return;
+            }
+            var link = event.target.closest("a");
+            if (link) {
+                var query = (link.getAttribute("href") || "").split("?")[1] || "";
+                event.preventDefault();
+                adoptQuery(modal, query);
+                loadTable(modal, query);
+            }
+        });
+
+        form.addEventListener("submit", function (event) {
             event.preventDefault();
-            choose({id: row.dataset.pickId, label: row.dataset.pickLabel}, "browse-products");
-            return;
-        }
-        var link = event.target.closest("a");
-        if (link) {
-            var query = (link.getAttribute("href") || "").split("?")[1] || "";
-            event.preventDefault();
-            adoptQuery(browseModal, query);
-            loadTable(browseModal, query);
-        }
-    });
+            loadTable(modal, tableQuery(modal));
+        });
 
-    browseForm.addEventListener("submit", function (event) {
-        event.preventDefault();
-        loadTable(browseModal, tableQuery(browseModal));
-    });
+        form.querySelector("input[name=search]").addEventListener("input", function () {
+            if (timer.handle !== null) clearTimeout(timer.handle);
+            timer.handle = setTimeout(function () {
+                loadTable(modal, tableQuery(modal));
+            }, DEBOUNCE_MS);
+        });
+        return modal;
+    }
 
-    browseField.addEventListener("input", function () {
-        if (modalTimer !== null) clearTimeout(modalTimer);
-        modalTimer = setTimeout(function () {
-            loadTable(browseModal, tableQuery(browseModal));
-        }, DEBOUNCE_MS);
-    });
+    var browseProducts = listModal("browse-products");
+    var browseCustomers = listModal("browse-customers");
 
     /* Обработчики висят на форме, а не на кнопках: строка, добавленная кнопкой
        «Добавить строку», копируется из <template>, и кнопки на ней — другие
@@ -466,8 +511,9 @@ var createModal = modalByName("create-products");
             }
             var browse = event.target.closest("[data-picker-browse]");
             if (browse) {
-                openModal("browse-products", browse.closest(".app-picker"));
-                loadTable(browseModal, "");
+                var kind = browse.getAttribute("data-picker-browse");
+                openModal("browse-" + kind, browse.closest(".app-picker"));
+                loadTable(modalByName("browse-" + kind), "");
                 return;
             }
             var create = event.target.closest("[data-picker-create]");
@@ -476,20 +522,14 @@ var createModal = modalByName("create-products");
                     showNotice(create.getAttribute("data-notice"));
                     return;
                 }
-                openModal("create-products", create.closest(".app-picker"));
+                openModal("create-" + create.getAttribute("data-picker-create"),
+                          create.closest(".app-picker"));
             }
         });
     }
 
     document.addEventListener("click", function (event) {
         if (event.target.closest("[data-notice-close]")) hideNotice();
-    });
-
-    browseField.addEventListener("input", function () {
-        if (modalTimer !== null) clearTimeout(modalTimer);
-        modalTimer = setTimeout(function () {
-            loadTable(browseModal, tableQuery(browseModal));
-        }, DEBOUNCE_MS);
     });
 
     Array.prototype.forEach.call(
@@ -501,54 +541,68 @@ var createModal = modalByName("create-products");
         });
 
     document.addEventListener("click", function (event) {
-        if (event.target === browseModal) closeModal("browse-products");
-        if (event.target === createModal) closeModal("create-products");
+        OPEN_MODALS.forEach(function (entry) {
+            if (event.target === entry.modal) closeModal(entry.name);
+        });
     });
 
     document.addEventListener("keydown", function (event) {
         if (event.key !== "Escape") return;
-        if (browseModal.getAttribute("data-open") === "true") closeModal("browse-products");
-        if (createModal.getAttribute("data-open") === "true") closeModal("create-products");
+        OPEN_MODALS.forEach(function (entry) {
+            if (entry.modal.getAttribute("data-open") === "true") closeModal(entry.name);
+        });
     });
 
-    /* Создание товара. Тело собирает ТА ЖЕ функция, что и карточка товара
-       (`partials/product_form.html`), поэтому поле, добавленное в форму товара,
-       доезжает и сюда: своя сборка здесь была бы второй копией разбора полей.
+    /* Окно создания. Тело собирает ТА ЖЕ функция, что и карточка раздела
+       (`partials/product_form.html`, `partials/customer_form.html`), поэтому
+       поле, добавленное в форму раздела, доезжает и сюда: своя сборка здесь была
+       бы второй копией разбора полей.
 
        Отказ сервера идёт в подпись под формой, а не в поле разбора полей:
        сообщение должно быть под формой, а не рядом с описанием. Подпись ищется
        по признаку, а не «первый `<p>` в окне» — после появления полей формы
        первым `<p>` стал именно разбор полей. */
-    var createNote = createModal.querySelector("[data-create-note]");
-    createModal.querySelector("form").addEventListener("submit", function (event) {
-        event.preventDefault();
-        var form = event.target;
-        var body = window.smartskladProductBody(form, {
-            canEdit: CAN_EDIT, canPrice: CAN_PRICE, canStock: CAN_STOCK,
-            isNew: true, newDefaultTrackRest: DEFAULT_TRACK_REST,
-        });
-        if (body === null) {
-            createNote.textContent = "";
-            return;
-        }
-        createNote.textContent = "";
-        fetch(CREATE_PRODUCT, {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify(body),
-        }).then(function (response) {
-            return response.json().then(function (answer) {
-                return {ok: response.ok, body: answer};
+    function createModalFor(name, endpoint, what, collect) {
+        var modal = modalByName(name);
+        OPEN_MODALS.push({modal: modal, name: name});
+        var note = modal.querySelector("[data-create-note]");
+        modal.querySelector("form").addEventListener("submit", function (event) {
+            event.preventDefault();
+            var body = collect(event.target);
+            note.textContent = "";
+            if (body === null) return;
+            fetch(endpoint, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(body),
+            }).then(function (response) {
+                return response.json().then(function (answer) {
+                    return {ok: response.ok, body: answer};
+                });
+            }).then(function (answer) {
+                if (!answer.ok) {
+                    note.textContent = answer.body.detail || ("Не удалось создать " + what);
+                    return;
+                }
+                choose({id: answer.body.id, label: answer.body.name}, name);
             });
-        }).then(function (answer) {
-            if (!answer.ok) {
-                createNote.textContent = answer.body.detail || "Не удалось создать товар";
-                return;
-            }
-            choose({id: answer.body.id, label: answer.body.name}, "create-products");
         });
-    });
+        return modal;
+    }
+
+    var createProducts = createModalFor(
+        "create-products", CREATE_PRODUCT, "товар",
+        function (form) {
+            return window.smartskladProductBody(form, {
+                canEdit: CAN_EDIT, canPrice: CAN_PRICE, canStock: CAN_STOCK,
+                isNew: true, newDefaultTrackRest: DEFAULT_TRACK_REST,
+            });
+        });
+    var createCustomers = createModalFor(
+        "create-customers", CREATE_CUSTOMER, "клиента",
+        function (form) { return window.smartskladCustomerBody(form); });
 })();
 </script>
 {{ product_body_script() }}
+{{ customer_body_script() }}
 {% endblock %}

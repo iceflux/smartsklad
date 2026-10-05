@@ -117,12 +117,28 @@ def test_the_product_line_offers_both_buttons(client, db_session):
             f"кнопка «{label}» оказалась не у товара")
 
 
-def test_the_customer_line_has_neither_of_them(client, db_session):
-    """Клиента нельзя создать из заказа, а кнопка на его строке ввела бы в
-    заблуждение: она открыла бы окно товаров."""
+def test_the_customer_line_offers_its_own_buttons(client, db_session):
+    """У клиента свои две кнопки — свои окна. Кнопка товара на строке клиента
+    открыла бы окно товаров, и это заметил бы только тот, кто нажал."""
     _admin(client, db_session)
     body = client.get("/orders/new").text
-    assert [b["text"] for b in _buttons(body) if b["kind"] == "/api/lookup/customers"] == []
+    found = {b["text"]: b for b in _buttons(body)
+             if b["kind"] == "/api/lookup/customers"}
+    assert sorted(found) == ["Выбрать клиента", "Создать клиента"], sorted(found)
+    assert found["Выбрать клиента"]["attrs"]["data-picker-browse"] == "customers"
+    assert found["Создать клиента"]["attrs"]["data-picker-create"] == "customers"
+
+
+def test_the_customer_buttons_are_hidden_without_the_right(client, db_session):
+    """Без `customers.manage` подстановка клиента всё равно отвечает 403, поэтому
+    кнопка окна открыла бы пустое окно: её у человека нет."""
+    _user(client, db_session, "picker", ["orders.view", "orders.create",
+                                          "products.view", "products.edit",
+                                          "price.change"])
+    body = client.get("/orders/new").text
+    assert _buttons(body) == [b for b in _buttons(body)
+                               if b["kind"] == "/api/lookup/products"], (
+        "кнопки клиента показаны тому, у кого нет права на клиентов")
 
 
 def test_a_user_with_the_right_gets_a_working_button_and_no_notice(client, db_session):

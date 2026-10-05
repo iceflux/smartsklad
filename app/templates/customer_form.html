@@ -1,70 +1,38 @@
 {% extends "base.html" %}
+{#
+  Карточка клиента и окно создания клиента в заказе собирают поля из
+  `partials/customer_form.html` и разбирают их одной функцией оттуда же.
+#}
+{% from "partials/customer_form.html" import customer_fields, customer_body_script %}
 {% block content %}
 <main class="max-w-2xl mx-auto p-4">
     {% if msg %}<p class="mb-4 bg-danger-bg border border-danger-border p-2">{{ msg }}</p>{% endif %}
     <h1 class="text-2xl font-bold mb-4">{% if is_new %}Новый клиент{% else %}Редактирование клиента {{ customer.name }}{% endif %}</h1>
     <form id="customer-form" class="space-y-4">
-        <div>
-            <label class="block mb-1">Имя</label>
-            <input name="name" required value="{{ (customer.name if customer else '') or '' }}" class="w-full border p-2">
-        </div>
-        <div>
-            <label class="block mb-1">ИНН (10 цифр)</label>
-            <input name="inn" value="{{ (customer.inn if customer else '') or '' }}" class="w-full border p-2">
-        </div>
-        <div>
-            <label class="block mb-1">Телефон</label>
-            <input name="phone" value="{{ (customer.phone if customer else '') or '' }}" class="w-full border p-2">
-        </div>
-        <div>
-            <label class="block mb-1">Email</label>
-            <input name="email" value="{{ (customer.email if customer else '') or '' }}" class="w-full border p-2">
-        </div>
-        <div>
-            <label class="block mb-1">Скидочная карта</label>
-            <input name="discount_card" value="{{ (customer.discount_card if customer else '') or '' }}" class="w-full border p-2">
-        </div>
-        <div>
-            <label class="block mb-1">Персональная скидка, %</label>
-            <input name="personal_discount" type="number" step="0.1" min="0" max="99"
-                   value="{{ (customer.personal_discount if customer else '0') or '0' }}" class="w-full border p-2">
-        </div>
-        <div>
-            <label class="block mb-1">Комментарий</label>
-            <textarea name="comment" rows="3" class="w-full border p-2">{{ (customer.comment if customer else '') or '' }}</textarea>
-        </div>
-        <p id="error" class="text-danger hidden"></p>
+        {{ customer_fields(customer, is_new) }}
         <button class="app-btn-accent bg-accent text-on-accent px-4 py-2">Сохранить</button>
         <a href="/customers" class="app-btn ml-2 border px-4 py-2">Отмена</a>
     </form>
+    {{ customer_body_script() }}
     <script>
         var customerId = {{ customer.id if customer else 'null' }};
 
-        function showError(text) {
-            var err = document.getElementById('error');
+        function showCustomerError(text) {
+            var err = document.querySelector('#customer-form [data-customer-error]');
             err.textContent = text;
             err.classList.remove('hidden');
         }
 
         document.getElementById('customer-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            var f = e.target;
-            var body = {
-                name: f.name.value,
-                inn: f.inn.value || null,
-                phone: f.phone.value || null,
-                email: f.email.value || null,
-                discount_card: f.discount_card.value || null,
-                personal_discount: parseFloat(f.personal_discount.value || '0'),
-                comment: f.comment.value || null,
-            };
+            var body = window.smartskladCustomerBody(e.target);
             var url = customerId ? '/api/customers/' + customerId : '/api/customers';
             var method = customerId ? 'PATCH' : 'POST';
             var res = await fetch(url, {method: method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
             if (res.ok) { window.location.href = '/customers'; }
             else {
                 var d = await res.json().catch(function () { return {}; });
-                showError(d.detail || 'Ошибка');
+                showCustomerError(d.detail || 'Ошибка');
             }
         });
     </script>

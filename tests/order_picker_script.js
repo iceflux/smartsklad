@@ -205,12 +205,18 @@ function makePicker(kind, value, label, blocked) {
     box.appendChild(hidden);
     box.appendChild(text);
     if (kind === 'products') {
-        box.appendChild(makeEl('button', {'class': 'app-btn', 'data-picker-browse': ''}));
+        box.appendChild(makeEl('button', {'class': 'app-btn', 'data-picker-browse': 'products'}));
         box.appendChild(makeEl('button', {
-            'class': 'app-btn', 'data-picker-create': '',
+            'class': 'app-btn', 'data-picker-create': 'products',
             'aria-disabled': blocked ? 'true' : 'false',
             ...(blocked ? {'data-notice': NOTICE} : {}),
         }));
+    } else {
+        /* Клиентские кнопки — те же два окна, только свои. У кого нет права на
+           клиентов, их на странице нет вовсе: подстановка всё равно отвечает
+           403, и кнопка открыла бы пустое окно. */
+        box.appendChild(makeEl('button', {'class': 'app-btn', 'data-picker-browse': 'customers'}));
+        box.appendChild(makeEl('button', {'class': 'app-btn', 'data-picker-create': 'customers'}));
     }
     box.appendChild(makeEl('ul', {'class': 'app-picker-list'}));
     box.appendChild(makeEl('p', {'class': 'app-picker-note'}));
@@ -221,18 +227,20 @@ function makePicker(kind, value, label, blocked) {
         list: box.querySelector('.app-picker-list'),
         note: box.querySelector('.app-picker-note'),
     };
-    if (picker.browse) picker.browse.textContent = 'Выбрать товар';
-    if (picker.create) picker.create.textContent = 'Создать товар';
+    if (picker.browse) picker.browse.textContent = 'Выбрать ' + (kind === 'products' ? 'товар' : 'клиента');
+    if (picker.create) picker.create.textContent = 'Создать ' + (kind === 'products' ? 'товар' : 'клиента');
     return picker;
 }
 
 function makeItemsBody() {
     const body = makeEl('tbody', {id: 'items-body'});
-    body.appendChild(makeRow());
+    body.appendChild(makeLineRow());
     return body;
 }
 
-function makeRow() {
+/* Строка ПОЗИЦИИ заказа — не строка списка раздела: та, что копируется из
+   <template> кнопкой «Добавить строку». */
+function makeLineRow() {
     const tr = makeEl('tr');
     const cell = makeEl('td');
     cell.appendChild(makePicker('products', '', '').box);
@@ -246,13 +254,14 @@ function makeRow() {
    на первом же `document.getElementById`. */
 function makeRowTemplate() {
     const tpl = makeEl('template', {id: 'item-row'});
-    const sample = makeRow();
-    sample.cloneNode = () => makeRow();
+    const sample = makeLineRow();
+    sample.cloneNode = () => makeLineRow();
     tpl.content = {firstElementChild: sample};
     return tpl;
 }
 
 const TABLE = '/api/lookup/products/table';
+const CUSTOMER_TABLE = '/api/lookup/customers/table';
 
 function makeFilterForm() {
     const form = makeEl('form', {method: 'get', action: '/products'});
@@ -277,34 +286,39 @@ function makeFilterForm() {
     return {form, search, category, deleted, sort, dir};
 }
 
-/* Список, который приходит из `/api/lookup/products/table`: ровно та же
-   разметка, что на странице товаров, с сортировкой и постраничными ссылками.
-   Имена функций строят строки из TABLE, а не из ответа, — прибор не изображает
-   сервер, он проверяет, что скрипт по этим ссылкам САМ идёт за следующей
-   страницей, а не перерисовывает список сам. */
-function makeProductRow(id, label, extra) {
-    const row = makeEl('tr', Object.assign({'data-pick-id': id,
-                                           'data-pick-label': label}, extra || {}));
+/* Строка списка раздела из эндпоинта разметки: та же разметка, что на странице
+   раздела, с ссылкой на карточку. Имена колонок и адреса берутся из одного места
+   с приложением, поэтому проверка «скрипт пошёл за СОРТИРОВКОЙ клиентов» не
+   подменяется подгонкой ожидаемого. */
+function makeRow(kind, id, label) {
+    const row = makeEl('tr', {'data-pick-id': id, 'data-pick-label': label});
     const cell = makeEl('td');
-    const link = makeEl('a', {'class': 'app-link', href: '/products/' + id});
+    const link = makeEl('a', {'class': 'app-link', href: '/' + kind + '/' + id});
     link.textContent = label;
     cell.appendChild(link);
     row.appendChild(cell);
-    for (const text of ['SKU-1', '—', 'шт', '10.00', '5']) {
+    for (const text of CELLS[kind]) {
         row.appendChild(makeEl('td', {text: text}));
     }
     return row;
 }
 
-function makeBrowseModal(options) {
+const CELLS = {
+    products: ['SKU-1', '—', 'шт', '10.00', '5'],
+    customers: ['+7-900', '7707080000', '5%'],
+};
+
+function makeBrowseModal(kind, options) {
     options = options || {};
+    const name = 'browse-' + kind;
+    const endpoint = kind === 'products' ? TABLE : CUSTOMER_TABLE;
     const modal = makeEl('div', {
-        'class': 'app-modal', 'data-open': 'false', 'data-modal': 'browse-products',
-        'data-table': TABLE,
+        'class': 'app-modal', 'data-open': 'false', 'data-modal': name,
+        'data-table': endpoint,
     });
     const panel = makeEl('div', {'class': 'app-modal-panel app-modal-panel-wide'});
     const close = makeEl('button', {'class': 'app-btn', 'data-modal-close': '',
-                                  'data-modal-kind': 'browse-products'});
+                                   'data-modal-kind': name});
     close.textContent = 'Закрыть';
     const filter = makeFilterForm();
     const table = makeEl('div', {'data-modal-table': ''});
@@ -312,7 +326,7 @@ function makeBrowseModal(options) {
     panel.appendChild(filter.form);
     panel.appendChild(table);
     modal.appendChild(panel);
-    return {modal, close, table, filter,
+    return {modal, close, table, filter, endpoint,
              /* Строки ТЕЛА таблицы: `tr` есть ещё и в `thead`, и считать его
                 строкой товара было бы ошибкой прибора. */
              rows: function () {
@@ -326,59 +340,69 @@ function makeBrowseModal(options) {
 /* Форма создания товара — ВСЯ форма, а не два поля: окно отдаёт те же поля, что и
    карточка товара, и собирает их той же функцией. Прибор повторяет этот набор
    (плюс проверка ниже, что скрипт действительно требует все поля). */
-function makeCreateModal() {
+/* Формы создания — ВСЯ форма раздела, а не два поля: окно отдаёт те же поля, что и
+   карточка, и собирает их той же функцией. Прибор повторяет эти наборы (плюс
+   проверки ниже, что скрипт действительно требует все поля). */
+const CREATE_FIELDS = {
+    products: ['name', 'sku', 'category_id', 'unit_id', 'min_stock', 'price',
+        'rest', 'track_rest', 'description', 'characteristic'],
+    customers: ['name', 'inn', 'phone', 'email', 'discount_card',
+        'personal_discount', 'comment'],
+};
+
+const FIELD_VALUES = {
+    price: '12.50', rest: '0', personal_discount: '0',
+};
+
+function makeCreateModal(kind) {
+    const name = 'create-' + kind;
     const modal = makeEl('div', {
-        'class': 'app-modal', 'data-open': 'false', 'data-modal': 'create-products',
+        'class': 'app-modal', 'data-open': 'false', 'data-modal': name,
     });
     const panel = makeEl('div', {'class': 'app-modal-panel'});
     const close = makeEl('button', {'class': 'app-btn', 'data-modal-close': '',
-                                    'data-modal-kind': 'create-products'});
+                                    'data-modal-kind': name});
     close.textContent = 'Закрыть';
     const form = makeEl('form', {'class': 'space-y-2', 'data-create-form': ''});
-    const field = (name, value, extra) => {
-        const el = makeEl('input', Object.assign({name: name}, extra || {}));
-        el.value = value === undefined ? '' : String(value);
+    const controls = {};
+    for (const field of CREATE_FIELDS[kind]) {
+        const checkbox = field === 'track_rest';
+        const el = makeEl(checkbox ? 'input' : (field.indexOf('description') === 0
+            || field === 'comment' || field === 'characteristic' ? 'textarea' : 'input'),
+        Object.assign({name: field}, checkbox ? {type: 'checkbox'} : {}));
+        el.value = FIELD_VALUES[field] === undefined ? '' : FIELD_VALUES[field];
+        controls[field] = el;
         form.appendChild(el);
-        return el;
-    };
-    const name = field('name');
-    field('sku');
-    const category = makeEl('select', {name: 'category_id'});
-    form.appendChild(category);
-    const unit = makeEl('select', {name: 'unit_id'});
-    form.appendChild(unit);
-    field('min_stock');
-    const price = field('price', '12.50', {type: 'number'});
-    field('rest', '0', {type: 'number'});
-    field('track_rest', null, {type: 'checkbox'});
-    const description = makeEl('textarea', {name: 'description'});
-    form.appendChild(description);
-    const characteristic = makeEl('textarea', {name: 'characteristic'});
-    form.appendChild(characteristic);
-    const error = makeEl('p', {'data-product-error': '', 'class': 'text-danger hidden'});
+    }
+    const errorAttrs = {'class': 'text-danger hidden'};
+    errorAttrs['data-' + kind + '-error'] = '';
+    const error = makeEl('p', errorAttrs);
     form.appendChild(error);
     const note = makeEl('p', {'class': 'app-picker-note', 'data-create-note': ''});
+    form.appendChild(note);
     const submit = makeEl('button', {'class': 'app-btn-accent'});
     submit.textContent = 'Создать';
-    form.appendChild(note);
     form.appendChild(submit);
     panel.appendChild(close);
     panel.appendChild(form);
     modal.appendChild(panel);
-    return {modal, close, form, name, price, note, submit, error,
-            fields: ['name', 'sku', 'category_id', 'unit_id', 'min_stock', 'price',
-                     'rest', 'track_rest', 'description', 'characteristic']};
+    return {modal, close, form, note, submit, error, controls,
+             fields: CREATE_FIELDS[kind], name: controls.name, price: controls.price};
 }
 
-const COLUMNS = [['Название', 'name'], ['Артикул', 'sku'], ['Категория', 'category'],
-    ['Ед.', 'unit'], ['Цена', 'price'], ['Остаток', 'rest']];
+const COLUMNS = {
+    products: [['Название', 'name'], ['Артикул', 'sku'], ['Категория', 'category'],
+        ['Ед.', 'unit'], ['Цена', 'price'], ['Остаток', 'rest']],
+    customers: [['Имя', 'name'], ['Телефон', 'phone'], ['ИНН', 'inn'], ['Скидка', 'discount']],
+};
 
 /* «Сервер» отдаёт ту же структуру, что и эндпоинт разметки: заголовки с
    ссылками сортировки, строки и постраничную ссылку. Имена колонок и адреса
    берутся из одного места с приложением, поэтому проверка «скрипт пошёл за
    СОРТИРОВКОЙ» не подменяется подгонкой ожидаемого. */
-function tableAnswer(query, rows, options) {
+function tableAnswer(kind, query, rows, options) {
     options = options || {};
+    const endpoint = kind === 'products' ? TABLE : CUSTOMER_TABLE;
     const params = {};
     query.split('&').forEach(function (pair) {
         if (!pair) return;
@@ -392,17 +416,17 @@ function tableAnswer(query, rows, options) {
         'прибор не знает таких строк: ' + JSON.stringify(params) + ' из ' + JSON.stringify(rows));
     const head = makeEl('thead');
     const headRow = makeEl('tr');
-    for (const column of COLUMNS) {
+    for (const column of COLUMNS[kind]) {
         const cell = makeEl('th');
         const link = makeEl('a', {'class': 'app-link',
-            href: TABLE + '?sort=' + column[1] + '&dir=desc'});
+            href: endpoint + '?sort=' + column[1] + '&dir=desc'});
         link.textContent = column[0];
         cell.appendChild(link);
         headRow.appendChild(cell);
     }
     head.appendChild(headRow);
     const body = makeEl('tbody');
-    for (const pair of found) body.appendChild(makeProductRow(pair[0], pair[1]));
+    for (const pair of found) body.appendChild(makeRow(kind, pair[0], pair[1]));
     const table = makeEl('table');
     table.appendChild(head);
     table.appendChild(body);
@@ -412,13 +436,18 @@ function tableAnswer(query, rows, options) {
     if (options.pages && options.pages > 1) {
         const foot = makeEl('div');
         const forward = makeEl('a', {'class': 'app-link',
-            href: TABLE + '?' + (query ? query + '&' : '') + 'page=' + ((params.page || 1) + 1)});
+            href: endpoint + '?' + (query ? query + '&' : '') + 'page=' + ((params.page || 1) + 1)});
         forward.textContent = 'Вперёд';
         foot.appendChild(forward);
         nodes.push(foot);
     }
     return {__nodes: nodes, query: query};
 }
+
+const DEFAULT_ROWS = {
+    products: [[21, 'Гвоздь'], [22, 'Шуруп']],
+    customers: [[31, 'ООО Строй'], [32, 'Ромашка']],
+};
 
 function run(payloads, options) {
     options = options || {};
@@ -428,8 +457,10 @@ function run(payloads, options) {
     for (const picker of pickers) {
         form.appendChild(picker.box);
     }
-    const browse = makeBrowseModal();
-    const create = makeCreateModal();
+    const browse = makeBrowseModal('products', options);
+    const create = makeCreateModal('products');
+    const browseClients = makeBrowseModal('customers', options);
+    const createClients = makeCreateModal('customers');
     const addButton = makeEl('button', {'class': 'app-btn', 'data-item-add': ''});
     addButton.textContent = 'Добавить строку';
     const items = makeItemsBody();
@@ -443,6 +474,8 @@ function run(payloads, options) {
     root.appendChild(template);
     root.appendChild(browse.modal);
     root.appendChild(create.modal);
+    root.appendChild(browseClients.modal);
+    root.appendChild(createClients.modal);
     root.appendChild(outside);
     const requests = [];
     const calls = [];
@@ -490,15 +523,16 @@ function run(payloads, options) {
             calls.push({url, sent});
             const index = requests.length - 1;
             const payload = payloads[index] !== undefined ? payloads[index] : payloads[0];
-            if (url.indexOf(TABLE) === 0) {
+            if (url.indexOf(TABLE) === 0 || url.indexOf(CUSTOMER_TABLE) === 0) {
                 /* Эндпоинт разметки отдаёт HTML, а не JSON. Прибор отдаёт узлы
                    строк, собранные из имени запроса, — так видно, что скрипт
                    пошёл за СЛЕДУЮЩЕЙ страницей или с тем поиском, который набрал
                    человек, а не показал прежний список. */
+                const kind = url.indexOf(CUSTOMER_TABLE) === 0 ? 'customers' : 'products';
                 const query = (url.split('?')[1] || '');
-                const answer = tableAnswer(query, options.rows
-                    || [[21, 'Гвоздь'], [22, 'Шуруп']], options);
-                return Promise.resolve({ok: true, text: () => Promise.resolve(answer)});
+                const rows = (options.rows && options.rows[kind]) || DEFAULT_ROWS[kind];
+                return Promise.resolve({ok: true,
+                    text: () => Promise.resolve(tableAnswer(kind, query, rows, options))});
             }
             return Promise.resolve({
                 ok: !(payload && payload.ok === false),
@@ -531,6 +565,7 @@ function run(payloads, options) {
     const fire = (target, type, extra) => dispatch(target, type, extra, documentHandlers);
     return {
         pickers, form, requests, calls, timers, outside, browse, create,
+        browseClients, createClients,
         addButton, items, template, fire, notice,
         flush: () => {
             for (const timer of timers) {
@@ -983,6 +1018,59 @@ const THREE = {
     assert.strictEqual(grown.items.children[0].children[0]
         .querySelector('input[type=hidden]').value, '',
         'выбор ушёл не в ту строку');
+
+    // 28. У клиента те же два окна, только свои: свой список раздела и своя форма.
+    //     Кнопка товара на строке клиента открыла бы окно товаров, и заметил бы
+    //     это только тот, кто нажал.
+    const clientLine = run([THREE], {pickers: [makePicker('customers', '', '')]});
+    clientLine.click(clientLine.pickers[0].browse);
+    await clientLine.flush();
+    assert.strictEqual(clientLine.browseClients.modal.getAttribute('data-open'), 'true',
+        'окно выбора клиента не открылось');
+    assert.strictEqual(clientLine.browse.modal.getAttribute('data-open'), 'false',
+        'открылось окно товара вместо окна клиента');
+    assert.strictEqual(clientLine.requests[0], CUSTOMER_TABLE,
+        'окно клиента пошло не за списком клиентов: ' + clientLine.requests[0]);
+    assert.deepStrictEqual(clientLine.browseClients.rows()
+        .map((r) => r.getAttribute('data-pick-label')), ['ООО Строй', 'Ромашка']);
+    const byPhone = clientLine.browseClients.links().filter((a) => a.getAttribute('href')
+        === CUSTOMER_TABLE + '?sort=phone&dir=desc')[0];
+    assert.ok(byPhone, 'в окне клиентов нет сортировки по телефону');
+    clientLine.click(byPhone);
+    await clientLine.flush();
+    assert.strictEqual(clientLine.requests[1], CUSTOMER_TABLE + '?sort=phone&dir=desc',
+        'сортировка клиентов пошла не туда: ' + clientLine.requests[1]);
+    clientLine.click(clientLine.browseClients.rows()[1]);
+    assert.strictEqual(clientLine.pickers[0].hidden.value, '32',
+        'выбранный клиент не попал в подстановку');
+    assert.strictEqual(clientLine.pickers[0].text.value, 'Ромашка');
+    assert.strictEqual(clientLine.browseClients.modal.getAttribute('data-open'), 'false');
+
+    // 29. Созданный клиент становится выбранным, и уходит ВСЯ форма клиента, а не
+    //     два поля: копия разбора здесь была бы второй формой без половины полей.
+    const madeClient = run([{id: 41, name: 'Ромашка'}],
+                           {pickers: [makePicker('customers', '', '')]});
+    madeClient.click(madeClient.pickers[0].create);
+    assert.strictEqual(madeClient.createClients.modal.getAttribute('data-open'), 'true',
+        'форма создания клиента не открылась');
+    madeClient.createClients.controls.name.value = 'Ромашка';
+    madeClient.submitForm(madeClient.createClients.form);
+    await madeClient.flush();
+    const clientCall = madeClient.calls[0];
+    assert.strictEqual(clientCall.url, '/api/customers',
+        'создание клиента пошло не в API клиентов');
+    assert.deepStrictEqual(JSON.parse(clientCall.sent.body), {
+        name: 'Ромашка', inn: null, phone: null, email: null, discount_card: null,
+        personal_discount: 0, comment: null,
+    }, clientCall.sent.body);
+    for (const field of madeClient.createClients.fields) {
+        assert.ok(JSON.parse(clientCall.sent.body)[field] !== undefined,
+            `поле ${field} не доехало до тела запроса клиента`);
+    }
+    assert.strictEqual(madeClient.pickers[0].hidden.value, '41',
+        'новый клиент не стал выбранным');
+    assert.strictEqual(madeClient.pickers[0].text.value, 'Ромашка');
+    assert.strictEqual(madeClient.createClients.modal.getAttribute('data-open'), 'false');
 
     console.log('ok');
 })().catch((e) => {
