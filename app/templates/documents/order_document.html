@@ -1,0 +1,52 @@
+{# Документ заказа — единственный источник разметки и для страницы заказа
+   (там он печатается одним кликом) и для предпросмотра печати. Общего
+   включения мало: контексты у страниц разные, и подстановка `doc` проверяет,
+   что страница заказа отдала сюда тот же набор значений. `doc['items']`, а не
+   `doc.items`: точка в Jinja сперва ищет АТРИБУТ, и у словаря нашёлся бы метод
+   `items`, то есть цикл получил быBuiltin-функцию. #}
+{% if doc.seller %}
+<div class="mb-4 border border-line p-4 text-sm">
+    <p class="mb-2 font-semibold">Продавец</p>
+    <dl>
+        {% for label, value in doc.seller %}
+        <div class="flex gap-2">
+            <dt class="font-semibold">{{ label }}</dt>
+            <dd>{{ value }}</dd>
+        </div>
+        {% endfor %}
+    </dl>
+</div>
+{% endif %}
+<h1 class="text-2xl font-bold">Заказ покупателя № {{ doc.number }}</h1>
+<p class="mt-2">Клиент: {{ doc.customer_name }}</p>
+<p>Дата: {{ doc.created_at|dt }}</p>
+<table class="w-full border-collapse mt-4">
+    <thead>
+        <tr class="border-b text-left">
+            <th class="p-2">Наименование</th>
+            <th class="p-2">Кол-во</th>
+            <th class="p-2">Ед.</th>
+            <th class="p-2">Цена</th>
+            <th class="p-2">Скидка%</th>
+            <th class="p-2">Сумма</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for it in doc['items'] %}
+        <tr class="border-b">
+            <td class="p-2">{{ it.name }}</td>
+            <td class="p-2">{{ it.quantity|num }}</td>
+            <td class="p-2">{{ it.unit }}</td>
+            <td class="p-2">{{ it.price|num(2) }}</td>
+            <td class="p-2">{{ "%.0f"|format(it.discount) }}</td>
+            <td class="p-2">{{ it.sum|num(2) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr class="border-t">
+            <td colspan="5" class="p-2 font-bold">Итого:</td>
+            <td class="p-2 font-bold">{{ doc.total_amount|num(2) }}</td>
+        </tr>
+    </tfoot>
+</table>

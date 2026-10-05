@@ -141,7 +141,7 @@ from app.modules.settings.service import (
     set_user_theme,
     search_slow_ms,
 )
-from app.modules.printing.service import render_order_pdf
+from app.modules.printing.service import build_order_context, render_order_pdf
 
 APP_DIR = Path(__file__).parent
 PAGE_SIZE = 25
@@ -1655,6 +1655,9 @@ def create_app() -> FastAPI:
             "can_edit": user_has_permission(user, Permission.orders_edit),
             "can_delete": user_has_permission(user, Permission.orders_delete),
             "can_create": user_has_permission(user, Permission.orders_create),
+            # Тот же контекст, что у предпросмотра печати: печать одним кликом
+            # печатает документ, который лежит в этой же странице.
+            "doc": build_order_context(order, db),
             **_page_context(user),
         })
 
@@ -1669,9 +1672,13 @@ def create_app() -> FastAPI:
         if order is None:
             raise HTTPException(status_code=404, detail="Заказ не найден")
         from app.modules.printing import service as print_service
-        ctx = print_service.build_order_context(order, db)
-        ctx["order_id"] = order_id
-        ctx["can_send_notifications"] = user_has_permission(user, Permission.notifications_send)
+        doc = build_order_context(order, db)
+        ctx = {
+            **doc,
+            "doc": doc,
+            "order_id": order_id,
+            "can_send_notifications": user_has_permission(user, Permission.notifications_send),
+        }
         html = print_service.JINJA.get_template("documents/order_print.html").render(**ctx)
         return Response(html, media_type="text/html")
 

@@ -111,7 +111,8 @@ def build_order_context(order, db) -> dict:
 
 
 def render_order_html(order, db) -> str:
-    return JINJA.get_template("documents/order_print.html").render(**build_order_context(order, db))
+    doc = build_order_context(order, db)
+    return JINJA.get_template("documents/order_print.html").render(**doc, doc=doc)
 
 
 def render_order_pdf(order, db) -> bytes:

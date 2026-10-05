@@ -19,7 +19,7 @@
 </head>
 <body class="bg-surface text-primary"
       data-sidebar="{{ 'collapsed' if collapsed else 'expanded' }}"
-      data-nav="closed">
+      data-nav="closed"{% block body_attrs %}{% endblock %}>
 {% set maintenance = maintenance_state() %}
 {% if maintenance.mode == "countdown" %}
 <div class="bg-warning-strong-bg border-b border-warning-strong-border p-3 text-center" data-starts-at="{{ maintenance.starts_at }}">
@@ -202,6 +202,21 @@
     }
     Array.prototype.forEach.call(
         document.querySelectorAll("form[data-live-filter]"), liveFilterDebounce);
+})();
+</script>
+<script>
+(function () {
+    /* `window.print()` печатает текущий документ, поэтому документ лежит в
+       странице заказа, а вызов стоит в обработчике нажатия — это и есть жест
+       пользователя, ради которого окно печати не отбрасывается. Ссылка ведёт на
+       предпросмотр: без JavaScript нажатие уходит туда. */
+    var button = document.querySelector("[data-print-now]");
+    if (button) {
+        button.addEventListener("click", function (event) {
+            event.preventDefault();
+            window.print();
+        });
+    }
 })();
 </script>
 <script>

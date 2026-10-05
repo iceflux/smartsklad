@@ -17,7 +17,10 @@ import re
 from pathlib import Path
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "app" / "templates"
-PRINT_DOCUMENT = "documents/order_print.html"
+PRINT_DIR = TEMPLATES / "documents"
+# Документ печати — кусок `documents/order_document.html`, его включают и страница
+# заказа, и предпросмотр печати; адаптив проверяется у обоих.
+PRINT_DOCUMENT = "order_document.html"
 
 CLASS_ATTR = re.compile(r"""class=(["'])(.*?)\1""", re.DOTALL)
 FIXED_COLUMNS = re.compile(r"^grid-cols-(\d+)$")
@@ -110,7 +113,8 @@ def test_no_column_span_outlives_the_columns_it_spans():
 
 
 def test_the_print_document_carries_no_responsive_layout():
-    text = (TEMPLATES / PRINT_DOCUMENT).read_text(encoding="utf-8")
-    prefixed = re.findall(r"(?:^|\s)(?:sm|md|lg|xl):[\w-]+", text)
-    assert prefixed == [], f"в печатном документе появился адаптив: {prefixed}"
-    assert "grid-cols-" not in text
+    for name in (PRINT_DOCUMENT, "order_print.html"):
+        text = (TEMPLATES / PRINT_DIR / name).read_text(encoding="utf-8")
+        prefixed = re.findall(r"(?:^|\s)(?:sm|md|lg|xl):[\w-]+", text)
+        assert prefixed == [], f"в печатном документе появился адаптив: {prefixed}"
+        assert "grid-cols-" not in text

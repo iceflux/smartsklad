@@ -6,6 +6,9 @@ CSS = TEMPLATES.parent / "static" / "app.css"
 SCROLL_WRAPPER = re.compile(r'<div[^>]*class="[^"]*\boverflow-x-auto\b[^"]*"[^>]*>')
 SCROLL_CLASS = "overflow-x-auto"
 PRINT_DIR = "documents"
+# Документ вынесен в кусок, который включают и страница заказа, и предпросмотр
+# печати: разметка печати обязана быть одна, иначе копии разъедутся.
+PRINT_DOCUMENT = "order_document.html"
 TABLE_RE = re.compile(r"<table\b")
 SCREEN_TABLE_COUNT = 21
 
@@ -58,7 +61,7 @@ def test_no_table_is_wrapped_in_a_second_scroll_wrapper():
 
 
 def test_the_print_document_keeps_no_scroll_wrapper():
-    text = (TEMPLATES / PRINT_DIR / "order_print.html").read_text(encoding="utf-8")
+    text = (TEMPLATES / PRINT_DIR / PRINT_DOCUMENT).read_text(encoding="utf-8")
     assert SCROLL_CLASS not in text
     assert text.count("<table") == 1
 
