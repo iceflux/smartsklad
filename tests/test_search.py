@@ -15,6 +15,7 @@
 """
 
 import re
+from pathlib import Path
 
 from app.main import SEARCH_LIMIT, SEARCH_MIN_QUERY
 from app.modules.auth.models import Role, User
@@ -241,6 +242,13 @@ def test_the_search_thresholds_live_in_the_page_script_and_only_there(client, db
     и там она оказалась бы пустой строкой внутри скрипта. Проверяются все
     шаблоны, а не только `base.html`: пауза живёт в трёх скриптах, и «одно
     число» — это утверждение обо всех трёх сразу.
+
+    Порог ручного режима — исключение из этого правила, и исключение
+    намеренное: он приходит в скрипт подстановкой `{{ search_slow_ms }}`,
+    потому что это настройка, а не решение разработчика. Проверка требует
+    именно подстановку и запрещает рядом живущее число: две подряд
+    источника истины означают, что страница получит то, что успеет
+    прочитать раньше.
     """
     from pathlib import Path
 
@@ -257,10 +265,79 @@ def test_the_search_thresholds_live_in_the_page_script_and_only_there(client, db
         "в шапке объявлено не две паузы, а столько-то: один из скриптов потерял "
         "свою или получил чужую"
     )
-    assert "SEARCH_SLOW_MS = 800" in base, "порог ручного режима поменялся — перечитай отчёт"
-    assert base.index("SEARCH_SLOW_MS = 800") < base.index("var opener"), (
+    assert "var SEARCH_SLOW_MS = {{ search_slow_ms }};" in base, (
+        "порог ручного режима снова зашит в шаблон или переименован: прочитай "
+        "отчёт раунда, где записано, откуда он приходит"
+    )
+    assert base.index("var SEARCH_SLOW_MS = {{ search_slow_ms }};") < base.index("var opener"), (
         "порог объявлен вне скрипта окна"
     )
+    assert not re.search(r"SEARCH_SLOW_MS\s*=\s*\d", base), (
+        "рядом с подстановкой живёт число: источника истины стало два"
+    )
+    others = [p.relative_to(root).as_posix() for p in sorted(root.rglob("*.html"))
+              if p.name != "base.html" and "SEARCH_SLOW_MS" in p.read_text(encoding="utf-8")]
+    assert others == [], f"порог объявлен ещё где-то: {others}"
+
+
+def test_the_threshold_survives_the_printing_environment(client, db_session):
+    """Печатный документ тоже рендерит `base.html` — без `request`.
+
+    Подстановка порога нацелена на `request.state`, а в печатном окружении
+    `request` нет и ветка `else` берёт константу из Jinja-глобала. Без
+    зарегистрированной глобалки в документ уехала бы строка
+    `var SEARCH_SLOW_MS = ;`, то есть синтаксическая ошибка в каждом
+    напечатанном заказе, и ни один тест печати её не увидел бы.
+    """
+    from app.modules.printing.service import JINJA
+
+    assert "SEARCH_SLOW_DEFAULT" in JINJA.globals, (
+        "в печатном окружении не зарегистрирован запасной порог: без него "
+        "скрипт окна попадёт в документ с пустым значением"
+    )
+    html = JINJA.from_string(
+        (Path(__file__).resolve().parents[1] / "app" / "templates" / "base.html")
+        .read_text(encoding="utf-8")
+    ).render(title="Печать")
+    assert "var SEARCH_SLOW_MS = 1000;" in html
+    assert "var SEARCH_SLOW_MS = ;" not in html
+
+
+def test_the_rendered_window_carries_the_configured_threshold(client, db_session):
+    """Настройка доезжает до браузера на следующей отрисовке.
+
+    Проверяется и значение, и его отсутствие на странице: одна проверка «в
+    разметке есть число» прошла бы и на зашитом 800.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    body = client.get("/orders").text
+    assert "var SEARCH_SLOW_MS = 1000;" in body, (
+        "дефолт не доехал до скрипта окна"
+    )
+    assert client.put("/api/settings/search-slow", json={"value": 1500}).status_code == 200
+    body = client.get("/orders").text
+    assert "var SEARCH_SLOW_MS = 1500;" in body, (
+        "изменённый порог не доехал до скрипта окна"
+    )
+    assert "var SEARCH_SLOW_MS = 1000;" not in body, (
+        "на странице осталось прежнее число: источников истины стало два"
+    )
+    assert "{{" not in body.split("<script>")[-1], "подстановка не разошлась"
+
+
+def test_the_threshold_is_the_same_on_every_page(client, db_session):
+    """Порог читается в холостяке `get_page_user`, а не в роутере.
+
+    Если бы он читался в одном роутере, страницы без него получили бы
+    дефолт молча, и человек сравнил бы две разные страницы. Проверка берёт
+    страницы, у которых роутеры разные и ни один не про порог ничего не
+    знает, — единственный способ заметить разъезд.
+    """
+    _login_as(client, db_session, "boss", "admin")
+    assert client.put("/api/settings/search-slow", json={"value": 2500}).status_code == 200
+    for path in ("/orders", "/customers", "/products", "/dashboard", "/settings"):
+        body = client.get(path).text
+        assert "var SEARCH_SLOW_MS = 2500;" in body, f"{path} получила другое значение"
 
 
 def test_the_disclosure_rules_are_gone_and_the_window_rules_are_shipped(client, db_session):

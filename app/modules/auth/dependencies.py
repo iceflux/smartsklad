@@ -7,7 +7,13 @@ from app.db import get_db
 from app.modules.auth.models import User
 from app.modules.auth.permissions import Permission
 from app.modules.auth.service import get_user_by_token
-from app.modules.settings.service import DEFAULT_THEME, sidebar_collapsed, user_theme
+from app.modules.settings.service import (
+    DEFAULT_SEARCH_SLOW_MS,
+    DEFAULT_THEME,
+    search_slow_ms,
+    sidebar_collapsed,
+    user_theme,
+)
 
 SESSION_COOKIE = "session"
 
@@ -82,6 +88,7 @@ def get_page_user(
 ) -> User | None:
     request.state.sidebar_collapsed = False
     request.state.theme = DEFAULT_THEME
+    request.state.search_slow_ms = DEFAULT_SEARCH_SLOW_MS
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None
@@ -90,6 +97,7 @@ def get_page_user(
         return None
     request.state.sidebar_collapsed = sidebar_collapsed(db, user.id)
     request.state.theme = user_theme(db, user.id)
+    request.state.search_slow_ms = search_slow_ms(db)
     return user
 
 

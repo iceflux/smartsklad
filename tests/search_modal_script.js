@@ -6,6 +6,9 @@ process.on('uncaughtException', (e) => { console.error(e.stack || e.message); pr
 process.on('unhandledRejection', (e) => { console.error((e && e.stack) || e); process.exit(1); });
 
 const template = fs.readFileSync(process.argv[2], 'utf8');
+const SHIPPED_SLOW_MS = process.argv[3];
+assert.ok(/^\d+$/.test(SHIPPED_SLOW_MS || ''),
+    'харнесс не получил порог из настройки: ' + SHIPPED_SLOW_MS);
 const blocks = [...template.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
 const ours = blocks.filter(b => b.indexOf('data-search-open') !== -1);
 assert.strictEqual(ours.length, 1,
@@ -54,6 +57,10 @@ function build(options) {
     const field = el({'data-search-field': '', 'name': 'q'});
     const results = el({'data-search-results': '', 'aria-live': 'polite'});
     const submit = el({'data-search-submit': ''});
+    /* В разметке кнопка «Найти» приезжает скрытой, иначе ручной режим был бы
+       включён всегда. Настоящее значение, а не заглушка: при hidden = false
+       проверка «медленный поиск показал кнопку» проходила бы по построению. */
+    submit.hidden = true;
     const closeBtn = el({'data-search-close': ''});
     const panel = el({class: 'app-modal-panel'});
     const modal = el({'data-modal': 'search', 'data-open': 'false', 'data-table': '/api/search/table'});
@@ -134,8 +141,17 @@ function build(options) {
             return promise;
         },
     };
+    /* Порог приходит в скрипт Jinja-подстановкой, а харнесс читает исходник
+       шаблона. Подставляем его сами: сценарии должны уметь и включить ручной
+       режим, и НЕ включить его при том же ответе — иначе «настройка доехала»
+       нечем проверить. Само значение приходит аргументом из Python, чтобы
+       число не расходилось с DEFAULT_SEARCH_SLOW_MS. */
+    const threshold = options.threshold === undefined ? SHIPPED_SLOW_MS : String(options.threshold);
+    const source = block.replace(/\{\{\s*search_slow_ms\s*\}\}/g, threshold);
+    assert.notStrictEqual(source, block,
+        'в скрипте окна нет подстановки порога — значит он снова зашит в шаблон');
     vm.createContext(sandbox);
-    vm.runInContext(block, sandbox);
+    vm.runInContext(source, sandbox);
 
     const settle = async () => {
         /* Ожидание и через setImmediate, и через настоящий таймер: ответ приходит
@@ -217,11 +233,13 @@ function build(options) {
     assert.strictEqual(race.results.innerHTML, race.requests[1].html,
         'устаревший ответ затер свежий: список показал не то, что в поле');
 
-    // 3. Ручной режим: поиск занял больше порога.
-    const slow = build({slowMs: 900});
+    // 3. Ручной режим: поиск занял больше порога. Порог — из настройки, здесь
+    //    он отгружается по умолчанию, а ниже проверяется, что смена настройки
+    //    действительно двигает границу.
+    const slow = build({slowMs: 1500});
     slow.type('Гвоздь');
     await slow.flush();
-    await slow.wait(950);
+    await slow.wait(1600);
     assert.strictEqual(slow.submit.hidden, false,
         'медленный поиск обязан показать кнопку «Найти»: иначе он тихо ничего не делает');
     const scheduled = slow.timers.length;
@@ -231,15 +249,35 @@ function build(options) {
         'в ручном режиме набор не должен слать запросы сам');
     assert.strictEqual(slow.requests.length, 1);
 
+    // 3a. Тот же ответ при поднятом пороге ручного режима не включает его:
+    //     иначе значение из настройки не влияло бы ни на что.
+    const raised = build({slowMs: 1500, threshold: 5000});
+    raised.type('Гвоздь');
+    await raised.flush();
+    await raised.wait(1600);
+    assert.strictEqual(raised.submit.hidden, true,
+        'поднятый порог всё равно включил ручной режим: настройка не влияет');
+
+    // 3b. Опущенный порог ниже ответа включает ручной режим — граница именно
+    //     там, где её поставили, а не где угадали.
+    const lowered = build({slowMs: 500, threshold: 200});
+    lowered.type('Гвоздь');
+    await lowered.flush();
+    await lowered.wait(700);
+    assert.strictEqual(lowered.submit.hidden, false,
+        'опущенный порог не включил ручной режим при более медленном ответе');
+
     // 4. Enter не перехватывается ни в одном режиме: форма уходит на страницу
     //    поиска обычной отправкой, и это работает даже без скрипта.
     const auto = build({});
     assert.strictEqual(auto.press('Enter').defaultPrevented, false,
         'скрипт перехватил Enter: отправка формы на страницу поиска невозможна');
-    const manual = build({slowMs: 900});
+    const manual = build({slowMs: 1500});
     manual.type('Гвоздь');
     await manual.flush();
-    await manual.wait(950);
+    await manual.wait(1600);
+    assert.strictEqual(manual.submit.hidden, false,
+        'ручной режим не включился, и проверка Enter ниже ничего не значила бы');
     assert.strictEqual(manual.press('Enter').defaultPrevented, false,
         'в ручном режиме Enter перехвачен, а это единственный путь без кнопки');
 

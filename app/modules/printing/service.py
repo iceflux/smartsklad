@@ -16,12 +16,17 @@ from reportlab.platypus import (
 
 from app.formatting import group_number, human_date
 from app.modules.customers.models import Customer
-from app.modules.settings.service import COMPANY_FIELDS, company_data
+from app.modules.settings.service import (
+    COMPANY_FIELDS,
+    DEFAULT_SEARCH_SLOW_MS,
+    company_data,
+)
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 JINJA = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
 JINJA.globals["maintenance_state"] = lambda: {"mode": "idle", "starts_at": None, "starts_at_text": None, "seconds_left": 0}
 JINJA.globals["nav_is_current"] = lambda path, href: False
+JINJA.globals["SEARCH_SLOW_DEFAULT"] = DEFAULT_SEARCH_SLOW_MS
 JINJA.filters["num"] = group_number
 JINJA.filters["dt"] = human_date
 

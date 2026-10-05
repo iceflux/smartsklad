@@ -1,8 +1,15 @@
 from urllib.parse import unquote
 
+import pytest
+
 from app.modules.auth.models import User
 from app.modules.auth.service import get_role_by_name, hash_password, login
-from app.modules.settings.service import STOCK_TRACK_DEFAULT_KEY, get_setting, set_setting
+from app.modules.settings.service import (
+    SEARCH_SLOW_MS_KEY,
+    STOCK_TRACK_DEFAULT_KEY,
+    get_setting,
+    set_setting,
+)
 
 PASSWORD = "password123"
 
@@ -38,7 +45,7 @@ def test_settings_page_post_changes(client, db_session):
     _admin(client, db_session)
     r = client.post("/settings", data={
         "track_rest_default": "false", "user_password_charset": "ABC123",
-        "user_password_length": "12", "min_stock_days": "14",
+        "user_password_length": "12", "min_stock_days": "14", "search_slow_ms": "1000",
     }, follow_redirects=False)
     assert r.status_code == 303
     assert "Сохранено" in unquote(r.headers["location"])
@@ -84,7 +91,7 @@ def test_settings_page_sets_password_charset_and_length(client, db_session):
     _admin(client, db_session)
     r = client.post("/settings", data={
         "user_password_charset": "ABC!123", "user_password_length": "10",
-        "min_stock_days": "14",
+        "min_stock_days": "14", "search_slow_ms": "1000",
     }, follow_redirects=False)
     assert r.status_code == 303
     r2 = client.get("/settings")
@@ -96,7 +103,7 @@ def test_settings_page_rejects_bad_length(client, db_session):
     _admin(client, db_session)
     r = client.post("/settings", data={
         "user_password_charset": "ABC123", "user_password_length": "3",
-        "min_stock_days": "14",
+        "min_stock_days": "14", "search_slow_ms": "1000",
     }, follow_redirects=False)
     assert r.status_code == 303
     assert "Ошибка" in unquote(r.headers["location"])
@@ -110,7 +117,7 @@ def test_settings_page_rejects_invalid_values_without_saving_stock_tracking(clie
     before = get_setting(db_session, STOCK_TRACK_DEFAULT_KEY)
     r = client.post("/settings", data={
         "track_rest_default": "off", "user_password_charset": "ABC123",
-        "user_password_length": "3", "min_stock_days": "14",
+        "user_password_length": "3", "min_stock_days": "14", "search_slow_ms": "1000",
     }, follow_redirects=False)
     assert r.status_code == 303
     assert "Ошибка" in unquote(r.headers["location"])
@@ -122,7 +129,7 @@ def test_settings_page_rejects_nonnumeric_length(client, db_session):
     _admin(client, db_session)
     r = client.post("/settings", data={
         "user_password_charset": "ABC123", "user_password_length": "²",
-        "min_stock_days": "14",
+        "min_stock_days": "14", "search_slow_ms": "1000",
     }, follow_redirects=False)
     assert r.status_code == 303
     assert "Ошибка" in unquote(r.headers["location"])
@@ -132,7 +139,7 @@ def test_settings_page_rejects_empty_charset(client, db_session):
     _admin(client, db_session)
     r = client.post("/settings", data={
         "user_password_charset": "   ", "user_password_length": "12",
-        "min_stock_days": "14",
+        "min_stock_days": "14", "search_slow_ms": "1000",
     }, follow_redirects=False)
     assert r.status_code == 303
     assert "Ошибка" in unquote(r.headers["location"])
@@ -143,7 +150,7 @@ def test_settings_page_accepts_length_boundaries(client, db_session):
     for length in ("8", "64"):
         r = client.post("/settings", data={
             "user_password_charset": "ABC123", "user_password_length": length,
-            "min_stock_days": "14",
+            "min_stock_days": "14", "search_slow_ms": "1000",
         }, follow_redirects=False)
         assert r.status_code == 303
         assert "Сохранено" in unquote(r.headers["location"])
@@ -162,7 +169,7 @@ def test_settings_page_saves_min_stock_days(client, db_session):
     _admin(client, db_session)
     r = client.post("/settings", data={
         "user_password_charset": "ABC123", "user_password_length": "12",
-        "min_stock_days": "21",
+        "min_stock_days": "21", "search_slow_ms": "1000",
     }, follow_redirects=False)
     assert r.status_code == 303
     r2 = client.get("/settings")
@@ -206,7 +213,7 @@ def test_settings_page_requires_min_stock_days(client, db_session):
     _admin(client, db_session)
     client.post("/settings", data={
         "user_password_charset": "ABC123", "user_password_length": "12",
-        "min_stock_days": "21",
+        "min_stock_days": "21", "search_slow_ms": "1000",
     }, follow_redirects=False)
     r = client.post("/settings", data={
         "user_password_charset": "ABC123", "user_password_length": "12",
@@ -221,9 +228,85 @@ def test_settings_page_accepts_min_stock_days_boundaries(client, db_session):
     for value in ("0", "365"):
         r = client.post("/settings", data={
             "user_password_charset": "ABC123", "user_password_length": "12",
-            "min_stock_days": value,
+            "min_stock_days": value, "search_slow_ms": "1000",
         }, follow_redirects=False)
         assert r.status_code == 303
         assert "Сохранено" in unquote(r.headers["location"])
         assert f'value="{value}"' in client.get("/settings").text
+
+
+def test_settings_page_shows_the_search_threshold(client, db_session):
+    _admin(client, db_session)
+    r = client.get("/settings")
+    assert r.status_code == 200
+    assert f'name="{SEARCH_SLOW_MS_KEY}"' in r.text
+    assert 'value="1000"' in r.text
+
+
+def test_settings_page_saves_the_search_threshold(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "user_password_charset": "ABC123", "user_password_length": "12",
+        "min_stock_days": "14", "search_slow_ms": "1500",
+    }, follow_redirects=False)
+    assert "Сохранено" in unquote(r.headers["location"])
+    assert get_setting(db_session, SEARCH_SLOW_MS_KEY) == "1500"
+    assert 'value="1500"' in client.get("/settings").text
+
+
+def test_settings_page_refuses_a_threshold_above_the_ceiling(client, db_session):
+    """Отказ, а не усечение: 60000 — это автопоиск, который не отключается
+    никогда, то есть страховка выключена по незнанию администратора."""
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "user_password_charset": "ABC123", "user_password_length": "12",
+        "min_stock_days": "14", "search_slow_ms": "60000",
+    }, follow_redirects=False)
+    assert "Ошибка" in unquote(r.headers["location"])
+    assert get_setting(db_session, SEARCH_SLOW_MS_KEY) == "1000"
+    assert 'value="1000"' in client.get("/settings").text
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "199", "5001", "мгновенно", ""])
+def test_settings_page_refuses_a_threshold_outside_the_range(client, db_session, value):
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "user_password_charset": "ABC123", "user_password_length": "12",
+        "min_stock_days": "14", "search_slow_ms": value,
+    }, follow_redirects=False)
+    assert "Ошибка" in unquote(r.headers["location"])
+    assert get_setting(db_session, SEARCH_SLOW_MS_KEY) == "1000"
+
+
+def test_settings_page_accepts_the_threshold_boundaries(client, db_session):
+    _admin(client, db_session)
+    for value in ("200", "5000"):
+        r = client.post("/settings", data={
+            "user_password_charset": "ABC123", "user_password_length": "12",
+            "min_stock_days": "14", "search_slow_ms": value,
+        }, follow_redirects=False)
+        assert "Сохранено" in unquote(r.headers["location"])
+        assert get_setting(db_session, SEARCH_SLOW_MS_KEY) == value
+
+
+def test_settings_page_403_does_not_save_the_threshold(client, db_session):
+    _login(client, db_session, "seller1", "seller")
+    before = get_setting(db_session, SEARCH_SLOW_MS_KEY)
+    r = client.post("/settings", data={
+        "user_password_charset": "ABC123", "user_password_length": "12",
+        "min_stock_days": "14", "search_slow_ms": "5000",
+    }, follow_redirects=False)
+    assert r.status_code == 403
+    assert get_setting(db_session, SEARCH_SLOW_MS_KEY) == before
+
+
+def test_a_refused_threshold_does_not_save_the_other_fields(client, db_session):
+    _admin(client, db_session)
+    r = client.post("/settings", data={
+        "track_rest_default": "off", "user_password_charset": "ABC123",
+        "user_password_length": "12", "min_stock_days": "14",
+        "search_slow_ms": "60000",
+    }, follow_redirects=False)
+    assert "Ошибка" in unquote(r.headers["location"])
+    assert '<input type="checkbox" name="track_rest_default" checked' in client.get("/settings").text
 

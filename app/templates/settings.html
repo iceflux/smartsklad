@@ -33,6 +33,11 @@
             <input type="number" name="min_stock_days" min="0" max="365" value="{{ min_stock_days }}" class="border p-2 w-full">
             <p class="text-sm text-muted">Страховой запас по умолчанию для товаров без собственного минимального запаса. В днях продаж.</p>
         </div>
+        <div>
+            <label class="block mb-1">Порог медленного поиска</label>
+            <input type="number" name="search_slow_ms" min="200" max="5000" step="50" value="{{ search_slow_ms }}" class="border p-2 w-full">
+            <p class="text-sm text-muted">Если последний поиск из шапки занял больше этого времени, окно перестаёт искать само и показывает кнопку «Найти». В миллисекундах, от 200 до 5000. По умолчанию 1000 — граница, на которой задержка уже мешает человеку следить за задачей.</p>
+        </div>
         <div class="border-t pt-4">
             <label class="block mb-1">Наименование компании (продавец)</label>
             <input type="text" name="company_name" value="{{ company.company_name }}" class="border p-2 w-full">

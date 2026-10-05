@@ -4,6 +4,7 @@
 {% set path = request.url.path if request is defined else '/' %}
 {% set theme = (request.state.theme|default('light')) if request is defined else 'light' %}
 {% set q_now = (request.query_params.get('q') or '') if request is defined else '' %}
+{% set search_slow_ms = (request.state.search_slow_ms|default(SEARCH_SLOW_DEFAULT)) if request is defined else SEARCH_SLOW_DEFAULT %}
 {# На /login панели и шапки нет: анонимному панель рисует ровно одну ссылку
    «Войти» — на страницу, которая и есть эта ссылка. Оставить панель, убрав
    ссылку, значило бы оставить пустую колонку в 16rem, а оставить шапку —
@@ -206,7 +207,7 @@
 <script>
 (function () {
     var DEBOUNCE_MS = 300;
-    var SEARCH_SLOW_MS = 800;
+    var SEARCH_SLOW_MS = {{ search_slow_ms }};
     var opener = document.querySelector("[data-search-open]");
     var modal = document.querySelector('[data-modal="search"]');
     if (!opener || !modal) return;

@@ -15,6 +15,10 @@ REPORT_PERIOD_KEY = "report_email_period"
 REPORT_TIME_KEY = "report_email_time"
 REPORT_RECIPIENTS_KEY = "report_email_recipients"
 REPORT_PERIODS = ("day", "week", "month")
+SEARCH_SLOW_MS_KEY = "search_slow_ms"
+DEFAULT_SEARCH_SLOW_MS = 1000
+SEARCH_SLOW_MS_MIN = 200
+SEARCH_SLOW_MS_MAX = 5000
 SIDEBAR_COLLAPSED_KEY = "ui.sidebar_collapsed"
 THEME_KEY = "ui.theme"
 THEME_VALUES = ("light", "dark")
@@ -65,6 +69,7 @@ def _defaults() -> dict[str, str]:
         REPORT_PERIOD_KEY: "week",
         REPORT_TIME_KEY: "09:00",
         REPORT_RECIPIENTS_KEY: "[]",
+        SEARCH_SLOW_MS_KEY: str(DEFAULT_SEARCH_SLOW_MS),
     }
 
 
@@ -108,6 +113,30 @@ def get_int_setting(db: Session, key: str, default: int) -> int:
         return int(raw)
     except (TypeError, ValueError):
         return default
+
+
+def search_slow_ms(db: Session) -> int:
+    """Порог, после которого окно поиска перестаёт искать само.
+
+    1000 мс — не круглое число, взятое на глаз. Это граница из модели
+    производительности RAIL (Google, «How users perceive performance delays»,
+    со ссылкой на исследования Nielsen Norman Group): до 1000 мс задержка
+    читается как «естественное и непрерывное продолжение задачи», а начиная
+    с 1000 мс «пользователь теряет фокус на задаче, которую выполняет». Тот
+    же источник отмечает, что пользователи мобильных устройств обычно
+    терпеливее, поэтому для телефона 1000 мс — консервативная граница.
+
+    Цель RAIL «respond» в 100 мс здесь НЕ применима: она про реакцию на
+    нажатие, а не про запрос, возвращающий новые результаты, — то есть про
+    смену задачи.
+
+    Границы: снизу 200 мс, потому что ниже порог перестаёт быть страховкой и
+    становится помехой — один холодный кэш или соседний `pg_dump`, и живой
+    поиск выключен навсегда. Сверху 5000 мс, потому что 5 с — это уже заведомо
+    не «ощущение задержки», а сломанная настройка: при пороге в минуту человек
+    будет смотреть на пустой список, так и не получив кнопку «Найти».
+    """
+    return get_int_setting(db, SEARCH_SLOW_MS_KEY, DEFAULT_SEARCH_SLOW_MS)
 
 
 def sidebar_collapsed(db: Session, user_id: int) -> bool:

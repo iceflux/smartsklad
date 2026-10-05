@@ -123,7 +123,11 @@ from app.modules.settings.service import (
     DEFAULT_MIN_STOCK_DAYS,
     DEFAULT_PASSWORD_CHARSET,
     DEFAULT_PASSWORD_LENGTH,
+    DEFAULT_SEARCH_SLOW_MS,
     MIN_STOCK_DAYS_KEY,
+    SEARCH_SLOW_MS_KEY,
+    SEARCH_SLOW_MS_MAX,
+    SEARCH_SLOW_MS_MIN,
     STOCK_TRACK_DEFAULT_KEY,
     THEME_VALUES,
     USER_PASSWORD_CHARSET_KEY,
@@ -135,6 +139,7 @@ from app.modules.settings.service import (
     set_setting,
     set_sidebar_collapsed,
     set_user_theme,
+    search_slow_ms,
 )
 from app.modules.printing.service import render_order_pdf
 
@@ -504,6 +509,7 @@ def create_app() -> FastAPI:
     templates.env.globals["maintenance_state"] = maintenance_state
     templates.env.globals["nav_is_current"] = nav_is_current
     templates.env.globals["SEARCH_TABLE"] = SEARCH_TABLE
+    templates.env.globals["SEARCH_SLOW_DEFAULT"] = DEFAULT_SEARCH_SLOW_MS
     templates.env.filters["num"] = group_number
     templates.env.filters["dt"] = human_date
     app.state.templates = templates
@@ -598,6 +604,7 @@ def create_app() -> FastAPI:
             "user_password_charset": get_setting(db, USER_PASSWORD_CHARSET_KEY) or DEFAULT_PASSWORD_CHARSET,
             "user_password_length": get_setting(db, USER_PASSWORD_LENGTH_KEY) or DEFAULT_PASSWORD_LENGTH,
             "min_stock_days": get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),
+            "search_slow_ms": search_slow_ms(db),
             "company": company_data(db),
             **_page_context(user),
         })
@@ -623,8 +630,16 @@ def create_app() -> FastAPI:
             min_stock_days = int(min_stock_days_raw)
         except ValueError:
             min_stock_days = -1
-        if not charset or not 8 <= length <= 64 or not 0 <= min_stock_days <= 365:
-            return RedirectResponse("/settings?msg=Ошибка: символы непустые, длина 8-64, запас 0-365", status_code=303)
+        search_slow_raw = (form.get(SEARCH_SLOW_MS_KEY) or [""])[0].strip()
+        try:
+            search_slow = int(search_slow_raw)
+        except ValueError:
+            search_slow = -1
+        if (not charset or not 8 <= length <= 64 or not 0 <= min_stock_days <= 365
+                or not SEARCH_SLOW_MS_MIN <= search_slow <= SEARCH_SLOW_MS_MAX):
+            return RedirectResponse(
+                f"/settings?msg=Ошибка: символы непустые, длина 8-64, запас 0-365, "
+                f"порог поиска {SEARCH_SLOW_MS_MIN}-{SEARCH_SLOW_MS_MAX} мс", status_code=303)
         set_setting(db, STOCK_TRACK_DEFAULT_KEY, track_rest_default, user=user)
         if telegram_token:
             set_setting(db, "telegram_bot_token", telegram_token, user=user)
@@ -633,6 +648,7 @@ def create_app() -> FastAPI:
         set_setting(db, USER_PASSWORD_CHARSET_KEY, charset, user=user)
         set_setting(db, USER_PASSWORD_LENGTH_KEY, str(length), user=user)
         set_setting(db, MIN_STOCK_DAYS_KEY, str(min_stock_days), user=user)
+        set_setting(db, SEARCH_SLOW_MS_KEY, str(search_slow), user=user)
         for key, _label in COMPANY_FIELDS:
             set_setting(db, key, (form.get(key) or [""])[0].strip(), user=user)
         return RedirectResponse("/settings?msg=Сохранено", status_code=303)

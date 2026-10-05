@@ -135,7 +135,7 @@ def test_the_settings_page_offers_every_company_field(client, db_session):
 def test_the_settings_page_saves_the_company_and_the_audit_says_so(client, db_session):
     _admin(client, db_session)
     data = {"track_rest_default": "true", "user_password_charset": "ABC123",
-            "user_password_length": "12", "min_stock_days": "14"}
+            "user_password_length": "12", "min_stock_days": "14", "search_slow_ms": "1000"}
     data.update(FULL)
     response = client.post("/settings", data=data, follow_redirects=False)
     assert response.status_code == 303
