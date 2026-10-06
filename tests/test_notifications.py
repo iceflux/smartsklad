@@ -105,7 +105,7 @@ def test_send_document_telegram_writes_log(db_session, env, monkeypatch):
 def test_send_document_telegram_not_configured(db_session, env):
     c, o = env
     u = _user(db_session)
-    with pytest.raises(ValueError, match="telegram"):
+    with pytest.raises(ValueError, match="Telegram не настроен"):
         send_document(db_session, o, "telegram", u)
 
 

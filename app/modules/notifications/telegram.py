@@ -4,13 +4,17 @@ from app.modules.settings.service import get_setting
 
 TELEGRAM_TOKEN_KEY = "telegram_bot_token"
 TELEGRAM_CHAT_KEY = "telegram_chat_id"
+"""Отказ «не настроен» назван литералом прямо на строке `raise`, а не вынесен в
+константу или не собран хелпером: свип `tests/test_russian_messages.py` ищет
+литерал рядом с `raise`, и сообщение, спрятанное в соседней функции, прошло бы
+прогон зелёным, оставаясь английским."""
 
 
 def send_telegram(text: str, db=None, *, token=None, chat_id=None) -> None:
     token = token or (get_setting(db, TELEGRAM_TOKEN_KEY) if db else None)
     chat_id = chat_id or (get_setting(db, TELEGRAM_CHAT_KEY) if db else None)
     if not token or not chat_id:
-        raise ValueError("telegram not configured")
+        raise ValueError("Telegram не настроен: задайте токен бота и чат получателя в настройках")
     resp = httpx.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
         json={"chat_id": chat_id, "text": text},
@@ -24,7 +28,7 @@ def send_telegram_document(text: str, pdf: bytes, db=None, *, token=None, chat_i
     token = token or (get_setting(db, TELEGRAM_TOKEN_KEY) if db else None)
     chat_id = chat_id or (get_setting(db, TELEGRAM_CHAT_KEY) if db else None)
     if not token or not chat_id:
-        raise ValueError("telegram not configured")
+        raise ValueError("Telegram не настроен: задайте токен бота и чат получателя в настройках")
     resp = httpx.post(
         f"https://api.telegram.org/bot{token}/sendDocument",
         data={"chat_id": chat_id, "caption": text},

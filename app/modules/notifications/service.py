@@ -91,7 +91,7 @@ def send_document(db, order, channel: str, user=None) -> None:
     text = message_text(order, db)
     customer = db.get(Customer, order.customer_id)
     if channel not in ("email", "telegram"):
-        raise ValueError("unknown channel")
+        raise ValueError(f"неизвестный канал отправки: «{channel}»")
     try:
         if channel == "email":
             recipient = (customer.email or "").strip()

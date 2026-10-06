@@ -22,7 +22,7 @@ class SendIn(BaseModel):
 def api_send_order(order_id: int, payload: SendIn,
                    user=Depends(require_permissions(Permission.notifications_send)), db=Depends(get_db)):
     if payload.channel not in ("email", "telegram"):
-        raise HTTPException(status_code=422, detail="channel must be 'email' or 'telegram'")
+        raise HTTPException(status_code=422, detail="канал отправки: 'email' или 'telegram'")
     order = db.get(Order, order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Заказ не найден")

@@ -33,14 +33,14 @@ def ensure_default_units(db: Session) -> None:
 def create_category(db: Session, name: str, parent_id: int | None = None, user=None) -> Category:
     name = name.strip()
     if not name:
-        raise ValueError("name required")
+        raise ValueError("название категории обязательно")
     existing = db.query(Category).filter(
         Category.name == name,
         Category.is_deleted.is_(False),
         Category.parent_id.is_(None) if parent_id is None else Category.parent_id == parent_id,
     ).first()
     if existing:
-        raise ValueError("duplicate name")
+        raise ValueError(f"категория «{name}» уже есть")
     cat = Category(name=name, parent_id=parent_id)
     db.add(cat)
     db.commit()
@@ -54,12 +54,12 @@ def create_category(db: Session, name: str, parent_id: int | None = None, user=N
 def update_category(db: Session, category_id: int, name: str, parent_id: int | None, user=None) -> Category:
     cat = db.get(Category, category_id)
     if cat is None:
-        raise ValueError("category not found")
+        raise ValueError("категория не найдена")
     name = name.strip()
     if not name:
-        raise ValueError("name required")
+        raise ValueError("название категории обязательно")
     if parent_id is not None and (parent_id == cat.id or parent_id in _descendant_ids(db, cat.id)):
-        raise ValueError("category cannot be its own parent")
+        raise ValueError("категорию нельзя вложить в саму себя и в её собственную подкатегорию")
     dup = db.query(Category).filter(
         Category.id != cat.id,
         Category.name == name,
@@ -67,7 +67,7 @@ def update_category(db: Session, category_id: int, name: str, parent_id: int | N
         Category.parent_id.is_(None) if parent_id is None else Category.parent_id == parent_id,
     ).first()
     if dup:
-        raise ValueError("duplicate name")
+        raise ValueError(f"категория «{name}» уже есть")
     old_value = json.dumps({"name": cat.name, "parent_id": cat.parent_id}, ensure_ascii=False)
     cat.name = name
     cat.parent_id = parent_id
@@ -115,7 +115,7 @@ def delete_category(db: Session, category_id: int, user=None, *, resolve: bool =
                     reassign_to: int | None = None) -> None:
     cat = db.get(Category, category_id)
     if cat is None:
-        raise ValueError("category not found")
+        raise ValueError("категория не найдена")
     counts = category_contents(db, cat.id)
     blocked = bool(counts["products"] or counts["children"])
     if blocked and not resolve:
@@ -196,7 +196,7 @@ def _assign_sku(db: Session, product_id: int) -> str:
     for _ in range(ARTICLE_ATTEMPTS):
         product = db.get(Product, product_id)
         if product is None:
-            raise ValueError("product not found")
+            raise ValueError("товар не найден")
         sku = next_sku(db)
         product.sku = sku
         try:
@@ -225,13 +225,13 @@ def create_product(
 ) -> Product:
     name = name.strip()
     if not name:
-        raise ValueError("name required")
+        raise ValueError("название товара обязательно")
     sku = sku.strip()
     auto_sku = not sku
     if not auto_sku and db.query(Product).filter(Product.sku == sku).first():
-        raise ValueError("duplicate sku")
+        raise ValueError(f"артикул «{sku}» уже занят")
     if min_stock is not None and min_stock < 0:
-        raise ValueError("min_stock must be >= 0")
+        raise ValueError(f"минимальный запас не может быть отрицательным, а указано {min_stock}")
     unit = db.get(Unit, unit_id) if unit_id is not None else get_unit_by_name(db, DEFAULT_UNIT)
     if unit is None or unit.is_deleted:
         raise ValueError("единица не найдена")
@@ -254,7 +254,7 @@ def create_product(
         except IntegrityError:
             db.rollback()
             if not auto_sku:
-                raise ValueError("duplicate sku")
+                raise ValueError(f"артикул «{sku}» уже занят")
             continue
         db.refresh(product)
         log_action(db, action="product.create", entity_type="product", entity_id=product.id,
@@ -266,9 +266,10 @@ def create_product(
 def update_product(db: Session, product_id: int, data: dict, user=None) -> Product:
     product = db.get(Product, product_id)
     if product is None:
-        raise ValueError("product not found")
+        raise ValueError("товар не найден")
     if "min_stock" in data and data["min_stock"] is not None and data["min_stock"] < 0:
-        raise ValueError("min_stock must be >= 0")
+        raise ValueError(
+            f"минимальный запас не может быть отрицательным, а указано {data['min_stock']}")
     if "unit_id" in data:
         unit = db.get(Unit, data["unit_id"]) if data["unit_id"] is not None else get_unit_by_name(db, DEFAULT_UNIT)
         if unit is None or unit.is_deleted:
@@ -281,7 +282,7 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
         if new_sku != product.sku:
             dup = db.query(Product).filter(Product.sku == new_sku, Product.id != product.id).first()
             if dup:
-                raise ValueError("duplicate sku")
+                raise ValueError(f"артикул «{new_sku}» уже занят")
             product.sku = new_sku
     if "name" in data:
         product.name = data["name"].strip()
@@ -313,7 +314,7 @@ def update_product(db: Session, product_id: int, data: dict, user=None) -> Produ
 def delete_product(db: Session, product_id: int, user=None) -> None:
     product = db.get(Product, product_id)
     if product is None:
-        raise ValueError("product not found")
+        raise ValueError("товар не найден")
     product.is_deleted = True
     db.commit()
     log_action(db, action="product.delete", entity_type="product", entity_id=product_id,
@@ -323,7 +324,7 @@ def delete_product(db: Session, product_id: int, user=None) -> None:
 def restore_product(db: Session, product_id: int, user=None) -> None:
     product = db.get(Product, product_id)
     if product is None:
-        raise ValueError("product not found")
+        raise ValueError("товар не найден")
     product.is_deleted = False
     db.commit()
     log_action(db, action="product.restore", entity_type="product", entity_id=product_id,
@@ -382,7 +383,7 @@ def list_products(
 def change_bulk_category(db: Session, product_ids: list[int], category_id: int, user=None) -> int:
     category = db.get(Category, category_id)
     if category is None:
-        raise ValueError("category not found")
+        raise ValueError("категория не найдена")
     products = (
         db.query(Product)
         .filter(Product.id.in_(product_ids), Product.is_deleted.is_(False))

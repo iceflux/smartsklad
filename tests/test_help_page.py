@@ -399,7 +399,7 @@ def test_the_page_says_the_same_as_the_gate_that_refuses_the_send(
     assert "SMTP" in _try("email"), _try("email")
     assert NOT_READY in client.get("/help").text
 
-    assert "telegram not configured" in _try("telegram")
+    assert "Telegram не настроен" in _try("telegram")
     assert reached == [], "отправка пошла, хотя токен бота не задан"
     assert NOT_READY in client.get("/help").text
     _telegram(db_session, "123456:ABC", "-100123")
@@ -445,9 +445,15 @@ def test_the_mvp_limits_and_the_known_problems_are_two_separate_lists(client, db
         assert topic in limits, f"в ограничениях нет: {topic!r}"
         assert topic not in problems, (
             f"ограничение {topic!r} попало в «Известные проблемы» — там дефекты")
-    assert "на английском" in problems, (
-        "непереведённые сообщения — дефект, и им место в «Известных проблемах», "
-        "а не в ограничениях")
+    assert "Неизвестных дефектов нет" in problems or "на английском" in problems, (
+        "раздел «Известные проблемы» ни пуст, ни отрицает наличие дефектов — непонятно, "
+        "кто туда вписывается")
+    assert "на английском" not in problems, (
+        "страница утверждает, что сообщения остались на английском, а они переведены; "
+        "прогон годами рассказывал бы о несуществующей проблеме")
+    assert "переведён" not in problems and "непереведён" not in limits, (
+        "в ограничениях или в дефектах снова появилось упоминание непереведённых "
+        "сообщений — перевод сделан, и это враньё")
     assert "на английском" not in limits
 
 
@@ -487,31 +493,35 @@ def test_the_order_status_table_agrees_with_the_service(client, db_session):
             f"{sorted(allowed) or 'ни одного'}")
 
 
-UNTRANSLATED = [
+TRANSLATED = [
     ("name required", "inventory/service.py"),
     ("inn must be 10 or 12 digits", "customers/service.py"),
     ("discount must be between 0 and 99", "customers/service.py"),
 ]
-"""Сообщения, на которые справка прямо указывает, и файл, где они обязаны жить.
+"""Сообщения, на которые справка прямо указывала как на английские, и файл, где
+они жили.
+
+Проверка теперь обратная: их быть не должно. Обратной она стала не по вкусу, а
+потому что прямая проверяла «сообщение осталось английским» и годами держала
+перевод запрещённым — зелёный прогон требовал непереведённого текста.
 
 Модуль указан не для красоты: «name required» есть и в товарах, и в клиентах, и
 проверка по всему `app` нашла бы его в другом файле и осталась зелёной после
-перевода. Справка говорит «о пустом названии товара» — значит падать должна именно
-товарная проверка.
+перевода. Справка говорила «о пустом названии товара» — значит падать должна
+именно товарная проверка.
 """
 
 
-def test_the_english_messages_the_help_admits_to_are_still_english():
+def test_the_messages_the_help_used_to_admit_to_are_translated():
     """Единственное место справки, утверждающее о коде, привязано к самому коду.
 
-    Страница говорит, что часть сообщений об ошибках осталась на английском, и
-    перечисляет примеры. Пока они английские — предложение верно. Как только их
-    переведут, прогон упадёт и предложение придётся поправить: иначе оно годами
-    рассказывало бы о несуществующей проблеме.
+    Страница говорила, что часть сообщений об ошибках осталась на английском. Пока
+    это было правдой, предложение проверялось прямой фразой «а они всё ещё
+    английские». Теперь правда обратная, и проверка стала обратной же: как только
+    сообщение вернётся на английский, прогон упадёт — иначе страница годами
+    рассказывала бы о несуществующей проблеме.
     """
-    for text, module in UNTRANSLATED:
-        source = ROOT / "app" / "modules" / module
-        assert any(f'"{text}"' in line for line in
-                   source.read_text(encoding="utf-8").splitlines()), (
-            f"сообщение {text!r} в {module} больше не английское, а справка всё ещё "
-            "говорит, что такие сообщения остались на английском")
+    for text, module in TRANSLATED:
+        source = (ROOT / "app" / "modules" / module).read_text(encoding="utf-8")
+        assert not any(f'"{text}"' in line for line in source.splitlines()), (
+            f"сообщение {text!r} снова на английском в {module}")

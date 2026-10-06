@@ -45,7 +45,7 @@ def api_get_settings(user=Depends(get_current_user), db=Depends(get_db)):
 @router.put("/settings/stock-track")
 def api_set_stock_track(payload: StockTrackIn, user=Depends(require_permissions(Permission.settings_change)), db=Depends(get_db)):
     if payload.value not in ("true", "false"):
-        raise HTTPException(status_code=422, detail="value must be 'true' or 'false'")
+        raise HTTPException(status_code=422, detail="значение должно быть 'true' или 'false'")
     set_setting(db, STOCK_TRACK_DEFAULT_KEY, payload.value, user=user)
     return {"key": STOCK_TRACK_DEFAULT_KEY, "value": get_setting(db, STOCK_TRACK_DEFAULT_KEY)}
 
@@ -55,7 +55,7 @@ def api_set_search_slow(payload: SearchSlowIn, user=Depends(require_permissions(
     if not SEARCH_SLOW_MS_MIN <= payload.value <= SEARCH_SLOW_MS_MAX:
         raise HTTPException(
             status_code=422,
-            detail=f"value must be {SEARCH_SLOW_MS_MIN}-{SEARCH_SLOW_MS_MAX} ms",
+            detail=f"значение должно быть от {SEARCH_SLOW_MS_MIN} до {SEARCH_SLOW_MS_MAX} мс",
         )
     set_setting(db, SEARCH_SLOW_MS_KEY, str(payload.value), user=user)
     return {"key": SEARCH_SLOW_MS_KEY, "value": get_setting(db, SEARCH_SLOW_MS_KEY)}

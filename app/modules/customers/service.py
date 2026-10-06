@@ -11,7 +11,7 @@ from app.sorting import apply_sort
 def _validate_name(name: str) -> str:
     name = (name or "").strip()
     if not name:
-        raise ValueError("name required")
+        raise ValueError("название обязательно")
     return name
 
 
@@ -22,13 +22,13 @@ def _validate_inn(inn: str | None) -> str | None:
     if not inn:
         return None
     if not (inn.isdigit() and len(inn) in (10, 12)):
-        raise ValueError("inn must be 10 or 12 digits")
+        raise ValueError(f"ИНН «{inn}»: должно быть 10 или 12 цифр")
     return inn
 
 
 def _validate_discount(value: float | None) -> float:
     if value is None or value < 0 or value > 99:
-        raise ValueError("discount must be between 0 and 99")
+        raise ValueError(f"скидка должна быть от 0 до 99, а указано {value}")
     return value
 
 
@@ -57,7 +57,7 @@ def create_customer(db: Session, *, name: str, inn: str | None = None,
 def update_customer(db: Session, customer_id: int, *, user=None, **fields) -> Customer:
     customer = db.get(Customer, customer_id)
     if customer is None:
-        raise ValueError("customer not found")
+        raise ValueError("клиент не найден")
     old_value = json.dumps(_customer_dict(customer), ensure_ascii=False)
     if "name" in fields:
         customer.name = _validate_name(fields["name"])
@@ -78,7 +78,7 @@ def update_customer(db: Session, customer_id: int, *, user=None, **fields) -> Cu
 def delete_customer(db: Session, customer_id: int, *, user=None) -> None:
     customer = db.get(Customer, customer_id)
     if customer is None:
-        raise ValueError("customer not found")
+        raise ValueError("клиент не найден")
     customer.is_deleted = True
     db.commit()
     log_action(db, action="customer.delete", entity_type="customer", entity_id=customer_id,
@@ -88,7 +88,7 @@ def delete_customer(db: Session, customer_id: int, *, user=None) -> None:
 def restore_customer(db: Session, customer_id: int, *, user=None) -> None:
     customer = db.get(Customer, customer_id)
     if customer is None:
-        raise ValueError("customer not found")
+        raise ValueError("клиент не найден")
     customer.is_deleted = False
     db.commit()
     log_action(db, action="customer.restore", entity_type="customer", entity_id=customer_id,

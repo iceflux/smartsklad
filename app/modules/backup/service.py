@@ -202,7 +202,7 @@ def _record_failure(db, error: str, *, kind: str, filename: str | None = None,
 def create_backup(db, *, user_id: int | None = None, kind: str = "manual",
                   now: datetime | None = None) -> dict:
     if kind not in ("scheduled", "manual", "restore"):
-        raise ValueError("unknown backup kind")
+        raise ValueError(f"неизвестный вид копии: «{kind}»")
     now = now or datetime.now()
     bs = get_backup_settings(db)
     directory = Path(bs.local_path)
