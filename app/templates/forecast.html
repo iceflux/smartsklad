@@ -2,7 +2,18 @@
 {% from "macros.html" import sort_head %}
 {% block content %}
 <main class="max-w-6xl mx-auto p-4">
-    <h1 class="text-2xl font-bold mb-4">Прогноз спроса</h1>
+    <div class="mb-4 flex items-center gap-2">
+        <h1 class="text-2xl font-bold">Прогноз спроса</h1>
+        <button type="button" data-forecast-help-open aria-haspopup="dialog"
+                aria-expanded="false" aria-controls="forecast-help-modal"
+                aria-label="Что знаит эта таблица"
+                class="app-btn border p-0 h-11 w-11 inline-flex items-center justify-center">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="10" cy="10" r="8"/><path d="M7.8 7.6a2.2 2.2 0 1 1 2.9 2.1c-.5.2-.7.6-.7 1v.6"/><path d="M10 14.4v.6"/>
+            </svg>
+        </button>
+    </div>
     {% if msg %}<p class="mb-4 bg-success-bg border border-success-border p-2">{{ msg }}</p>{% endif %}
     <form method="get" action="/forecast" class="mb-4">
         <input type="hidden" name="sort" value="{{ sort or '' }}">
@@ -53,5 +64,73 @@
         {% if page < pages %}<a class="app-btn border px-3 py-1" href="/forecast?{{ base_qs }}{{ '&' if base_qs else '' }}page={{ page + 1 }}">Вперёд</a>{% endif %}
     </div>
     {% endif %}
+
+    <div class="app-modal" id="forecast-help-modal" data-open="false" data-modal="forecast-help">
+        <div class="app-modal-panel bg-surface-raised border border-line-strong p-4"
+             role="dialog" aria-labelledby="forecast-help-title">
+            <div class="flex items-center justify-between mb-2 gap-2">
+                <h2 id="forecast-help-title" class="font-semibold">Что знает эта таблица</h2>
+                <button type="button" class="app-btn border px-2 py-1" data-forecast-help-close>Закрыть</button>
+            </div>
+            <div class="flex flex-col gap-2 text-sm">
+                <p>Колонки «7 дней», «14 дней» и «30 дней» — сколько единиц этого товара,
+                    по прогнозу, продастся за такое-то число дней. Это не «в сутки»: за
+                    30 дней продастся столько-то за месяц, а не столько-то за день.</p>
+                <p>Прогноз — это линия тренда, а не среднее. Растущий товар прогнозируется
+                    выше своего среднего, падающий — ниже, поэтому число может отличаться от
+                    средних продаж.</p>
+                <p>«Мало данных» означает, что товар продавался хотя бы в 14 отдельных дней
+                    из последних 90. Если таких дней меньше, приложение не берётся угадывать
+                    и честно отказывается отвечать. Остаток, запас и продажи в сутки при этом
+                    показаны — мало данных о продажах, а не о товаре.</p>
+                <p>«Мин. запас» — сколько единиц товара должно лежать на складе, чтобы
+                    хватило на покрытие спроса. Он задаётся либо в карточке товара, либо
+                    считается из настройки «Запас в днях», умноженного на средние продажи.</p>
+                <p>«К закупке» считается так: <span class="font-semibold">прогноз на 30 дней
+                    плюс минимальный запас минус то, что сейчас на складе</span>. Получилось
+                    ноль или меньше — закупать не нужно, в ячейке написано «не нужно».
+                    Получилось больше — это и есть количество к закупке.</p>
+                <p>Главное ограничение: страница знает только то, что лежит на складе сейчас,
+                    и продажи за последние 90 дней. О том, что вы уже заказали у поставщика,
+                    она не знает ничего, поэтому может посоветовать купить то, что уже в пути.</p>
+            </div>
+        </div>
+    </div>
 </main>
+<script>
+(function () {
+    /* Окно то же, что у поиска из шапки и у окон выбора в заказе: свой набор
+       правил означал бы второе понятие «окно» в приложении. Фокус не заперт —
+       решение проекта, и здесь оно тоже: закрывают Escape, кнопка и клик мимо,
+       а фокус возвращается на кнопку, то есть с клавиатуры из окна можно
+       выйти. */
+    var opener = document.querySelector("[data-forecast-help-open]");
+    var modal = document.querySelector('[data-modal="forecast-help"]');
+    var closeBtn = modal.querySelector("[data-forecast-help-close]");
+    var wasFocused = null;
+
+    function open() {
+        wasFocused = document.activeElement;
+        modal.setAttribute("data-open", "true");
+        opener.setAttribute("aria-expanded", "true");
+        closeBtn.focus();
+    }
+
+    function close() {
+        if (modal.getAttribute("data-open") !== "true") return;
+        modal.setAttribute("data-open", "false");
+        opener.setAttribute("aria-expanded", "false");
+        if (wasFocused && wasFocused.focus) wasFocused.focus();
+    }
+
+    opener.addEventListener("click", open);
+    closeBtn.addEventListener("click", close);
+    modal.addEventListener("click", function (event) {
+        if (event.target === modal) close();
+    });
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") close();
+    });
+})();
+</script>
 {% endblock %}
