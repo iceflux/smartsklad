@@ -6,6 +6,10 @@ from app.modules.audit.service import log_action
 from app.modules.notifications.models import NotificationLog
 from app.modules.printing.service import render_order_pdf
 from app.modules.settings.service import get_setting
+from app.modules.notifications.telegram import (
+    TELEGRAM_CHAT_KEY,
+    TELEGRAM_TOKEN_KEY,
+)
 
 
 def message_text(order, db) -> str:
@@ -14,6 +18,56 @@ def message_text(order, db) -> str:
     name = customer.name if customer else ""
     date = human_date(order.created_at)
     return f"Заказ № {order.number} от {date}\nКлиент: {name}\nСумма: {order.total_amount}"
+
+
+def delivery_state(db) -> list[dict]:
+    """Состояние каналов отправки — ровно то, что проверяет сама отправка.
+
+    Справка обязана показывать «настроено / не настроено» на момент запроса, а не
+    текстом в шаблоне: SMTP заводят и заполняют на ходу, и написанное в разметке
+    «почта не работает» станет враньём в ту же минуту, как только появятся
+    сервер и отправитель.
+
+    Поэтому читаются те же значения, на которых стоят проверки отправки:
+    `settings.smtp_host` в `send_document` и токен с chat_id в `telegram.py`.
+    Остальные поля почты выводятся отдельными фактами и в готовность не входят:
+    свёртка их в один вывод сделала бы страницу врущей при неполной настройке —
+    например, пустой отправитель при заполненном сервере означает, что письмо
+    уйдёт с пустым заголовком, но проверку отправки уже пройдёт.
+
+    Пароль и сам токен не выводятся: в разделе настроек токен и так показан
+    замаскированным.
+    """
+    token = str(get_setting(db, TELEGRAM_TOKEN_KEY) or "").strip()
+    chat_id = str(get_setting(db, TELEGRAM_CHAT_KEY) or "").strip()
+    return [
+        {
+            "key": "email",
+            "title": "Письма по электронной почте",
+            "ready": bool(settings.smtp_host),
+            "unready": "Не настроено",
+            "ready_label": "Настроено",
+            "how": "Заполните переменные SMTP в файле .env на сервере и перезапустите приложение.",
+            "facts": [
+                ("Сервер", settings.smtp_host or "не задан"),
+                ("Порт", str(settings.smtp_port)),
+                ("Логин", settings.smtp_user or "не задан"),
+                ("Отправитель", settings.smtp_from or "не задан"),
+            ],
+        },
+        {
+            "key": "telegram",
+            "title": "Сообщения в Telegram",
+            "ready": bool(token and chat_id),
+            "unready": "Не настроено",
+            "ready_label": "Настроено",
+            "how": "Впишите токен бота и чат получателя в разделе «Настройки».",
+            "facts": [
+                ("Токен бота", "задан" if token else "не задан"),
+                ("Чат получателя", "задан" if chat_id else "не задан"),
+            ],
+        },
+    ]
 
 
 def _log(db, *, channel, recipient, status, order, user, subject="", body="", error=None):

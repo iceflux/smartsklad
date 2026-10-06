@@ -36,6 +36,7 @@ NAV_GROUPS = (
         ("Пользователи", "/users", "can_view_roles"),
         ("Настройки", "/settings", "can_change_settings"),
         ("Уведомления", "/notifications", "can_view_notifications"),
+        ("Справка", "/help", "can_view_help"),
     )),
 )
 
@@ -118,5 +119,6 @@ def page_context(user: User) -> dict[str, bool]:
         "can_manage_backups": user_has_permission(user, Permission.backup_manage),
         "can_manage_import": user_has_permission(user, Permission.import_manage),
         "can_manage_units": user_has_permission(user, Permission.units_manage),
+        "can_view_help": True,
     }
     return {**flags, "nav": sidebar_nav(flags)}

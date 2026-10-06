@@ -44,6 +44,7 @@ SIDEBAR_ORDER = [
     ("/users", "Пользователи"),
     ("/settings", "Настройки"),
     ("/notifications", "Уведомления"),
+    ("/help", "Справка"),
 ]
 
 
@@ -84,7 +85,7 @@ def test_the_sidebar_lists_exactly_the_old_links_plus_the_new_order_button(clien
     found = _visible_links(_sidebar(client.get("/").text))
     assert found == SIDEBAR_ORDER
     assert sorted(href for href, _label in found) == sorted(
-        [href for _label, href in OLD_NAV_LINKS] + ["/orders/new"])
+        [href for _label, href in OLD_NAV_LINKS] + ["/orders/new", "/help"])
 
 
 def test_the_brand_moved_from_the_sidebar_into_the_header(client, db_session):
@@ -125,11 +126,21 @@ def test_the_login_page_carries_no_left_panel(client):
 
 
 def test_a_group_without_visible_items_omits_its_heading(client, db_session):
+    """Пустая группа не рисует заголовок; «Система» опустеть уже не может.
+
+    Справку видит каждый вошедший, поэтому складчик видит в «Системе» ровно один
+    пункт — справку. Заголовок при этом остаётся: группа не пуста, и он по-прежнему
+    объясняет, к какому кругу разделов относится ссылка.
+    """
     _login_as(client, db_session, "wh", "warehouseman")
     markup = _sidebar(client.get("/").text)
     assert "Склад" in markup and "/products" in markup
-    for title in ("Продажи", "Анализ", "Система"):
+    for title in ("Продажи", "Анализ"):
         assert title not in markup, f"у роли нет прав ни на один пункт группы «{title}»"
+    assert "Система" in markup, "в группе есть справка, значит заголовок ей полагается"
+    assert 'href="/help"' in markup
+    for hidden in ('href="/backups"', 'href="/settings"', 'href="/import"'):
+        assert hidden not in markup, f"складчику не полагается видеть {hidden}"
 
 
 def test_every_group_with_a_visible_item_keeps_its_heading(client, db_session):

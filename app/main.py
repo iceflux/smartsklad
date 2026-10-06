@@ -118,6 +118,7 @@ from app.modules.orders.service import (
 from app.modules.settings.router import router as settings_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.notifications.models import NotificationLog
+from app.modules.notifications.service import delivery_state
 from app.modules.settings.service import (
     COMPANY_FIELDS,
     DEFAULT_MIN_STOCK_DAYS,
@@ -1893,6 +1894,28 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "partials/search_results.html", {
             "q": q, "prompt": prompt, "groups": groups, "total": total,
             "limit": SEARCH_LIMIT,
+        })
+
+    @app.get("/help")
+    def help_page(
+        request: Request,
+        user: Annotated[User | None, Depends(_page_user)] = None,
+        db: Annotated[Session, Depends(get_db)] = None,
+    ):
+        """Справка для человека, который открыл приложение впервые.
+
+        Права на страницу нет ни одного: объяснить, что делает разделы, должен
+        иметь право каждый, кто вошёл, — иначе справку не прочитает тот, кому она
+        нужнее всего, то есть новичок без единого права. Права разделов описаны
+        на странице ролей.
+        """
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        return templates.TemplateResponse(request, "help.html", {
+            "title": "Справка", "user": user,
+            "channels": delivery_state(db),
+            "msg": request.query_params.get("msg"),
+            **_page_context(user),
         })
 
     return app

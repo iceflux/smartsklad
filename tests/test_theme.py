@@ -362,7 +362,7 @@ PAGE_ROUTES = [
     "/", "/settings", "/notifications", "/roles", "/roles/new", "/users", "/users/new",
     "/products", "/products/new", "/dashboard", "/backups", "/import", "/forecast",
     "/audit", "/categories", "/categories/new", "/units", "/customers", "/customers/new",
-    "/orders", "/orders/new", "/search",
+    "/orders", "/orders/new", "/search", "/help",
     "/roles/{role_id}/edit", "/products/{product_id}/edit",
     "/categories/{category_id}/edit", "/customers/{customer_id}/edit",
 ]
