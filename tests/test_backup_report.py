@@ -33,7 +33,7 @@ def _unit_id(db_session):
 
 @pytest.fixture
 def smtp_ready(monkeypatch):
-    monkeypatch.setattr("app.modules.backup.report.app_settings.smtp_host", "localhost")
+    monkeypatch.setattr("app.config.settings.smtp_host", "localhost")
 
 
 def _user(db_session, username, email):
@@ -266,7 +266,7 @@ def test_report_without_smtp_is_recorded_as_failed(db_session, monkeypatch):
     user = _user(db_session, "boss", "boss@example.com")
     set_setting(db_session, REPORT_ENABLED_KEY, "true")
     set_setting(db_session, REPORT_RECIPIENTS_KEY, '[%d]' % user.id)
-    monkeypatch.setattr("app.modules.backup.report.app_settings.smtp_host", "")
+    monkeypatch.setattr("app.config.settings.smtp_host", "")
     monkeypatch.setattr("app.modules.backup.report.send_email",
                         lambda *a, **k: pytest.fail("SMTP не настроен, отправка не должна выполняться"))
     result = send_report(db_session, now=datetime(2026, 9, 25, 9, 0))

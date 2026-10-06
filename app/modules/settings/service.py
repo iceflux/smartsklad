@@ -24,6 +24,14 @@ THEME_KEY = "ui.theme"
 THEME_VALUES = ("light", "dark")
 DEFAULT_THEME = "light"
 USER_KEYS = (SIDEBAR_COLLAPSED_KEY, THEME_KEY)
+MASKED_KEYS = ("telegram_bot_token", "smtp_password")
+"""Настройки-секреты: в журнале аудита и в ответе API показываются маской.
+
+Журнал аудита читает любая роль с правом `audit.view`, а `GET /api/settings` — любой
+вошедший, поэтому значение секрета в обоих местах было бы утечкой. Список один на
+обоих пути: завести вторую маску значило бы разрешить себе новый секрет и забыть
+про него, а этот список читается при каждой записи настройки, то есть забыть нельзя.
+"""
 COMPANY_FIELDS = (
     ("company_name", "Наименование"),
     ("company_inn", "ИНН"),
@@ -62,6 +70,17 @@ def _defaults() -> dict[str, str]:
         STOCK_TRACK_DEFAULT_KEY: "true",
         "telegram_bot_token": "",
         "telegram_chat_id": "",
+        # Пять значений SMTP сидятся пустыми, как ключи Telegram: пустое значение —
+        # это «не задано», а не заготовка. Отличать от «не задано» тут нечем, и
+        # seed с выдуманным сервером вреднее отсутствия строки: администратор увидел
+        # бы «Настроено» при отправке, которая не уйдёт. Порт тоже пустой, а не 587:
+        # непустое значение в настройке перекрыло бы `SMTP_PORT` из `.env`, и запасной
+        # путь перестал бы работать ровно на той машине, где он нужен.
+        "smtp_host": "",
+        "smtp_port": "",
+        "smtp_user": "",
+        "smtp_password": "",
+        "smtp_from": "",
         USER_PASSWORD_CHARSET_KEY: DEFAULT_PASSWORD_CHARSET,
         USER_PASSWORD_LENGTH_KEY: str(DEFAULT_PASSWORD_LENGTH),
         MIN_STOCK_DAYS_KEY: str(DEFAULT_MIN_STOCK_DAYS),
@@ -80,7 +99,7 @@ def ensure_default_settings(db: Session) -> None:
     db.commit()
 
 
-def mask_telegram_token(value: str | None) -> str | None:
+def mask_secret(value: str | None) -> str | None:
     if not value:
         return value
     return (value[:3] + "****" + value[-3:]) if len(value) > 6 else "****"
@@ -100,9 +119,9 @@ def set_setting(db: Session, key: str, value: str, *, user=None) -> None:
     else:
         row.value = value
     db.commit()
-    if key == "telegram_bot_token":
-        old = mask_telegram_token(old)
-        value = mask_telegram_token(value)
+    if key in MASKED_KEYS:
+        old = mask_secret(old)
+        value = mask_secret(value)
     log_action(db, action="settings.update", entity_type="settings", entity_id=row.id,
                old_value=old, new_value=value, user_id=user.id if user else None)
 

@@ -1,9 +1,9 @@
 import re
 
-from app.config import settings
 from app.formatting import human_date
 from app.modules.audit.service import log_action
 from app.modules.notifications.models import NotificationLog
+from app.modules.notifications.email import SMTP_HOST_KEY, smtp_config
 from app.modules.printing.service import render_order_pdf
 from app.modules.settings.service import get_setting
 from app.modules.notifications.telegram import (
@@ -29,30 +29,34 @@ def delivery_state(db) -> list[dict]:
     сервер и отправитель.
 
     Поэтому читаются те же значения, на которых стоят проверки отправки:
-    `settings.smtp_host` в `send_document` и токен с chat_id в `telegram.py`.
-    Остальные поля почты выводятся отдельными фактами и в готовность не входят:
+    `smtp_config(db)` в `send_document` и токен с chat_id в `telegram.py`. Один
+    и тот же снимок на оба места — разойтись они могут только если кто-то прочитает
+    другое поле, и сторож `tests/test_help_page.py` ловит именно это.
+
+    Остальные поля почты выводится отдельными фактами и в готовность не входят:
     свёртка их в один вывод сделала бы страницу врущей при неполной настройке —
     например, пустой отправитель при заполненном сервере означает, что письмо
     уйдёт с пустым заголовком, но проверку отправки уже пройдёт.
 
-    Пароль и сам токен не выводятся: в разделе настроек токен и так показан
+    Пароль и сам токен не выводятся: в разделе настроек и то и другое показано
     замаскированным.
     """
     token = str(get_setting(db, TELEGRAM_TOKEN_KEY) or "").strip()
     chat_id = str(get_setting(db, TELEGRAM_CHAT_KEY) or "").strip()
+    mail = smtp_config(db)
     return [
         {
             "key": "email",
             "title": "Письма по электронной почте",
-            "ready": bool(settings.smtp_host),
+            "ready": bool(mail["host"]),
             "unready": "Не настроено",
             "ready_label": "Настроено",
-            "how": "Заполните переменные SMTP в файле .env на сервере и перезапустите приложение.",
+            "how": "Впишите сервер, порт, логин, отправителя и пароль в разделе «Настройки».",
             "facts": [
-                ("Сервер", settings.smtp_host or "не задан"),
-                ("Порт", str(settings.smtp_port)),
-                ("Логин", settings.smtp_user or "не задан"),
-                ("Отправитель", settings.smtp_from or "не задан"),
+                ("Сервер", mail["host"] or "не задан"),
+                ("Порт", str(mail["port"])),
+                ("Логин", mail["user"] or "не задан"),
+                ("Отправитель", mail["sender"] or "не задан"),
             ],
         },
         {
@@ -93,11 +97,11 @@ def send_document(db, order, channel: str, user=None) -> None:
             recipient = (customer.email or "").strip()
             if not recipient:
                 raise ValueError("у клиента не указан email")
-            if not settings.smtp_host:
+            if not smtp_config(db)["host"]:
                 raise ValueError("SMTP не настроен")
             pdf = render_order_pdf(order, db)
             send_email(recipient, f"Заказ № {order.number}", text,
-                       attachment=pdf, filename=f"order-{order.number}.pdf")
+                       attachment=pdf, filename=f"order-{order.number}.pdf", db=db)
         else:
             recipient = str(get_setting(db, "telegram_chat_id") or "").strip()
             pdf = render_order_pdf(order, db)

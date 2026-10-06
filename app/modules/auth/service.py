@@ -146,6 +146,7 @@ def request_password_reset(db: Session, username_or_email: str) -> str | None:
         user.email,
         "Восстановление пароля — СмартСклад",
         f"Для сброса пароля перейдите по ссылке: {link}",
+        db=db,
     )
     return user.email
 

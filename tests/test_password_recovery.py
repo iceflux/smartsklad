@@ -6,7 +6,7 @@ def test_recovery_sends_email(client, db_session, monkeypatch):
     from app.modules.auth.service import get_role_by_name, hash_password
 
     sent = {}
-    def fake_send(to, subject, body):
+    def fake_send(to, subject, body, **kwargs):
         sent["to"], sent["subject"], sent["body"] = to, subject, body
 
     monkeypatch.setattr("app.modules.auth.service.send_email", fake_send)

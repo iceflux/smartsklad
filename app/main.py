@@ -137,10 +137,22 @@ from app.modules.settings.service import (
     ensure_default_settings,
     get_int_setting,
     get_setting,
+    mask_secret,
     set_setting,
     set_sidebar_collapsed,
     set_user_theme,
     search_slow_ms,
+)
+from app.modules.notifications.email import (
+    SMTP_FROM_KEY,
+    SMTP_HOST_KEY,
+    SMTP_PASSWORD_KEY,
+    SMTP_PORT_KEY,
+    SMTP_PORT_MAX,
+    SMTP_PORT_MIN,
+    SMTP_USER_KEY,
+    smtp_config,
+    valid_port,
 )
 from app.modules.printing.service import build_order_context, render_order_pdf
 
@@ -595,12 +607,17 @@ def create_app() -> FastAPI:
         ensure_permissions(user, Permission.settings_change)
         token = get_setting(db, "telegram_bot_token") or ""
         chat_id = get_setting(db, "telegram_chat_id") or ""
+        mail = smtp_config(db)
         return templates.TemplateResponse(request, "settings.html", {
             "title": "Настройки", "user": user,
             "stock_track_default": get_setting(db, STOCK_TRACK_DEFAULT_KEY),
             "telegram_token_mask": (token[:3] + "****" + token[-3:]) if len(token) > 6 else ("****" if token else ""),
             "telegram_configured": bool(token and chat_id),
             "telegram_chat_id": chat_id,
+            # Пароль в шаблон не попадает — только маска. Отдать в контекст само
+            # значение значило бы оставить секрет в руках любого правки шаблона.
+            "smtp": {key: value for key, value in mail.items() if key != "password"},
+            "smtp_password_mask": mask_secret(mail["password"]),
             "msg": request.query_params.get("msg"),
             "user_password_charset": get_setting(db, USER_PASSWORD_CHARSET_KEY) or DEFAULT_PASSWORD_CHARSET,
             "user_password_length": get_setting(db, USER_PASSWORD_LENGTH_KEY) or DEFAULT_PASSWORD_LENGTH,
@@ -636,11 +653,16 @@ def create_app() -> FastAPI:
             search_slow = int(search_slow_raw)
         except ValueError:
             search_slow = -1
+        smtp_port = valid_port((form.get(SMTP_PORT_KEY) or [""])[0])
         if (not charset or not 8 <= length <= 64 or not 0 <= min_stock_days <= 365
                 or not SEARCH_SLOW_MS_MIN <= search_slow <= SEARCH_SLOW_MS_MAX):
             return RedirectResponse(
                 f"/settings?msg=Ошибка: символы непустые, длина 8-64, запас 0-365, "
                 f"порог поиска {SEARCH_SLOW_MS_MIN}-{SEARCH_SLOW_MS_MAX} мс", status_code=303)
+        if smtp_port is None:
+            return RedirectResponse(
+                f"/settings?msg=Ошибка: порт SMTP — целое от {SMTP_PORT_MIN} "
+                f"до {SMTP_PORT_MAX}", status_code=303)
         set_setting(db, STOCK_TRACK_DEFAULT_KEY, track_rest_default, user=user)
         if telegram_token:
             set_setting(db, "telegram_bot_token", telegram_token, user=user)
@@ -650,6 +672,19 @@ def create_app() -> FastAPI:
         set_setting(db, USER_PASSWORD_LENGTH_KEY, str(length), user=user)
         set_setting(db, MIN_STOCK_DAYS_KEY, str(min_stock_days), user=user)
         set_setting(db, SEARCH_SLOW_MS_KEY, str(search_slow), user=user)
+        for key, value in ((SMTP_HOST_KEY, (form.get(SMTP_HOST_KEY) or [""])[0].strip()),
+                           (SMTP_PORT_KEY, smtp_port),
+                           (SMTP_USER_KEY, (form.get(SMTP_USER_KEY) or [""])[0].strip()),
+                           (SMTP_FROM_KEY, (form.get(SMTP_FROM_KEY) or [""])[0].strip())):
+            set_setting(db, key, value, user=user)
+        # Пустой пароль означает «оставить как есть», а не «стереть»: иначе
+        # смена адреса сервера требовала бы вводить пароль заново. Стереть можно
+        # галочкой — без неё ошибочно введённый пароль было бы уже не убрать.
+        smtp_password = (form.get(SMTP_PASSWORD_KEY) or [""])[0].strip()
+        if (form.get("smtp_password_clear") or [""])[0] == "on":
+            set_setting(db, SMTP_PASSWORD_KEY, "", user=user)
+        elif smtp_password:
+            set_setting(db, SMTP_PASSWORD_KEY, smtp_password, user=user)
         for key, _label in COMPANY_FIELDS:
             set_setting(db, key, (form.get(key) or [""])[0].strip(), user=user)
         return RedirectResponse("/settings?msg=Сохранено", status_code=303)

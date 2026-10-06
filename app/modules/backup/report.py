@@ -4,12 +4,11 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.config import settings as app_settings
 from app.modules.audit.service import log_action
 from app.modules.auth.models import User
 from app.modules.backup.service import EMAIL_RE, get_backup_settings
 from app.modules.dashboard.service import dashboard_metrics, dashboard_sales_csv, resolve_period
-from app.modules.notifications.email import send_email
+from app.modules.notifications.email import send_email, smtp_config
 from app.modules.notifications.models import NotificationLog
 from app.modules.settings.service import (
     REPORT_ENABLED_KEY,
@@ -108,7 +107,7 @@ def send_report(db: Session, *, now: datetime | None = None,
         f"Средний чек: {metrics['avg_check']:.2f}\n"
     )
     result = {"sent": 0, "skipped": 0, "failed": 0, "period": settings_row["period"]}
-    if not app_settings.smtp_host:
+    if not smtp_config(db)["host"]:
         _log(db, recipient="", status="failed", subject=subject, body=body,
              error="SMTP не настроен")
         result["failed"] = len(settings_row["recipient_ids"])
@@ -134,7 +133,7 @@ def send_report(db: Session, *, now: datetime | None = None,
         try:
             send_email(address, subject, body, attachment=csv_bytes,
                        filename=f"sales-{start.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}.csv",
-                       attachment_subtype="csv")
+                       attachment_subtype="csv", db=db)
             result["sent"] += 1
             _log(db, recipient=address[:256], status="sent", subject=subject, body=body)
         except Exception as error:

@@ -227,7 +227,8 @@ def test_the_settings_api_hides_the_per_user_menu_key(client, db_session):
     )
     expected = {
         "min_stock_days", "report_email_enabled", "report_email_period",
-        "report_email_recipients", "report_email_time", "stock_track_default",
+        "report_email_recipients", "report_email_time", "smtp_from", "smtp_host",
+        "smtp_password", "smtp_port", "smtp_user", "stock_track_default",
         "search_slow_ms", "telegram_bot_token", "telegram_chat_id",
         "user_password_charset",
         "user_password_length",

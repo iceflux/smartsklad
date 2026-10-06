@@ -6,13 +6,14 @@ from app.modules.auth.dependencies import get_current_user, require_permissions
 from app.modules.auth.permissions import Permission
 from app.modules.settings.models import Setting
 from app.modules.settings.service import (
+    MASKED_KEYS,
     SEARCH_SLOW_MS_KEY,
     SEARCH_SLOW_MS_MAX,
     SEARCH_SLOW_MS_MIN,
     STOCK_TRACK_DEFAULT_KEY,
     get_setting,
     is_user_setting,
-    mask_telegram_token,
+    mask_secret,
     set_setting,
 )
 
@@ -30,7 +31,7 @@ class SearchSlowIn(BaseModel):
 def _all_settings(db):
     rows = db.query(Setting).order_by(Setting.key).all()
     return [
-        {"key": r.key, "value": mask_telegram_token(r.value) if r.key == "telegram_bot_token" else r.value}
+        {"key": r.key, "value": mask_secret(r.value) if r.key in MASKED_KEYS else r.value}
         for r in rows
         if not is_user_setting(r.key)
     ]

@@ -83,6 +83,19 @@ def _mail(monkeypatch, *, host="", user="", sender="") -> None:
     monkeypatch.setattr(app.config.settings, "smtp_from", sender)
 
 
+def _mail_settings(db_session, **values) -> None:
+    """SMTP через настройки приложения, а не через `.env`.
+
+    Отдельная подмена нужна, потому что оба пути закрывают одну и ту же дверь, и
+    проверка, читающая только один из них, пропустила бы страницу, которая врёт
+    при заполненных настройках и молчит при заполненном `.env`.
+    """
+    from app.modules.settings.service import set_setting
+
+    for key, value in values.items():
+        set_setting(db_session, f"smtp_{key}", value)
+
+
 def _telegram(db_session, token: str, chat_id: str) -> None:
     from app.modules.settings.service import set_setting
     set_setting(db_session, "telegram_bot_token", token)
@@ -326,6 +339,11 @@ def test_the_page_says_the_same_as_the_gate_that_refuses_the_send(
     тогда, когда страница пишет «Не настроено», и проходит дальше тогда, когда
     страница пишет «Настроено». Разойтись они могут, только если кто-то прочитает
     другое поле, — и этот тест ловит именно это.
+
+    Оба пути настройки проверяются отдельно, потому что закрывают одну и ту же
+    дверь: `.env` и настройки приложения. Проверка одного из них пропустила бы
+    страницу, которая врала бы на второй машине — ровно на той, где администратор
+    заполнил настройки вместо файла.
     """
     from app.modules.customers.models import Customer
     from app.modules.notifications import service as notifications
@@ -362,6 +380,24 @@ def test_the_page_says_the_same_as_the_gate_that_refuses_the_send(
     assert _try("email") == "sent"
     assert reached == ["email"], reached
     assert READY in client.get("/help").text
+
+    # Тот же путь, но заполнены настройки приложения, а `.env` пуст.
+    _smtp(monkeypatch, "")
+    assert "SMTP" in _try("email"), (
+        "сервер задан в настройках, а отправка его не видит — и страница врёт")
+    assert NOT_READY in client.get("/help").text
+    _mail_settings(db_session, host="smtp.example.org", sender="sales@example.org")
+    assert _try("email") == "sent"
+    assert reached == ["email"], reached
+    body = client.get("/help").text
+    assert READY in body, "настройки заполнены, а страница пишет «Не настроено»"
+    assert "smtp.example.org" in body, "сервер из настроек не показан на странице"
+    # Очистка настройки возвращает управление `.env`, и страница обязана сказать
+    # ровно то же, что скажет отправка, — а не то, что было полминуты назад.
+    _mail_settings(db_session, host="")
+    _smtp(monkeypatch, "")
+    assert "SMTP" in _try("email"), _try("email")
+    assert NOT_READY in client.get("/help").text
 
     assert "telegram not configured" in _try("telegram")
     assert reached == [], "отправка пошла, хотя токен бота не задан"
