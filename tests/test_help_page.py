@@ -235,12 +235,40 @@ def test_a_control_the_help_names_exists_in_the_template_it_describes(control, t
 
 
 def test_the_help_does_not_use_the_words_of_the_code(client, db_session):
-    """Человек, который открыл приложение впервые, не знает, что такое `track_rest`."""
+    """Человек, который открыл приложение впервые, не знает, что такое `track_rest`.
+
+    Право в справке названо по-человечески — так его и показывает интерфейс, — и
+    код права в тексте означал бы имя, которого человек не увидит нигде. Поэтому
+    запрещены все коды из `PERMISSION_LABELS`, а не по одному: список берётся из
+    карты подписей, и новое право попадёт в запрет само, без правки проверки.
+    """
+    from app.modules.auth.roles_router import PERMISSION_LABELS
+
     _admin(client, db_session)
     text = _text(_article(client.get("/help").text))
-    for word in ("track_rest", "min_stock", "chat_id", "forecast_", "has_data",
-                 "is_deleted", "NULL", "bool"):
+    for word in ("track_rest", "min_stock", "forecast_", "has_data",
+                 "is_deleted", "NULL", "bool", *PERMISSION_LABELS):
         assert word not in text, f"в справке мелькнул термин кода: {word!r}"
+
+
+def test_the_values_a_person_fills_in_survive_the_ban_on_code_words(client, db_session):
+    """Запрет на термины кода не должен съесть то, что человек в самом деле вводит.
+
+    `telegram_chat_id` — имя поля на странице настроек: подпись там «Telegram
+    chat_id получателя», и в справке оно названо тем же. Проверка идёт от
+    настройки к тексту и требует, чтобы текст содержал оба значения, — сравнение
+    страницы с самой собой было бы проверкой, которая не может упасть.
+    """
+    _admin(client, db_session)
+    source = HELP_TEMPLATE.read_text(encoding="utf-8")
+    text = _text(_article(client.get("/help").text))
+    settings_page = (TEMPLATES / "settings.html").read_text(encoding="utf-8")
+    for field in ("telegram_bot_token", "telegram_chat_id"):
+        assert f'name="{field}"' in settings_page, f"настройки не содержат поля {field}"
+        assert f"<code>{field}</code>" in source, (
+            f"{field} назван в справке без <code>: значение, которое вводит человек, "
+            "должно отличаться от термина кода")
+        assert field in text
 
 
 def test_the_help_does_not_repeat_the_forecast_window(client, db_session):
@@ -355,14 +383,72 @@ def test_the_page_never_shows_the_mail_password_or_the_bot_token(client, db_sess
         assert secret not in body, f"на странице справки виден секрет: {secret!r}"
 
 
-def test_the_unfinished_list_is_not_empty_and_covers_what_was_checked(client, db_session):
-    """Раздел «Чего пока нет» — ради него страница и затевалась."""
+MVP_TOPICS = ("Не настроено", "остаток нулевой", "мало данных", "сливаются в полосу",
+              "забытого пароля", "заказах поставщику")
+"""Ограничения, задуманные так: список из непроверяемых фраз прошёл бы сам по себе."""
+
+
+def _section(body: str, start: str, end: str) -> str:
+    return body[body.index(f'id="{start}"'):body.index(f'id="{end}"')]
+
+
+def test_the_mvp_limits_and_the_known_problems_are_two_separate_lists(client, db_session):
+    """Ограничения и дефекты — разные списки, и смешивать их нельзя.
+
+    Проверяется не «список не пуст», а что каждый пункт лежит в своём списке:
+    ограничение, уехавшее в «Известные проблемы», читается как поломка, а
+    непереведённое сообщение — как задуманное ограничение. Разделы обязаны
+    существовать и быть соседними, иначе срезом можно было бы поймать один и тот же
+    текст дважды.
+    """
     _admin(client, db_session)
-    text = _text(_article(client.get("/help").text))
-    assert "Чего пока нет" in text
-    for topic in ("Не настроено", "остаток нулевой", "мало данных", "сливаются в полосу",
-                  "забытого пароля", "на английском"):
-        assert topic in text, f"в списке неготового нет: {topic}"
+    body = _article(client.get("/help").text)
+    limits = _text(_section(body, "mvp", "problems"))
+    problems = _text(body[body.index('id="problems"'):])
+    for topic in MVP_TOPICS:
+        assert topic in limits, f"в ограничениях нет: {topic!r}"
+        assert topic not in problems, (
+            f"ограничение {topic!r} попало в «Известные проблемы» — там дефекты")
+    assert "на английском" in problems, (
+        "непереведённые сообщения — дефект, и им место в «Известных проблемах», "
+        "а не в ограничениях")
+    assert "на английском" not in limits
+
+
+ORDER_STATUS_COLUMNS = ("Статус", "Что означает", "Куда можно перейти")
+
+
+def test_the_order_status_table_agrees_with_the_service(client, db_session):
+    """Таблица статусов нарисована руками и обязана совпадать с переходами.
+
+    Проверка идёт от `NEXT_POSSIBLE` и `STATUS_LABELS` к тексту: смена правила
+    перехода без правки справки оставила бы читателя с неверной таблицей, и
+    заметил бы это только тот, кто попробовал бы перейти.
+    """
+    from app.main import STATUS_LABELS
+    from app.modules.orders.service import NEXT_POSSIBLE, VALID_STATUSES
+
+    _admin(client, db_session)
+    body = _article(client.get("/help").text)
+    table = body[body.index("<table"):body.index("</table>")]
+    header = tuple(_text(cell).strip() for cell in re.findall(r"<th[^>]*>(.*?)</th>", table, re.S))
+    assert header == ORDER_STATUS_COLUMNS, f"шапка таблицы статусов: {header}"
+    rows = [[_text(cell) for cell in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+            for row in re.findall(r"<tr[^>]*>(.*?)</tr>", table, re.S)]
+    rows = [row for row in rows if len(row) == 3]
+    labels = [row[0] for row in rows]
+    assert labels == [STATUS_LABELS[key] for key in ("new", "processing", "done", "cancelled")], (
+        f"в таблице статусов {labels}, а в сервисе {list(STATUS_LABELS.values())}")
+    assert set(VALID_STATUSES) == set(STATUS_LABELS), (
+        "в сервисе появился статус, которого нет среди подписей: таблица справки "
+        "перечисляет только эти четыре и новый молча не попадёт в неё")
+    for label, _means, targets in rows:
+        source = next(key for key, value in STATUS_LABELS.items() if value == label)
+        allowed = {STATUS_LABELS[key] for key in NEXT_POSSIBLE.get(source, ())}
+        listed = {part.strip() for part in targets.split(",")} - {"—"}
+        assert listed == allowed, (
+            f"у статуса «{label}» в справке переходы «{targets}», а сервис разрешает "
+            f"{sorted(allowed) or 'ни одного'}")
 
 
 UNTRANSLATED = [

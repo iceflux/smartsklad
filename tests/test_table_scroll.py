@@ -10,7 +10,7 @@ PRINT_DIR = "documents"
 # печати: разметка печати обязана быть одна, иначе копии разъедутся.
 PRINT_DOCUMENT = "order_document.html"
 TABLE_RE = re.compile(r"<table\b")
-SCREEN_TABLE_COUNT = 21
+SCREEN_TABLE_COUNT = 22
 
 
 def _tables(lines):
