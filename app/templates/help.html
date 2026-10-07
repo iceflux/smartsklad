@@ -7,41 +7,47 @@
 
     <section class="mb-6">
         <h2 id="howto" class="text-xl font-semibold mb-2">Как пользоваться справкой</h2>
+        <p class="mb-2">СмартСклад — учёт продаж и склада для небольшого магазина или оптовой точки.
+            Заказ — центральная запись: клиент, позиции, скидки, итог. Остальное либо наполняет заказ
+            (товары, клиенты, категории), либо смотрит на его результаты (аналитика, прогноз спроса).
+            Есть печать документов, отправка заказа на email и в Telegram, импорт из 1С, резервные
+            копии и журнал изменений.</p>
+        <p class="text-sm text-caption">Если раздела нет в меню — у вашей роли нет на него права.
+            Права выдаёт администратор на странице <a href="/roles" class="app-link text-accent">«Роли»</a>.</p>
         <ul class="list-disc pl-4 mb-2">
-            <li>Разделы в порядке пунктов меню, под каждым — его адрес.</li>
-            <li>Права названы по-человечески на странице <a href="/roles" class="app-link">«Роли»</a>.</li>
+            <li>Разделы идут в порядке пунктов меню, под каждым заголовком — его адрес.</li>
+            <li>Права названы по-человечески, коды нигде не упоминаются.</li>
             <li>Чего пока нет — в конце, двумя списками: <strong>«Ограничения MVP»</strong> и
                 <strong>«Известные проблемы»</strong>.</li>
-            <li>Раздела нет в меню — нет права на него у вашей роли.</li>
         </ul>
     </section>
 
-    <div class="flex flex-wrap gap-2 mb-6">
-        <a href="#howto" class="app-link">Как пользоваться справкой</a>
-        <a href="#orders" class="app-link">Заказы</a>
-        <a href="#customers" class="app-link">Клиенты</a>
-        <a href="#products" class="app-link">Товары и категории</a>
-        <a href="#units" class="app-link">Еединицы измерения</a>
-        <a href="#stock" class="app-link">Учёт остатков</a>
-        <a href="#analytics" class="app-link">Аналитика</a>
-        <a href="#forecast" class="app-link">Прогноз спроса</a>
-        <a href="#printing" class="app-link">Печать и документ</a>
-        <a href="#notifications" class="app-link">Уведомления</a>
-        <a href="#delivery" class="app-link">Что отправляется</a>
-        <a href="#backup" class="app-link">Резервные копии</a>
-        <a href="#import" class="app-link">Импорт из 1С</a>
-        <a href="#audit" class="app-link">Журнал аудита</a>
-        <a href="#roles" class="app-link">Роли и пользователи</a>
-        <a href="#settings" class="app-link">Настройки</a>
-        <a href="#interface" class="app-link">Тема и поиск</a>
-        <a href="#mvp" class="app-link">Ограничения MVP</a>
-        <a href="#problems" class="app-link">Известные проблемы</a>
-    </div>
+    <nav class="flex flex-wrap gap-2 mb-6">
+        <a href="#howto" class="app-btn border px-3 py-1">Как пользоваться справкой</a>
+        <a href="#orders" class="app-btn border px-3 py-1">Заказы</a>
+        <a href="#customers" class="app-btn border px-3 py-1">Клиенты</a>
+        <a href="#products" class="app-btn border px-3 py-1">Товары и категории</a>
+        <a href="#units" class="app-btn border px-3 py-1">Единицы измерения</a>
+        <a href="#stock" class="app-btn border px-3 py-1">Учёт остатков</a>
+        <a href="#analytics" class="app-btn border px-3 py-1">Аналитика</a>
+        <a href="#forecast" class="app-btn border px-3 py-1">Прогноз спроса</a>
+        <a href="#printing" class="app-btn border px-3 py-1">Печать и документ</a>
+        <a href="#notifications" class="app-btn border px-3 py-1">Уведомления</a>
+        <a href="#delivery" class="app-btn border px-3 py-1">Что отправляется</a>
+        <a href="#backup" class="app-btn border px-3 py-1">Резервные копии</a>
+        <a href="#import" class="app-btn border px-3 py-1">Импорт из 1С</a>
+        <a href="#audit" class="app-btn border px-3 py-1">Журнал аудита</a>
+        <a href="#roles" class="app-btn border px-3 py-1">Роли и пользователи</a>
+        <a href="#settings" class="app-btn border px-3 py-1">Настройки</a>
+        <a href="#interface" class="app-btn border px-3 py-1">Тема и поиск</a>
+        <a href="#mvp" class="app-btn border px-3 py-1">Ограничения MVP</a>
+        <a href="#problems" class="app-btn border px-3 py-1">Известные проблемы</a>
+    </nav>
 
     <section class="mb-6">
         <h2 id="orders" class="text-xl font-semibold mb-2">Заказы</h2>
         <p class="mb-1">Клиент, позиции, скидки, итог.</p>
-        <p class="mb-2 text-sm text-caption">Раздел: <a href="/orders" class="app-link">Заказы</a> →
+        <p class="mb-2 text-sm text-caption">Раздел: <a href="/orders" class="app-link text-accent">Заказы</a> →
             <strong>«Новый заказ»</strong></p>
         <div class="overflow-x-auto">
         <table class="w-full border-collapse text-sm mb-2">
@@ -81,7 +87,7 @@
             <li>Возврат из <strong>Выполнен</strong> возвращает позиции на склад.</li>
             <li><strong>Выполнен</strong> не редактируется и не удаляется.</li>
             <li>Скидка позиции и заказа — от 0 до 99 процентов.</li>
-            <li>Клиента и товар позиции набирают подстановкой.</li>
+            <li>Клиент и товар в позиции набираются подстановкой: список фильтруется по мере ввода.</li>
             <li>Копия — новый заказ в статусе <strong>Новый</strong>.</li>
         </ul>
     </section>
@@ -89,7 +95,7 @@
     <section class="mb-6">
         <h2 id="customers" class="text-xl font-semibold mb-2">Клиенты</h2>
         <p class="mb-1">Карточка покупателя.</p>
-        <p class="mb-2 text-sm text-caption">Раздел: <a href="/customers" class="app-link">Клиенты</a></p>
+        <p class="mb-2 text-sm text-caption">Раздел: <a href="/customers" class="app-link text-accent">Клиенты</a></p>
         <ul class="list-disc pl-4 mb-2">
             <li>Поля: имя, телефон, ИНН, email, персональная скидка, заметка.</li>
             <li>Персональная скидка подставляется в новый заказ сама.</li>
@@ -102,8 +108,8 @@
         <h2 id="products" class="text-xl font-semibold mb-2">Товары и категории</h2>
         <p class="mb-1">Карточка товара и дерево категорий.</p>
         <p class="mb-2 text-sm text-caption">Разделы:
-            <a href="/products" class="app-link">Товары</a>,
-            <a href="/categories" class="app-link">Категории</a> →
+            <a href="/products" class="app-link text-accent">Товары</a>,
+            <a href="/categories" class="app-link text-accent">Категории</a> →
             <strong>«Добавить товар»</strong></p>
         <ul class="list-disc pl-4 mb-2">
             <li>Поля: название, артикул, категория, единица, цена, количество на складе, описание,
@@ -118,29 +124,31 @@
 
     <section class="mb-6">
         <h2 id="units" class="text-xl font-semibold mb-2">Единицы измерения</h2>
-        <p class="mb-1">Справочник: штуки, килограммы, метры, литры и то, что нужно вам.</p>
+        <p class="mb-1">Справочник: штуки, килограммы, метры, литры и др.</p>
         <p class="mb-2 text-sm text-caption">Раздел:
-            <a href="/units" class="app-link">Единицы измерения</a></p>
+            <a href="/units" class="app-link text-accent">Единицы измерения</a></p>
         <ul class="list-disc pl-4 mb-2">
             <li>Единица хранится у товара; занятую хотя бы одним товаром единицу удалить нельзя.</li>
             <li>В закрытом заказе единица записана строкой в заказ, поэтому переименование справочника не
                 переписывает старые заказы.</li>
-            <li>Незнакомая единица из 1С останавливает импорт, пока её не назовут или не сопоставят.</li>
         </ul>
     </section>
 
     <section class="mb-6">
         <h2 id="stock" class="text-xl font-semibold mb-2">Учёт остатков</h2>
         <p class="mb-1">Ведётся у каждого товара отдельно.</p>
-        <p class="mb-2 text-sm text-caption">Раздел: <a href="/settings" class="app-link">Настройки</a> →
+        <p class="mb-2 text-sm text-caption">Раздел: <a href="/settings" class="app-link text-accent">Настройки</a> →
             <strong>«Запас в днях»</strong></p>
         <ul class="list-disc pl-4 mb-2">
             <li>Выключен — количество не проверяется и не списывается.</li>
             <li>Включён — заказ не даст списать больше, чем лежит на складе.</li>
             <li>Новое значение берётся из настройки «Учитывать остатки при создании товаров»,
                 переопределяется в карточке.</li>
-            <li>Минимальный запас — сколько единиц должно лежать на складе: из карточки либо из
-                <strong>«Запаса в днях»</strong>.</li>
+            <li>Минимальный запас — сколько единиц должно лежать на складе. Поле
+                <strong>«Минимальный запас»</strong> в карточке товара: заполнено — берётся оно,
+                пусто — запас считается как <strong>средние продажи в сутки × «Запас в днях»</strong>,
+                а <strong>«Запас в днях»</strong> (от 0 до 365 дней, по умолчанию 14) задаётся в разделе
+                <a href="/settings" class="app-link text-accent">«Настройки»</a>.</li>
         </ul>
     </section>
 
@@ -148,7 +156,7 @@
         <h2 id="analytics" class="text-xl font-semibold mb-2">Аналитика продаж</h2>
         <p class="mb-1">Числа по выполненным заказам за период.</p>
         <p class="mb-2 text-sm text-caption">Раздел:
-            <a href="/dashboard" class="app-link">Аналитика</a></p>
+            <a href="/dashboard" class="app-link text-accent">Аналитика</a></p>
         <ul class="list-disc pl-4 mb-2">
             <li>Число заказов, сумма, средний чек, продажи по дням, самые продаваемые товары и самые
                 крупные клиенты.</li>
@@ -162,37 +170,40 @@
         <h2 id="forecast" class="text-xl font-semibold mb-2">Прогноз спроса</h2>
         <p class="mb-1">Сколько единиц продастся и сколько закупить.</p>
         <p class="mb-2 text-sm text-caption">Раздел:
-            <a href="/forecast" class="app-link">Прогноз спроса</a></p>
+            <a href="/forecast" class="app-link text-accent">Прогноз спроса</a></p>
         <ul class="list-disc pl-4 mb-2">
             <li>Продажи на 7, 14 и 30 дней и количество <strong>«К закупке»</strong>.</li>
             <li>Галочка <strong>«только к закупке»</strong> оставляет только то, что надо
                 докупить.</li>
-            <li>Что значат девять колонок, объясняет кнопка со знаком вопроса у заголовка.</li>
+            <li>Кнопка со знаком вопроса у заголовка открывает справку по полям таблицы и формулам.</li>
         </ul>
     </section>
 
     <section class="mb-6">
         <h2 id="printing" class="text-xl font-semibold mb-2">Печать и документ</h2>
         <p class="mb-1">Документ лежит на странице заказа.</p>
-        <p class="mb-2 text-sm text-caption">Раздел: страница заказа → <strong>«Печать»</strong>,
+        <p class="mb-2 text-sm text-caption">Где: страница заказа → <strong>«Печать»</strong>,
             <strong>«Предпросмотр печати»</strong>, <strong>«Скачать PDF»</strong></p>
         <ul class="list-disc pl-4 mb-2">
             <li>Все три способа дают один документ, и покупателю уходит он же.</li>
             <li>Блок продавца: наименование, ИНН, КПП, адрес, телефон, email — поля в разделе
-                <a href="/settings" class="app-link">«Настройках»</a>; пусто всё — блока нет.</li>
-                    </ul>
+                <a href="/settings" class="app-link text-accent">«Настройках»</a>; пусто всё — блока нет.</li>
+        </ul>
     </section>
 
     <section class="mb-6">
         <h2 id="notifications" class="text-xl font-semibold mb-2">Уведомления</h2>
         <p class="mb-1">Отправка заказа клиенту.</p>
         <p class="mb-2 text-sm text-caption">Раздел:
-            <a href="/notifications" class="app-link">Уведомления</a>; на странице заказа —
+            <a href="/notifications" class="app-link text-accent">Уведомления</a>; на странице заказа —
             <strong>«На email»</strong> и <strong>«В Telegram»</strong></p>
         <ul class="list-disc pl-4 mb-2">
             <li>К письму и к сообщению прикладывается PDF заказа.</li>
             <li>Письмо требует адрес электронной почты у клиента.</li>
-            <li>Работает, только если настроен нужный канал — см. <a href="#delivery" class="app-link">«Что
+            <li><strong>В Telegram сообщение уходит не клиенту</strong>: бот пишет в один чат, заданный в
+                настройках, и телефон клиента не используется. Это уведомление для вас, а не сообщение
+                покупателю.</li>
+            <li>Работает, только если настроен нужный канал — см. <a href="#delivery" class="app-link text-accent">«Что
                 отправляется»</a>.</li>
             <li>Журнал пишет канал, адресата, результат и ошибку.</li>
         </ul>
@@ -222,7 +233,7 @@
         <h2 id="backup" class="text-xl font-semibold mb-2">Резервные копии</h2>
         <p class="mb-1">Копия базы данных, снятая утилитой PostgreSQL на сервере.</p>
         <p class="mb-2 text-sm text-caption">Раздел:
-            <a href="/backups" class="app-link">Резервные копии</a> →
+            <a href="/backups" class="app-link text-accent">Резервные копии</a> →
             <strong>«Создать копию сейчас»</strong></p>
         <ul class="list-disc pl-4 mb-2">
             <li>Снимается кнопкой <strong>«Создать копию сейчас»</strong> или по расписанию,
@@ -237,14 +248,14 @@
     <section class="mb-6">
         <h2 id="import" class="text-xl font-semibold mb-2">Импорт из 1С</h2>
         <p class="mb-1">Чтение файлов выгрузки из папки.</p>
-        <p class="mb-2 text-sm text-caption">Раздел: <a href="/import" class="app-link">Импорт</a></p>
+        <p class="mb-2 text-sm text-caption">Раздел: <a href="/import" class="app-link text-accent">Импорт</a></p>
         <ul class="list-disc pl-4 mb-2">
             <li>Папка выгрузки задаётся на странице.</li>
-            <li><strong>«Разобрать»</strong> показывает, сколько создастся, найдётся и пропустится, и
-                ничего не записывает; импорт запускается отдельно.</li>
-            <li>Товар и клиент ищутся по пометке от прошлого импорта, потом по названию, иначе создаются
+            <li><strong>«Разобрать»</strong> показывает, сколько будет: создано, найдено и пропустит записей; импорт запускается отдельно.</li>
+            <li>Товар и клиент определяются по метке от прошлого импорта, потом по названию, иначе создаются
                 заново, поэтому повторный импорт дубликатов не создаёт.</li>
-            <li>Заказы приходят выполненными, остатки не затрагиваются.</li>
+            <li>Заказы импортируются со статусом «Выполнен», остатки не затрагиваются.</li>
+            <li>Незнакомая единица измерения из 1С останавливает импорт, пока её не назовут или не сопоставят.</li>
         </ul>
     </section>
 
@@ -252,7 +263,7 @@
         <h2 id="audit" class="text-xl font-semibold mb-2">Журнал аудита</h2>
         <p class="mb-1">Кто, когда и что изменил.</p>
         <p class="mb-2 text-sm text-caption">Раздел:
-            <a href="/audit" class="app-link">Журнал аудита</a></p>
+            <a href="/audit" class="app-link text-accent">Журнал аудита</a></p>
         <ul class="list-disc pl-4 mb-2">
             <li>Пишется всё, что меняет данные: действие, пользователь, время, значение до и после.</li>
             <li>Журнал ничего не удаляет. Фильтры — действие, пользователь, раздел, даты; выгрузка в
@@ -262,14 +273,13 @@
 
     <section class="mb-6">
         <h2 id="roles" class="text-xl font-semibold mb-2">Роли и пользователи</h2>
-        <p class="mb-1">Права выдаются роли, а не человеку.</p>
+        <p class="mb-1">Права выдаются роли, а не пользователю.</p>
         <p class="mb-2 text-sm text-caption">Разделы:
-            <a href="/roles" class="app-link">Роли</a>,
-            <a href="/users" class="app-link">Пользователи</a></p>
+            <a href="/roles" class="app-link text-accent">Роли</a>,
+            <a href="/users" class="app-link text-accent">Пользователи</a></p>
         <ul class="list-disc pl-4 mb-2">
-            <li>Одна роль — один набор прав, у всех людей этой роли он одинаковый; названия — по-человечески,
-                по разделам.</li>
-            <li>Учётные записи не удаляют, а отключают: отключённый человек не входит, его история
+            <li>Одна роль — один набор прав, у всех пользователей этой роли он одинаковый.</li>
+            <li>Учётные записи не удаляют, а отключают: отключённый пользователь не сможет авторизоваться, его история
                 остаётся.</li>
             <li>Пароль генерирует приложение и показывает один раз.</li>
             <li>Нельзя отключить себя и последнего администратора.</li>
@@ -279,7 +289,7 @@
     <section class="mb-6">
         <h2 id="settings" class="text-xl font-semibold mb-2">Настройки</h2>
         <p class="mb-1">Общие для всех, меняет администратор.</p>
-        <p class="mb-2 text-sm text-caption">Раздел: <a href="/settings" class="app-link">Настройки</a></p>
+        <p class="mb-2 text-sm text-caption">Раздел: <a href="/settings" class="app-link text-accent">Настройки</a></p>
         <ul class="list-disc pl-4 mb-2">
             <li><strong>«Учитывать остатки при создании товаров»</strong> — значение для новых
                 товаров.</li>
@@ -295,10 +305,10 @@
     <section class="mb-6">
         <h2 id="interface" class="text-xl font-semibold mb-2">Тема и поиск</h2>
         <p class="mb-1">Вид приложения и поиск из шапки.</p>
-        <p class="mb-2 text-sm text-caption">Раздел: <a href="/search" class="app-link">Поиск</a>,
+        <p class="mb-2 text-sm text-caption">Раздел: <a href="/search" class="app-link text-accent">Поиск</a>,
             шапка приложения</p>
         <ul class="list-disc pl-4 mb-2">
-            <li>Тема светлая или тёмная: кнопка в шапке, выбор свой у каждого человека.</li>
+            <li>Тема светлая или тёмная: кнопка в шапке, выбор свой у каждого пользователя.</li>
             <li>Меню сворачивается кнопкой в шапке, на узком экране открывается кнопкой
                 <strong>«Меню»</strong>.</li>
             <li>Лупа ищет по клиентам, товарам и заказам; раздела без права в результатах нет.</li>
@@ -308,10 +318,10 @@
 
     <section class="mb-6">
         <h2 id="mvp" class="text-xl font-semibold mb-2">Ограничения MVP</h2>
-        <p class="mb-2">Так задумано, а не поломалось.</p>
+        <p class="mb-2">Осознанные ограничения текущей версии.</p>
         <ul class="list-disc pl-4 mb-2">
             <li>Канал показан как «Не настроено» — отправка невозможна, пока не заданы значения
-                (<a href="#delivery" class="app-link">«Что отправляется»</a>).</li>
+                (<a href="#delivery" class="app-link text-accent">«Что отправляется»</a>).</li>
             <li>Выгрузка из 1С не содержит остатков: у загруженных товаров остаток нулевой, и на такой
                 товар заказ не создаётся; вводить остатки приходится по одному.</li>
             <li>Прогноз считает по товарам, продававшимся хотя бы в 14 отдельных дней за последние 90;
@@ -326,9 +336,15 @@
 
     <section class="mb-6">
         <h2 id="problems" class="text-xl font-semibold mb-2">Известные проблемы</h2>
-        <p class="mb-2">Дефекты, работа над которыми не закончена.</p>
+        <p class="mb-2">Дефекты, работа над которыми не закончена. Сюда попадает только то, что
+            подтверждено прогоном: как только дефект починен, строка отсюда убирается.</p>
         <ul class="list-disc pl-4 mb-2">
-            <li>Неизвестных дефектов нет.</li>
+            <li><span class="text-danger">Пустой заказ создаётся через API</span>: страница не даёт
+                сохранить заказ без позиций, а вот <code>POST /api/orders</code> с пустым списком позиций
+                создаёт. Такой заказ попадает в счётчики клиента и занижает средний чек.</li>
+            <li><span class="text-danger">«Показано: с …» на «Аналитике» может начаться раньше первой
+                продажи</span>: период «Всё время» считается от самого раннего заказа, даже если он
+                невыполненный или отменённый, поэтому график рисует пустые дни за эти годы.</li>
         </ul>
     </section>
 </main>

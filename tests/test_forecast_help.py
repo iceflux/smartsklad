@@ -146,24 +146,84 @@ def test_the_window_reuses_the_existing_modal_classes(client, db_session):
         assert rule and rule.group(1).strip(), f"{name} не доехал до сборки"
 
 
-def test_the_window_explains_the_four_things_the_owner_asked_about(client, db_session):
-    """Проверяется не «текст есть», а что в нём есть — по кускам, каждый из
-    которых отвечает на один вопрос. Список из непроверяемых фраз прошёл бы
-    сам по себе."""
+def _numeric_columns():
+    """Подписи колонок, в которых живут числа, — взяты из самой страницы.
+
+    Список не выдумывается здесь: он собирается из шапки таблицы прогноза и из
+    класса ячейки в строке данных, потому что числа прижаты вправо, а название и
+    артикул — нет. Добавление колонки с числом обязано ронять проверку, пока окно
+    её не объяснит, и не выдумывать объяснение вслепую.
+    """
+    source = TEMPLATE.read_text(encoding="utf-8")
+    heads = re.findall(r'sort_head\("([^"]+)"', source)
+    row = re.search(r"\{%\s*for row in rows\s*%\}(.*?)\{%\s*endfor\s*%\}", source, re.S)
+    assert row, "в шаблоне прогноза не найдена строка данных таблицы"
+    cells = re.findall(r"<td([^>]*)>", row.group(1))
+    assert len(cells) == len(heads), (
+        f"в строке {len(cells)} ячеек, а в шапке {len(heads)} заголовков — проверка "
+        "ослабла бы, если бы считала что-то одно")
+    numeric = {index for index, attrs in enumerate(cells) if "text-right" in attrs}
+    columns = [_text(heads[index]) for index in sorted(numeric)]
+    assert len(columns) >= 6, f"числовых колонок найдено {len(columns)} — проверка ослабла"
+    return columns
+
+
+def _text(markup):
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", markup))
+
+
+def test_the_window_explains_every_numeric_column_of_the_table(client, db_session):
+    """Главная проверка окна: всё, что в таблице выглядит числом, там объяснено.
+
+    Ищется не слово в тексте, а выделенное имя поля в списке «Поля таблицы»:
+    проверка по вхождению слова проходила бы, даже если объяснение колонки
+    убрали, а это слово осталось в формуле или в соседнем пункте, — так и
+    случилось при первой попытке этой проверки, когда переименование «Запас» в
+    «Скрытый запас» её не тронуло.
+
+    Список колонок берётся из самой страницы, а не из фраз проверки: прежняя
+    проверка искала восемь иголок в тексте и отвечала на вопрос «написано ли
+    что-то похожее», а не «объяснена ли колонка». Теперь любая новая числовая
+    колонка роняет прогон, пока о ней не написано в окне.
+    """
     _admin(client, db_session)
-    body = client.get("/forecast").text
-    text = _window_text(body)
-    for label, needle in (
-        ("горизонты — это количество, а не в сутки", "в сутки"),
-        ("линия тренда, а не среднее", "тренд"),
-        ("порог в 14 отдельных дней", "14 отдельных дней"),
-        ("окно продаж — 90 дней", "90"),
-        ("что такое минимальный запас", "минимальный запас"),
-        ("формула закупки", "минус"),
-        ("ноль или меньше — не нужно", "не нужно"),
-        ("не знает о заказах поставщику", "поставщик"),
-    ):
-        assert needle in text, f"в окне нет: {label} (искали {needle!r})"
+    window = _window_markup(client.get("/forecast").text)
+    fields = re.search(r"<ul[^>]*>(.*?)</ul>", window, re.S)
+    assert fields, "в окне нет списка полей таблицы"
+    named = [_text(part) for part in re.findall(r"<strong>(.*?)</strong>", fields.group(1), re.S)]
+    assert len(named) >= 4, f"в списке полей {len(named)} выделенных имён — проверка ослабла"
+    for column in _numeric_columns():
+        assert any(column in name for name in named), (
+            f"окно не объясняет колонку {column!r}: выделенных имён в списке полей {named}")
+
+
+def test_the_window_names_every_horizon_the_service_forecasts(client, db_session):
+    """Горизонты берутся из сервиса, а не из текста окна.
+
+    Владелец не мог сопоставить колонки между собой именно потому, что их
+    перечисляли словами. Если сервис начнёт считать, скажем, 60 дней, окно
+    обязано заговорить о них же — иначе на странице появится колонка, которую
+    никто не смог бы прочитать.
+    """
+    from app.modules.ai.service import FORECAST_HORIZONS
+
+    _admin(client, db_session)
+    text = _window_text(client.get("/forecast").text)
+    for horizon in FORECAST_HORIZONS:
+        assert str(horizon) in text, f"окно не называет горизонт {horizon} дней"
+
+
+def test_the_window_does_not_say_a_horizon_is_a_daily_rate(client, db_session):
+    """Самая частая ошибка при чтении таблицы: «30 дней» принять за «в сутки».
+
+    В окне сказано об этом прямо, и это единственное место, где сказано: в
+    справке о прогнозе — нет, а вторая копия разъехалась бы с первой при первом
+    же изменении формулировки.
+    """
+    _admin(client, db_session)
+    text = _window_text(client.get("/forecast").text)
+    assert "количество за период" in text, "окно не разводит «за период» и «в сутки»"
+    assert "в сутки»" in text, "окно не называет то, чем колонка быть не может"
 
 
 def test_the_window_does_not_use_the_words_of_the_code(client, db_session):

@@ -295,7 +295,11 @@ def test_the_help_does_not_repeat_the_forecast_window(client, db_session):
     forecast = body[body.index('id="forecast"'):body.index('id="printing"')]
     for phrase in ("в сутки", "линия тренда", "14 отдельных дней", "минус то, что сейчас"):
         assert phrase not in _text(forecast), f"справка повторяет окно прогноза: {phrase!r}"
-    assert "кнопка со знаком вопроса" in _text(forecast), (
+    # Регистр не различается: важно, что справка назвала кнопку, а не с какой
+    # буквы началось предложение. Раньше проверка сравнивала строчную форму с
+    # текстом, и владелец, поставивший «Кнопка» в начало пункта, получил отказ
+    # на правильной странице.
+    assert "кнопка со знаком вопроса" in _text(forecast).lower(), (
         "справка должна сказать, где объяснены колонки, иначе ссылка на кнопку в окне "
         "прогноза ведёт читателя в никуда")
     page = client.get("/forecast").text
@@ -407,6 +411,20 @@ def test_the_page_says_the_same_as_the_gate_that_refuses_the_send(
     assert reached == ["telegram"], reached
     assert READY in client.get("/help").text
 
+    # Карточка почты обязана назвать оба пути, потому что только что проверены
+    # обе их половины: заданное в настройках побеждает `.env`, и очищенная
+    # настройка возвращает управление файлу. Считается вхождение, а не фраза:
+    # проверка на одну фразу прошла бы после того, как вторую половину
+    # выбросили, а слово `.env` осталось в первой.
+    card = _text(_delivery(client.get("/help").text))
+    start = card.index("Письма по электронной почте")
+    email = card[start:card.index("Сообщения в Telegram", start)]
+    assert "«Настройки»" in email, "карточка почты не говорит, где задаются значения"
+    assert email.count(".env") >= 2, (
+        "карточка почты называет `.env` один раз, то есть сказано про один путь, "
+        "а работают оба: у кого почта настроена через файл на сервере, он должен "
+        f"знать, что она продолжает работать. Текст карточки: {email}")
+
 
 def test_the_page_never_shows_the_mail_password_or_the_bot_token(client, db_session, monkeypatch):
     import app.config
@@ -445,9 +463,14 @@ def test_the_mvp_limits_and_the_known_problems_are_two_separate_lists(client, db
         assert topic in limits, f"в ограничениях нет: {topic!r}"
         assert topic not in problems, (
             f"ограничение {topic!r} попало в «Известные проблемы» — там дефекты")
-    assert "Неизвестных дефектов нет" in problems or "на английском" in problems, (
-        "раздел «Известные проблемы» ни пуст, ни отрицает наличие дефектов — непонятно, "
-        "кто туда вписывается")
+    assert "Неизвестных дефектов нет" not in problems, (
+        "раздел объявляет, что дефектов нет, — такое утверждение протухает мгновенно: "
+        "починили, а страница продолжает объявлять. Список дефектов проверяется "
+        "прогоном, а не заявлением; см. "
+        "test_every_known_problem_is_still_true_of_the_code")
+    assert "..." not in problems, (
+        "в разделе осталась заглушка вместо текста — читатель видит многоточие там, "
+        "где обещан список")
     assert "на английском" not in problems, (
         "страница утверждает, что сообщения остались на английском, а они переведены; "
         "прогон годами рассказывал бы о несуществующей проблеме")
@@ -525,3 +548,135 @@ def test_the_messages_the_help_used_to_admit_to_are_translated():
         source = (ROOT / "app" / "modules" / module).read_text(encoding="utf-8")
         assert not any(f'"{text}"' in line for line in source.splitlines()), (
             f"сообщение {text!r} снова на английском в {module}")
+
+
+def test_the_help_says_that_telegram_does_not_reach_the_customer(
+        client, db_session, monkeypatch):
+    """Владелец спросил, как отправка идёт клиенту, и ждал, что бот напишет ему
+    на телефон. Он не напишет никогда: адресат один — чат из настроек, а телефон
+    покупателя в отправку не попадает.
+
+    Проверка идёт от поведения к тексту, а не наоборот: реальный вызов отправки
+    обязан уйти в заданный чат и не содержать телефона клиента, и страница
+    обязана говорить ровно это. Если телефон в отправке когда-нибудь появится,
+    прогон упадёт здесь — и справку придётся переписать, вместо того чтобы она
+    годами обещала клиенту сообщение, которого не будет.
+    """
+    from app.modules.customers.models import Customer
+    from app.modules.notifications import service as notifications
+    from app.modules.orders.models import Order
+
+    _admin(client, db_session)
+    phone = "+7 999 000 11 22"
+    customer = Customer(name="ООО Ромашка", phone=phone)
+    db_session.add(customer)
+    db_session.commit()
+    order = Order(number="00001", customer_id=customer.id, total_amount=100.0)
+    db_session.add(order)
+    db_session.commit()
+
+    _telegram(db_session, "123456:ABC", "-100123")
+    sent = {}
+
+    def _fake_post(url, **kwargs):
+        sent["url"] = url
+        sent.update(kwargs)
+        return _Ok()
+
+    monkeypatch.setattr("app.modules.printing.service.render_order_pdf",
+                        lambda *a, **k: b"%PDF")
+    monkeypatch.setattr("httpx.post", _fake_post)
+    notifications.send_document(db_session, order, "telegram")
+
+    payload = {**sent.get("json", {}), **sent.get("data", {})}
+    assert payload.get("chat_id") == "-100123", f"сообщение ушло не в тот чат: {sent}"
+    whole = sent["url"] + "".join(str(value) for value in payload.values())
+    assert phone not in whole, f"телефон клиента попал в отправку — справка ошибается: {sent}"
+    assert "7999" not in whole.replace(phone, ""), f"в отправке следы телефона: {sent}"
+
+    notifications_section = _text(_section(client.get("/help").text, "notifications", "delivery"))
+    assert "не клиенту" in notifications_section, (
+        "справка обязана сказать прямо, что в Telegram сообщение уходит не клиенту — "
+        "иначе владелец будет показывать отправку как сообщение покупателю")
+    assert "телефон клиента не используется" in notifications_section, (
+        "справка обязана назвать причину: телефон покупателя в отправку не идёт")
+    card = _text(_delivery(client.get("/help").text))
+    assert "не клиенту" in card, (
+        "карточка канала повторяет то же: её читают отдельно от раздела, и без "
+        "этой строки человек уходит с мыслью, что клиент получит сообщение")
+
+
+def test_the_help_explains_the_minimum_stock_the_way_the_service_computes_it(client, db_session):
+    """Владелец не понял фразу «минимальный запас — из карточки либо из запаса в
+    днях» и попросил, чтобы было понятно, что делать.
+
+    Формулировка обязана совпадать с кодом, поэтому проверка идёт от `_min_stock`:
+    значение из карточки побеждает, а без него запас равен средним продажам,
+    умноженным на «Запас в днях». Числа в справке не выдуманы — они выведены из
+    той же функции, что считает колонку «Запас» на странице прогноза.
+    """
+    from app.modules.ai.service import _min_stock
+
+    assert _min_stock(7, 3.0, 14) == 7, "карточка перестала побеждать настройку"
+    assert _min_stock(None, 3.0, 14) == 42, "запас перестал считаться по дням продаж"
+
+    _admin(client, db_session)
+    stock = _text(_section(client.get("/help").text, "stock", "analytics"))
+    for needle, why in (
+        ("«Минимальный запас»", "где лежит поле"),
+        ("пусто", "что значит незаполненная карточка"),
+        ("средние продажи в сутки", "первый множитель"),
+        ("«Запас в днях»", "второй множитель"),
+        ("Настройки", "где задаётся второй множитель"),
+    ):
+        assert needle in stock, f"справка не сказала, {why}: искали {needle!r}"
+
+
+PROBLEMS = ("Пустой заказ", "Показано: с")
+"""Метки строк «Известных проблем». Каждая обязана быть связана с проверкой,
+которая падает, когда дефекта больше нет: починили — прогон упал — строку убрали."""
+
+
+def test_every_known_problem_is_still_true_of_the_code(client, db_session):
+    """Список дефектов протухает быстрее любого другого текста на странице.
+
+    Поэтому строка обязана быть связана с прогоном, а не со словом: проверяется
+    не «дефект написан», а «дефект ещё есть». Пока он есть — прогон зелёный и
+    страница права; как только его починят, проверка ниже упадёт и скажет
+    убрать строку. Обратного механизма нет и не нужно: строка без проверки не
+    попадает в страницу вовсе, потому что список меток задаёт последний шаг.
+    """
+    from datetime import date, datetime, time
+
+    from app.modules.customers.models import Customer
+    from app.modules.dashboard.service import earliest_order_date
+    from app.modules.orders.models import Order
+
+    _admin(client, db_session)
+    body = client.get("/help").text
+    bullets = re.findall(r"<li>(.*?)</li>", body[body.index('id="problems"'):], re.S)
+    assert bullets, "в «Известных проблемах» пусто — страница обещает список и не даёт его"
+    for bullet in bullets:
+        assert any(mark in _text(bullet) for mark in PROBLEMS), (
+            f"строка «{_text(bullet).strip()[:80]}» не связана ни с одной проверкой: "
+            f"в списке меток {PROBLEMS}. Сначала добавь проверку, потом строку")
+
+    # 1. Пустой заказ. Страница защищена коротким замыканием, API — нет, и такой
+    #    заказ без позиций попадает в счётчики клиента.
+    customer = Customer(name="ООО Ромашка")
+    db_session.add(customer)
+    db_session.commit()
+    response = client.post("/api/orders", json={"customer_id": customer.id, "items": []})
+    assert response.status_code == 201, (
+        "заказ без позиций больше не создаётся — уберите строку про пустой заказ из "
+        f"«Известных проблем», пришёл {response.status_code}")
+    assert response.json()["items"] == [], response.json()
+
+    # 2. «Показано: с …» начинается с самого раннего заказа, а не первой продажи.
+    draft = Order(number="00002", customer_id=customer.id, total_amount=0.0, status="new",
+                  created_at=datetime.combine(date(2020, 1, 15), time.min))
+    db_session.add(draft)
+    db_session.commit()
+    assert earliest_order_date(db_session) == date(2020, 1, 15), (
+        "период «Всё время» теперь считается по продажам — уберите из «Известных "
+        "проблем» строку про «Показано: с …»")
