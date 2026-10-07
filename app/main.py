@@ -664,10 +664,11 @@ def create_app() -> FastAPI:
                 f"/settings?msg=Ошибка: порт SMTP — целое от {SMTP_PORT_MIN} "
                 f"до {SMTP_PORT_MAX}", status_code=303)
         set_setting(db, STOCK_TRACK_DEFAULT_KEY, track_rest_default, user=user)
-        if telegram_token:
-            set_setting(db, "telegram_bot_token", telegram_token, user=user)
-        if telegram_chat:
-            set_setting(db, "telegram_chat_id", telegram_chat, user=user)
+        # Пишем безусловно, как SMTP ниже: `if telegram_token:` пропускало пустое
+        # поле, и очистить токен или чат было невозможно — старое значение
+        # оставалось, а форма выглядела как сохранённая пустая.
+        set_setting(db, "telegram_bot_token", telegram_token, user=user)
+        set_setting(db, "telegram_chat_id", telegram_chat, user=user)
         set_setting(db, USER_PASSWORD_CHARSET_KEY, charset, user=user)
         set_setting(db, USER_PASSWORD_LENGTH_KEY, str(length), user=user)
         set_setting(db, MIN_STOCK_DAYS_KEY, str(min_stock_days), user=user)

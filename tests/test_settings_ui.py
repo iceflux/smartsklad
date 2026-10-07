@@ -79,6 +79,46 @@ def test_settings_shows_masked_telegram_token(client, db_session):
     assert "****" in r.text  # маска
 
 
+def test_clearing_the_telegram_fields_actually_clears_them(client, db_session):
+    """Владелец обнаружил: токен и чат невозможно очистить — значение возвращалось.
+
+    Причина была в маршруте, а не в форме: поля читались как `if telegram_token:`
+    и при пустом значении просто не записывались, то есть старое оставалось, а
+    страница выглядела как сохранённая пустая. Пустое значение здесь законно —
+    это «канал не настроен», а не «оставь как было».
+
+    Проверка идёт от поведения к странице: реальный POST с пустыми полями обязан
+    стереть оба значения и показать канал ненастроенным.
+    """
+    from app.modules.settings.service import get_setting
+
+    _admin(client, db_session)
+    set_setting(db_session, "telegram_bot_token", "1234567890:ABC", user=None)
+    set_setting(db_session, "telegram_chat_id", "-100123", user=None)
+
+    r = client.post("/settings", data={"telegram_bot_token": "",
+                                       "telegram_chat_id": "",
+                                       "user_password_charset": "abcdef",
+                                       "user_password_length": "12",
+                                       "min_stock_days": "14",
+                                       "search_slow_ms": "1000",
+                                       "stock_track_default": "true"},
+                    follow_redirects=False)
+    assert r.status_code == 303, r.status_code
+    assert "Ошибка" not in r.headers.get("location", ""), (
+        f"пост отбит валидацией, поля не записаны: {r.headers.get('location')}")
+
+    assert get_setting(db_session, "telegram_bot_token") == "", (
+        "пустое поле обязано стирать токен, а не игнорироваться")
+    assert get_setting(db_session, "telegram_chat_id") == "", (
+        "пустое поле обязано стирать чат получателя")
+
+    body = client.get("/settings").text
+    assert "не настроен" in body, (
+        "после очистки канал обязан показываться как ненастроенный")
+    assert "-100123" not in body, "старый чат продолжает светиться в форме"
+
+
 def test_settings_page_shows_password_generation_fields(client, db_session):
     _admin(client, db_session)
     r = client.get("/settings")
