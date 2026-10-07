@@ -595,10 +595,14 @@ def test_the_help_says_that_telegram_does_not_reach_the_customer(
     assert "7999" not in whole.replace(phone, ""), f"в отправке следы телефона: {sent}"
 
     notifications_section = _text(_section(client.get("/help").text, "notifications", "delivery"))
-    assert "не клиенту" in notifications_section, (
+    # Регистр не важен: прошлый перенос формулировки поставил «Телефон» с заглавной и
+    # сломал проверку на ровном месте. Смысл — что адресат не покупатель — от регистра
+    # не зависит, а проверка не должна падать из-за одной буквы.
+    lowered = notifications_section.lower()
+    assert "клиенту не уходит" in lowered, (
         "справка обязана сказать прямо, что в Telegram сообщение уходит не клиенту — "
         "иначе владелец будет показывать отправку как сообщение покупателю")
-    assert "телефон клиента не используется" in notifications_section, (
+    assert "телефон клиента не используется" in lowered, (
         "справка обязана назвать причину: телефон покупателя в отправку не идёт")
     card = _text(_delivery(client.get("/help").text))
     assert "не клиенту" in card, (
@@ -680,3 +684,88 @@ def test_every_known_problem_is_still_true_of_the_code(client, db_session):
     assert earliest_order_date(db_session) == date(2020, 1, 15), (
         "период «Всё время» теперь считается по продажам — уберите из «Известных "
         "проблем» строку про «Показано: с …»")
+
+
+def test_the_help_says_that_the_email_goes_to_the_client(client, db_session, monkeypatch):
+    """Вторая половина пары, у которой уже есть проверка на телеграм.
+
+    Рядом стоят две кнопки и выглядят одинаково, но адресаты разные: письмо уходит
+    покупателю по адресу из его карточки, телеграм — в служебный чат. Раньше страница
+    говорила только про телеграм, и читатель заключал, что письмо тоже куда-то
+    служебное, либо наоборот.
+
+    Проверка идёт от поведения к тексту: настоящая отправка обязана уйти на адрес из
+    карточки клиента, а страница — говорить ровно это и называть, откуда адрес
+    берётся. Если отправку когда-нибудь переведут на свой адрес, прогон упадёт
+    здесь, и справку придётся переписать, а не годами обещать клиенту письмо,
+    которое уйдёт вам.
+    """
+    from app.modules.customers.models import Customer
+    from app.modules.notifications import service as notifications
+    from app.modules.orders.models import Order
+
+    _admin(client, db_session)
+    client_email = "zakaz@romashka.example"
+    customer = Customer(name="ООО Ромашка", phone="+7 999 000 11 22", email=client_email)
+    db_session.add(customer)
+    db_session.commit()
+    order = Order(number="00001", customer_id=customer.id, total_amount=100.0)
+    db_session.add(order)
+    db_session.commit()
+
+    _smtp(monkeypatch, "smtp.example")
+    _mail(monkeypatch, host="smtp.example", user="bot", sender="bot@example")
+    sent = {}
+    monkeypatch.setattr("app.modules.printing.service.render_order_pdf",
+                        lambda *a, **k: b"%PDF")
+    monkeypatch.setattr("app.modules.notifications.email.send_email",
+                        lambda to, *a, **k: sent.update({"to": to}))
+    notifications.send_document(db_session, order, "email")
+    assert sent.get("to") == client_email, f"письмо ушло не клиенту: {sent}"
+
+    section = _text(_section(client.get("/help").text, "notifications", "delivery"))
+    assert "«На email» уходит клиенту" in section, (
+        "справка обязана сказать прямо, что кнопка «На email» отправляет письмо покупателю")
+    assert "Email" in section and "карточке" in section, (
+        "справка обязана назвать источник адреса — поле «Email» в карточке клиента, "
+        "иначе непонятно, что заполнять")
+
+
+def test_the_help_names_where_the_minimum_stock_is_used_and_where_it_is_not(client, db_session):
+    """«Запас в днях» объяснён формулой, но не сказано, на что он влияет.
+
+    Проверка по коду: значение попадает ровно в одно место — в порог рекомендации
+    «К закупке» на странице прогноза. Заказ он не блокирует, предупреждения о
+    низком остатке в приложении нет. Если однажды появится предупреждение, страница
+    станет неполной — и прогон упадёт здесь, чтобы её дополнили.
+    """
+    from app.modules.ai.service import FORECAST_SORTS
+    from app.modules.settings.service import DEFAULT_MIN_STOCK_DAYS, MIN_STOCK_DAYS_KEY
+
+    _admin(client, db_session)
+    section = _text(_section(client.get("/help").text, "stock", "analytics"))
+    markup = _section(client.get("/help").text, "stock", "analytics")
+    # Именно жирное начертание, а не любое вхождение: «Запас в днях» встречается в
+    # разделе дважды — жирным как ключевое слово и обычным в формуле. Проверка на
+    # подстроку проходила бы и тогда, когда ключевое слово перестало выделяться,
+    # то есть по неверной причине.
+    assert "<strong>«Запас в днях»</strong>" in markup, (
+        "настройка должна быть названа жирным — это ключевое слово строки, "
+        "и задание требует именно такого выделения")
+    assert "«Запас в днях»" in section, "страница обязана называть настройку прямо"
+    assert "средние продажи в сутки" in section, (
+        "страница обязана повторять формулу, по которой запас считается")
+    assert str(DEFAULT_MIN_STOCK_DAYS) in section, (
+        f"страница обязана называть значение по умолчанию ({DEFAULT_MIN_STOCK_DAYS}), "
+        f"иначе человек не поймёт, с чего начинать")
+
+    # Что правда на самом деле: настройка нужна только прогнозу.
+    assert MIN_STOCK_DAYS_KEY == "min_stock_days"
+    assert "min_stock" in FORECAST_SORTS, (
+        "минимальный запас участвует в расчёте «К закупке» — если это изменилось, "
+        "фраза «только колонка «К закупке»» в справке устарела")
+    assert "«К закупке»" in section and "Прогнозе спроса" in section, (
+        "страница обязана назвать единственное место, где работает минимальный запас")
+    assert "предупреждения о низком остатке в приложении нет" in section, (
+        "страница обязана сказать и то, чего нет: иначе человек ждёт предупреждение, "
+        "которое приложение никогда не покажет")
