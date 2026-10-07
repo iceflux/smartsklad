@@ -3,91 +3,95 @@
 <main class="max-w-2xl mx-auto p-4">
     <h1 class="text-2xl font-bold mb-4">Настройки</h1>
     {% if msg %}<p class="text-success mb-2">{{ msg }}</p>{% endif %}
-    <form method="post" action="/settings" class="space-y-4">
+    {# autocomplete выключен везде: без него Chrome считает type="password" паролем
+       от сайта и подставляет сохранённый пароль приложения в токен бота, а поле
+       с "user" в имени — сохранённый логин. Для секретов "off" браузер игнорирует,
+       поэтому им задан new-password. #}
+    <form method="post" action="/settings" autocomplete="off" class="space-y-4">
         <div>
             <label class="block mb-1">Учитывать остатки при создании товаров</label>
-            <input type="checkbox" name="track_rest_default" {% if stock_track_default != "false" %}checked{% endif %}>
+            <input autocomplete="off" type="checkbox" name="track_rest_default" {% if stock_track_default != "false" %}checked{% endif %}>
             <p class="text-sm text-muted">Определяет флаг «Учёт остатков» у новых товаров. Можно переопределить на уровне товара.</p>
         </div>
         <div class="border-t pt-4">
             <label class="block mb-1">Telegram-бот (токен)</label>
-            <input type="password" name="telegram_bot_token" placeholder="{% if telegram_configured %}{{ telegram_token_mask }}{% else %}не настроен{% endif %}" class="border p-2 w-full">
+            <input type="password" name="telegram_bot_token" autocomplete="new-password" placeholder="{% if telegram_configured %}{{ telegram_token_mask }}{% else %}не настроен{% endif %}" class="border p-2 w-full">
             <p class="text-sm text-muted">Для замены введите новый токен. {% if telegram_token_mask %}Сейчас: {{ telegram_token_mask }}{% endif %}</p>
         </div>
         <div>
             <label class="block mb-1">Telegram chat_id получателя</label>
-            <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}" class="border p-2 w-full">
+            <input autocomplete="off" type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}" class="border p-2 w-full">
             <p class="text-sm text-muted">Куда бот отправляет уведомления о заказах (один получатель).</p>
         </div>
         <div class="border-t pt-4">
             <label class="block mb-1">Почтовый сервер (SMTP)</label>
-            <input type="text" name="smtp_host" value="{{ smtp.host }}" class="border p-2 w-full">
+            <input autocomplete="off" type="text" name="smtp_host" value="{{ smtp.host }}" class="border p-2 w-full">
             <p class="text-sm text-muted">Пусто — берётся SMTP_HOST из файла .env на сервере. Пока поле пустое, .env не отключается: заполненное значение перекрывает его, очищенное — снова уступает ему. Это сделано, чтобы работающее настройками машина не перестала отправлять после переезда настроек в интерфейс.</p>
         </div>
         <div>
             <label class="block mb-1">Порт</label>
-            <input type="number" name="smtp_port" min="1" max="65535" value="{{ smtp.port }}" class="border p-2 w-full">
+            <input autocomplete="off" type="number" name="smtp_port" min="1" max="65535" value="{{ smtp.port }}" class="border p-2 w-full">
             <p class="text-sm text-muted">Целое от 1 до 65535. Пусто — SMTP_PORT из .env, а тот 587.</p>
         </div>
         <div>
             <label class="block mb-1">Логин (пользователь почты)</label>
-            <input type="text" name="smtp_user" value="{{ smtp.user }}" class="border p-2 w-full">
+            <input type="text" name="smtp_user" autocomplete="off" value="{{ smtp.user }}" class="border p-2 w-full">
             <p class="text-sm text-muted">Пусто — сервер без входа. Значение из .env берётся, только если это поле пустое.</p>
         </div>
         <div>
             <label class="block mb-1">Пароль</label>
-            <input type="password" name="smtp_password" placeholder="{% if smtp_password_mask %}{{ smtp_password_mask }}{% else %}не задан{% endif %}" class="border p-2 w-full">
+            <input type="password" name="smtp_password" autocomplete="new-password" placeholder="{% if smtp_password_mask %}{{ smtp_password_mask }}{% else %}не задан{% endif %}" class="border p-2 w-full">
             <p class="text-sm text-muted">Пустое поле — оставить прежний пароль, а не стереть его: вводить пароль заново при каждой правке адреса не нужно. {% if smtp_password_mask %}Сейчас: {{ smtp_password_mask }}. {% endif %}Сам пароль не показывается и в журнале попадает только замаскированным.</p>
-            <label class="block mt-1"><input type="checkbox" name="smtp_password_clear"> Стереть сохранённый пароль</label>
+            <label class="block mt-1"><input autocomplete="off" type="checkbox" name="smtp_password_clear"> Стереть сохранённый пароль</label>
         </div>
         <div>
             <label class="block mb-1">Отправитель</label>
-            <input type="text" name="smtp_from" value="{{ smtp.sender }}" class="border p-2 w-full">
+            <input autocomplete="off" type="text" name="smtp_from" value="{{ smtp.sender }}" class="border p-2 w-full">
             <p class="text-sm text-muted">Адрес в заголовке «От кого». Пусто — SMTP_FROM из .env; письмо уйдёт с пустым отправителем, и почтовый сервер его, скорее всего, отвергнет.</p>
         </div>
         <div class="border-t pt-4">
             <label class="block mb-1">Символы для генерации пароля</label>
-            <input type="text" name="user_password_charset" value="{{ user_password_charset }}" class="border p-2 w-full">
+            <input autocomplete="off" type="text" name="user_password_charset" value="{{ user_password_charset }}" class="border p-2 w-full">
             <p class="text-sm text-muted">Из этих символов генерируется пароль нового пользователя в форме «Создать пользователя».</p>
         </div>
         <div>
             <label class="block mb-1">Длина пароля</label>
-            <input type="number" name="user_password_length" min="8" max="64" value="{{ user_password_length }}" class="border p-2 w-full">
+            <input autocomplete="off" type="number" name="user_password_length" min="8" max="64" value="{{ user_password_length }}" class="border p-2 w-full">
         </div>
         <div>
             <label class="block mb-1">Запас в днях</label>
-            <input type="number" name="min_stock_days" min="0" max="365" value="{{ min_stock_days }}" class="border p-2 w-full">
+            <input autocomplete="off" type="number" name="min_stock_days" min="0" max="365" value="{{ min_stock_days }}" class="border p-2 w-full">
             <p class="text-sm text-muted">Страховой запас по умолчанию для товаров без собственного минимального запаса. В днях продаж.</p>
         </div>
         <div>
             <label class="block mb-1">Порог медленного поиска</label>
-            <input type="number" name="search_slow_ms" min="200" max="5000" step="50" value="{{ search_slow_ms }}" class="border p-2 w-full">
+            <input autocomplete="off" type="number" name="search_slow_ms" min="200" max="5000" step="50" value="{{ search_slow_ms }}" class="border p-2 w-full">
             <p class="text-sm text-muted">Если последний поиск из шапки занял больше этого времени, окно перестаёт искать само и показывает кнопку «Найти». В миллисекундах, от 200 до 5000. По умолчанию 1000 — граница, на которой задержка уже мешает человеку следить за задачей.</p>
         </div>
         <div class="border-t pt-4">
             <label class="block mb-1">Наименование компании (продавец)</label>
-            <input type="text" name="company_name" value="{{ company.company_name }}" class="border p-2 w-full">
+            <input autocomplete="off" type="text" name="company_name" value="{{ company.company_name }}" class="border p-2 w-full">
             <p class="text-sm text-muted">Печатается на документе заказа и в PDF. Пустые поля пропускаются, а если не заполнено ни одного — блок продавца не печатается вовсе.</p>
         </div>
         <div>
             <label class="block mb-1">ИНН</label>
-            <input type="text" name="company_inn" value="{{ company.company_inn }}" class="border p-2 w-full">
+            <input autocomplete="off" type="text" name="company_inn" value="{{ company.company_inn }}" class="border p-2 w-full">
         </div>
         <div>
             <label class="block mb-1">КПП</label>
-            <input type="text" name="company_kpp" value="{{ company.company_kpp }}" class="border p-2 w-full">
+            <input autocomplete="off" type="text" name="company_kpp" value="{{ company.company_kpp }}" class="border p-2 w-full">
         </div>
         <div>
             <label class="block mb-1">Адрес</label>
-            <input type="text" name="company_address" value="{{ company.company_address }}" class="border p-2 w-full">
+            <input autocomplete="off" type="text" name="company_address" value="{{ company.company_address }}" class="border p-2 w-full">
         </div>
         <div>
             <label class="block mb-1">Телефон</label>
-            <input type="text" name="company_phone" value="{{ company.company_phone }}" class="border p-2 w-full">
+            <input autocomplete="off" type="text" name="company_phone" value="{{ company.company_phone }}" class="border p-2 w-full">
         </div>
         <div>
             <label class="block mb-1">Email</label>
-            <input type="text" name="company_email" value="{{ company.company_email }}" class="border p-2 w-full">
+            <input autocomplete="off" type="text" name="company_email" value="{{ company.company_email }}" class="border p-2 w-full">
         </div>
         <button class="app-btn-accent bg-accent text-on-accent px-4 py-2">Сохранить</button>
     </form>

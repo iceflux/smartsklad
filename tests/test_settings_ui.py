@@ -27,6 +27,20 @@ def _admin(client, db_session):
     _login(client, db_session, "boss", "admin")
 
 
+def _track_rest_checked(html: str) -> bool:
+    """Отмечена ли галочка «Учитывать остатки при создании товаров»?
+
+    Ищет тег по имени поля, а не сверяет текст тега целиком: порядок атрибутов
+    в разметке — дело шаблона, а не смысл проверки. Раньше здесь стояла точная
+    строка, и любая правка шаблона (добавление autocomplete) роняла тест, хотя
+    поведение не менялось.
+    """
+    import re
+    tag = next((t for t in re.findall(r"<input[^<>]*>", html)
+                if 'name="track_rest_default"' in t), None)
+    return tag is not None and "checked" in tag
+
+
 def test_settings_page_403_without_right(client, db_session):
     _login(client, db_session, "seller1", "seller")  # seller не имеет settings.change
     r = client.get("/settings")
@@ -117,6 +131,43 @@ def test_clearing_the_telegram_fields_actually_clears_them(client, db_session):
     assert "не настроен" in body, (
         "после очистки канал обязан показываться как ненастроенный")
     assert "-100123" not in body, "старый чат продолжает светиться в форме"
+
+
+def test_no_field_on_the_settings_form_can_be_filled_by_the_browser(client, db_session):
+    """Браузер не должен подставлять в настройки сохранённые учётные данные.
+
+    Владелец обнаружил: в поле «Telegram-бот (токен)» само появлялся сохранённый
+    пароль от сайта, а в «Логин (пользователь почты)» — сохранённый логин. Причина
+    в том, что токен объявлен `type="password"` (чтобы не светить его на экране),
+    и браузер на поле пароля реагирует как на пароль приложения. Хуже того,
+    отправка формы затирала настоящий токен подставленным, то есть настройка
+    «не сохранялась» без всякой видимой причины.
+
+    Защита: у каждого поля формы задан `autocomplete`, причём у обоих секретов
+    (`telegram_bot_token`, `smtp_password`) — `new-password`, потому что `off`
+    браузер для паролей игнорирует. Требование «у каждого», а не «у этих двух»:
+    форма настроек не должна автозаполняться ни в одном поле — здесь нет ни
+    одного, куда вставленные браузером данные имели бы смысл.
+    """
+    import re
+
+    _admin(client, db_session)
+    r = client.get("/settings")
+    assert r.status_code == 200
+
+    form = re.search(r'<form method="post" action="/settings".*?</form>', r.text, re.S)
+    assert form, "форма настроек не найдена"
+    assert 'autocomplete="off"' in form.group(0).split(">")[0], (
+        "на форме настроек должно быть выключено автозаполнение")
+
+    for tag in re.findall(r"<input[^<>]*>", form.group(0)):
+        assert "autocomplete" in tag, f"поле без autocomplete, браузер его заполнит: {tag}"
+
+    for name in ("telegram_bot_token", "smtp_password"):
+        tag = next(t for t in re.findall(r"<input[^<>]*>", form.group(0))
+                   if f'name="{name}"' in t)
+        assert 'autocomplete="new-password"' in tag, (
+            f"{name} — секрет, для него нужен new-password, а не off: {tag}")
 
 
 def test_settings_page_shows_password_generation_fields(client, db_session):
@@ -246,7 +297,7 @@ def test_settings_page_bad_min_stock_days_does_not_save_other_fields(client, db_
     }, follow_redirects=False)
     assert r.status_code == 303
     r2 = client.get("/settings")
-    assert '<input type="checkbox" name="track_rest_default" checked' in r2.text
+    assert _track_rest_checked(r2.text)
 
 
 def test_settings_page_requires_min_stock_days(client, db_session):
@@ -348,5 +399,5 @@ def test_a_refused_threshold_does_not_save_the_other_fields(client, db_session):
         "search_slow_ms": "60000",
     }, follow_redirects=False)
     assert "Ошибка" in unquote(r.headers["location"])
-    assert '<input type="checkbox" name="track_rest_default" checked' in client.get("/settings").text
+    assert _track_rest_checked(client.get("/settings").text)
 
