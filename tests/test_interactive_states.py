@@ -143,8 +143,8 @@ def test_every_link_and_button_carries_exactly_one_state_class():
             f"{path.relative_to(ROOT)}: {tag[:110]} — состояний {sorted(states) or 'нет'}"
         )
         found[tag_name] = found.get(tag_name, 0) + 1
-    assert found == {"a": 99, "button": 75}, (
-        f"интерактивных элементов {found}, а проверка ждёт 98 ссылок и 75 кнопок: "
+    assert found == {"a": 97, "button": 75}, (
+        f"интерактивных элементов {found}, а проверка ждёт 97 ссылок и 75 кнопок: "
         "она обязана падать, когда появится новая, ещё не описанная здесь. "
         "Пять ссылок стояли на удалённой главной странице index.html, "
         "ссылка на товар — на странице поиска, кнопка «Найти» — в его форме в шапке, "
