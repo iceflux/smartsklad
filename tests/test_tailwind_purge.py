@@ -129,7 +129,7 @@ def test_no_template_uses_a_literal_palette_shade():
     }
     assert found == {}, (
         "в разметке вернулся литеральный оттенок Tailwind вместо токена: "
-        f"{found}. Соответствие «оттенок → токен» в AGENTS.md, раздел про токены."
+        f"{found}. Соответствие «оттенок → токен» перечислено в system_docs/ARCHITECTURE.md."
     )
 
 
