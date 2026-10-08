@@ -16,7 +16,7 @@
         <div class="border-t pt-4">
             <label class="block mb-1">Telegram-бот (токен)</label>
             <input type="password" name="telegram_bot_token" value="{{ telegram_bot_token }}" autocomplete="new-password" class="border p-2 w-full">
-            <p class="text-sm {% if telegram_bot_token %}text-success{% else %}text-danger{% endif %}">{% if telegram_bot_token %}настроено{% else %}не настроено{% endif %}</p>
+            {% if telegram_bot_token %}<p class="text-sm text-success">настроено</p>{% endif %}
             <p class="text-sm text-muted">Поле закрыто точками, но значение в нём есть. Очистите поле и сохраните — токен будет стёрт и уведомления в Telegram отключатся.</p>
         </div>
         <div>
@@ -42,7 +42,7 @@
         <div>
             <label class="block mb-1">Пароль</label>
             <input type="password" name="smtp_password" value="{{ smtp.password }}" autocomplete="new-password" class="border p-2 w-full">
-            <p class="text-sm {% if smtp.password %}text-success{% else %}text-danger{% endif %}">{% if smtp.password %}задан{% else %}не задан{% endif %}</p>
+            {% if smtp.password %}<p class="text-sm text-success">задан</p>{% endif %}
             <p class="text-sm text-muted">Поле закрыто точками, но значение в нём есть. Очистите поле и сохраните — пароль будет стёрт. В журнале изменений пароль попадает только замаскированным.</p>
         </div>
         <div>

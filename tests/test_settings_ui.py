@@ -134,8 +134,8 @@ def test_clearing_the_telegram_fields_actually_clears_them(client, db_session):
         "пустое поле обязано стирать чат получателя")
 
     body = client.get("/settings").text
-    assert "не настроено" in body, (
-        "после очистки канал обязан показываться как ненастроенный")
+    assert 'name="telegram_bot_token" value="' in body, (
+        "после очистки поле токена обязано быть пустым")
     assert "-100123" not in body, "старый чат продолжает светиться в форме"
 
 
@@ -163,7 +163,7 @@ def test_the_settings_form_has_no_placeholders(client, db_session):
         "на форме настроек остались подсказки внутри полей")
 
     # Состояние секрета обязано остаться видимым — иначе очистку нечем подтвердить.
-    assert "настроено" in r.text, "пропал статус сохранённого токена"
+    assert 'name="telegram_bot_token" value="1234567890:ABC"' in r.text, "пропал токен из поля"
 
 
 def test_no_field_on_the_settings_form_can_be_filled_by_the_browser(client, db_session):
@@ -203,46 +203,45 @@ def test_no_field_on_the_settings_form_can_be_filled_by_the_browser(client, db_s
             f"{name} — секрет, для него нужен new-password, а не off: {tag}")
 
 
-def test_the_secret_status_is_coloured_by_state(client, db_session):
-    """Статус настроенного канала зелёный, ненастроенного — красный.
+def test_an_unconfigured_secret_says_nothing_at_all(client, db_session):
+    """Пустое поле говорит само за себя — подписи под ним быть не должно.
 
-    Просил владелец, и без проверки правка шаблона могла бы убрать цвет молча:
-    слово «настроено» осталось бы на месте и выглядело бы исправно.
+    Владелец убрал надписи «не настроено» и «не задан»: он смотрел на пустую
+    форму и считал их лишними. Подпись в ненастроенном состоянии означала бы
+    второе место, где сказано «здесь ничего нет», а место это — само поле.
 
-    Проверяется пара «слово + класс» на обоих секретах и в обоих состояниях,
-    потому что ошибка здесь — перепутать местами насыщенность, а не забыть её.
+Настроенное состояние подпись оставляет: цвет и слово «настроено» просил
+    владелец отдельно, и там подпись ещё что-то добавляет к точкам в поле.
     """
     import re
 
     _admin(client, db_session)
+    html = client.get("/settings").text
+    form = re.search(r'<form method="post" action="/settings".*?</form>', html, re.S).group(0)
+    assert "не настроено" not in form, "пустое поле не должно подписываться"
+    assert "не задан" not in form, "пустой пароль не должен подписываться"
+    assert "text-danger" not in form, (
+        "красного статуса больше нет: ненастроенное состояние не подписано")
 
-    def status_paragraph(html: str) -> str:
-        """Абзац со статусом — тот, где слово «настроено»/«не настроено»."""
-        found = [p for p in re.findall(r"<p class=\"[^\"]*\">[^<]*настроено[^<]*</p>", html)]
-        return found[0] if found else ""
 
+def test_a_configured_secret_is_labelled_green(client, db_session):
+    """Настроенный канал помечен зелёным словом «настроено».
+
+    Проверка на слово и класс вместе: забыть цвет — молчаливый дефект, слово
+    осталось бы на месте и выглядело бы исправно.
+    """
+    _admin(client, db_session)
     set_setting(db_session, "telegram_bot_token", "1234567890:ABC", user=None)
     set_setting(db_session, "smtp_password", "the-mail-password", user=None)
     html = client.get("/settings").text
-    token_p = status_paragraph(html)
-    assert "настроено" in token_p and "text-success" in token_p, (
-        f"настроенный токен должен быть зелёным: {token_p!r}")
+    assert '<p class="text-sm text-success">настроено</p>' in html
+    assert '<p class="text-sm text-success">задан</p>' in html
 
     set_setting(db_session, "telegram_bot_token", "", user=None)
     set_setting(db_session, "smtp_password", "", user=None)
     html = client.get("/settings").text
-    token_p = status_paragraph(html)
-    assert "не настроено" in token_p and "text-danger" in token_p, (
-        f"ненастроенный токен должен быть красным: {token_p!r}")
-    mail_p = next((p for p in re.findall(r"<p class=\"[^\"]*\">[^<]*</p>", html)
-                   if "не задан" in p), "")
-    assert "text-danger" in mail_p, f"ненастроенный пароль должен быть красным: {mail_p!r}"
-
-    set_setting(db_session, "smtp_password", "the-mail-password", user=None)
-    html = client.get("/settings").text
-    mail_p = next((p for p in re.findall(r"<p class=\"[^\"]*\">[^<]*</p>", html)
-                   if "задан" in p and "не задан" not in p), "")
-    assert "text-success" in mail_p, f"заданный пароль должен быть зелёным: {mail_p!r}"
+    assert "настроено" not in html, "подпись должна исчезать вместе со значением"
+    assert ">задан<" not in html, "подпись должна исчезать вместе со значением"
 
 
 def test_settings_page_shows_password_generation_fields(client, db_session):

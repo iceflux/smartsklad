@@ -344,15 +344,20 @@ def test_the_api_and_the_audit_still_hide_the_password(client, db_session):
 
 
 def test_the_settings_page_shows_that_a_password_is_saved(client, db_session):
-    """Поле закрыто точками, поэтому статус обязан говорить, что значение есть."""
+    """Поле закрыто точками, поэтому настроенное состояние помечено словом.
+
+    Ненастроенное состояние не помечается ничего: пустое поле и так говорит,
+    что пароля нет, и владелец попросил эти надписи убрать.
+    """
     _admin(client, db_session)
     set_setting(db_session, SMTP_PASSWORD_KEY, "the-mail-password")
     page = client.get("/settings").text
-    assert "задан" in page and "не задан" not in page
+    assert '<p class="text-sm text-success">задан</p>' in page
+    assert "не задан" not in page
 
     set_setting(db_session, SMTP_PASSWORD_KEY, "")
     page = client.get("/settings").text
-    assert "не задан" in page
+    assert ">задан<" not in page, "пустое поле не должно подписываться"
 
 
 def test_the_password_key_is_in_the_one_masked_list():
