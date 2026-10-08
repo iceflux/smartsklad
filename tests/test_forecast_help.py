@@ -197,6 +197,56 @@ def test_the_window_explains_every_numeric_column_of_the_table(client, db_sessio
             f"окно не объясняет колонку {column!r}: выделенных имён в списке полей {named}")
 
 
+def test_the_window_explains_both_filters_above_the_table(client, db_session):
+    """Обе галочки над таблицей объяснены в окне.
+
+    Список названий берётся из самой страницы: у прогноза два фильтра, и молча
+    добавить третий можно было бы, не написав о нём ни слова. Раз текст
+    проверки перечислял бы фильтры сам, новый остался бы необъяснённым, и
+    человек увидел бы галочку без смысла.
+
+    Оба состояния проверяются: у фильтра есть и имя (то, что стоит на форме),
+    и объяснение — проверено здесь и то, и другое.
+    """
+    _admin(client, db_session)
+    page = client.get("/forecast").text
+
+    checkboxes = re.findall(r'<input[^>]*type="checkbox"[^>]*name="([^"]+)"', page)
+    assert set(checkboxes) == {"only_purchase", "below_min_stock"}, (
+        f"на странице не те фильтры: {checkboxes}")
+
+    window = _window_text(page)
+    items = re.findall(r"<li>(.*?)</li>", _window_markup(page), re.S)
+    explained = [_text(item) for item in items]
+    for name, words in (
+        ("только к закупке", ("оставляет товары",)),
+        ("ниже порога", ("остаток меньше",)),
+    ):
+        # Имя и объяснение ищутся В ОДНОМ пункте. По отдельности проверка прошла
+        # бы, убрав объяснение у одного фильтра: имя осталось бы в соседнем
+        # пункте или в подписи к галочке, а объяснение — в другом.
+        point = next((item for item in explained if name in item), None)
+        assert point, f"в окне нет пункта, который называет фильтр «{name}»"
+        for word in words:
+            assert word in point, (
+                f"пункт про «{name}» не говорит, что фильтр делает: нет {word!r} "
+                f"в {point!r}")
+
+
+def test_the_window_says_why_the_below_threshold_filter_adds_little(client, db_session):
+    """Свойство формулы, а не мнение: остаток ниже порога ⇒ товар к закупке.
+
+    Без этой строки человек включает «ниже порога» в надежде увидеть новое, а
+    видит почти то же, что даёт «только к закупке», и считает фильтр сломанным.
+    """
+    _admin(client, db_session)
+    window = _window_text(client.get("/forecast").text)
+    assert "почти всегда означает" in window, (
+        "окно обязано сказать, что «ниже порога» почти совпадает с «только к закупке»")
+    assert "истории продаж" in window, (
+        "надо назвать и исключение — иначе первое утверждение выглядит ложью")
+
+
 def test_the_window_names_every_horizon_the_service_forecasts(client, db_session):
     """Горизонты берутся из сервиса, а не из текста окна.
 
