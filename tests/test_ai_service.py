@@ -126,6 +126,82 @@ def _daily_sales(db_session, product, customer, days, quantity=2, start_number=1
     return first
 
 
+def test_below_min_stock_filter_uses_the_computed_threshold(db_session):
+    """Фильтр сравнивает остаток с ПОСЧИТАННЫМ порогом, а не с сырым значением.
+
+    Это главное в фильтре: у товара без своего минимального запаза порог всё
+    равно посчитан из «Запас в днях», и человек видит его в колонке «Запас» на
+    этой же странице. Сравнение с сырым `min_stock` выбросило бы такой товар
+    из отчёта, хотя остаток ниже порога, который перед глазами.
+    """
+    db = db_session
+    customer = _customer(db)
+    # Свой минимум задан: остаток ниже — попадает.
+    own_low = _product(db, sku="OWN-LOW", rest=5, min_stock=10)
+    # Свой минимум задан: остаток выше — не попадает.
+    own_ok = _product(db, sku="OWN-OK", rest=50, min_stock=10)
+    # Своего минимума нет: порог = продажи × 14 дней, остаток ниже него.
+    from_days = _product(db, sku="FROM-DAYS", rest=1)
+    for product in (own_low, own_ok, from_days):
+        _daily_sales(db, product, customer, 20, quantity=2,
+                     start_number=product.sku and 100)
+
+    rows, total = forecast_rows(db, below_min_stock=True)
+    skus = {row["sku"] for row in rows}
+    assert total == 2, f"под фильтр попали не те товары: {skus}"
+    assert own_low.sku in skus
+    assert own_ok.sku not in skus
+    assert from_days.sku in skus, (
+        "товар без своего минимума обязан попасть: его порог посчитан из "
+        "«Запас в днях» и виден в колонке «Запас»")
+    for row in rows:
+        assert row["rest"] < row["min_stock"], "в отчёте попал товар не ниже порога"
+
+
+def test_below_min_stock_filter_is_off_by_default(db_session):
+    """Без параметра фильтр не включается — иначе страница прогноза молча
+    потеряла бы товары, потому что по умолчанию показывает все."""
+    db = db_session
+    customer = _customer(db)
+    product = _product(db, sku="ALL", rest=1)
+    _daily_sales(db, product, customer, 20)
+
+    rows, total = forecast_rows(db)
+    assert total == 1, "товар не попал в обычный прогноз"
+
+
+def test_below_min_stock_is_always_a_purchase_when_there_are_sales(db_session):
+    """Остаток ниже порога ⇒ товар почти всегда и к закупке. Это свойство формулы,
+    а не совпадение, и его стоит знать, выбирая фильтры.
+
+    `need = Прогноз(30 дней) + Запас − Остаток`. При `Остаток < Запас` первая
+    разность положительна, и прогноз добавляет ещё, то есть `need > 0`
+    обязательно. Исключение одно: у товара нет достаточной истории продаж, тогда
+    `recommended_qty` остаётся пустым вовсе, а порог — посчитан.
+
+    Проверяется именно исключение: без него фильтр «ниже порога» был бы подмножеством
+    «только к закупке», и галочка ничего бы не добавляла.
+    """
+    db = db_session
+    customer = _customer(db)
+    with_sales = _product(db, sku="WITH-SALES", rest=1, min_stock=10)
+    _daily_sales(db, with_sales, customer, 20, quantity=2)
+
+    below, _ = forecast_rows(db, below_min_stock=True)
+    buy, _ = forecast_rows(db, only_purchase=True)
+    assert with_sales.sku in {r["sku"] for r in below}
+    assert with_sales.sku in {r["sku"] for r in buy}, (
+        "товар ниже порога обязан быть и к закупке — так выходит из формулы")
+
+    # Товар без истории продаж: порог посчитан, но рекомендации нет.
+    no_sales = _product(db, sku="NO-SALES", rest=1, min_stock=10)
+    below, _ = forecast_rows(db, below_min_stock=True)
+    buy, _ = forecast_rows(db, only_purchase=True)
+    assert no_sales.sku in {r["sku"] for r in below}, "порог посчитан даже без продаж"
+    assert no_sales.sku not in {r["sku"] for r in buy}, (
+        "без истории продаж рекомендации не бывает, но под «ниже порога» товар попадает")
+
+
 def test_forecast_rows_counts_sales_days(db_session):
     db = db_session
     customer = _customer(db)

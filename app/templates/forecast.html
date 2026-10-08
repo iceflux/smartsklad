@@ -22,6 +22,10 @@
             <input type="checkbox" name="only_purchase" value="1" {% if only_purchase %}checked{% endif %}>
             только к закупке
         </label>
+        <label class="mr-4">
+            <input type="checkbox" name="below_min_stock" value="1" {% if below_min_stock %}checked{% endif %}>
+            ниже порога
+        </label>
         <button class="app-btn border px-3 py-1">Применить</button>
     </form>
     <p class="mb-2 text-sm text-caption">Товаров: {{ total|num }}</p>
@@ -89,6 +93,15 @@
                     <li><strong>К закупке</strong> — сколько докупить. Формула:
                         <code>Прогноз(30 дней) + Запас − Остаток</code>.
                         Если результат ≤ 0 — в ячейке <strong>«не нужно»</strong>.</li>
+                </ul>
+
+                <h4 class="font-semibold">Фильтр «ниже порога»</h4>
+                <ul class="list-disc pl-4">
+                    <li>Оставляет товары, у которых остаток меньше посчитанного порога — того самого, что стоит
+                        в колонке <strong>«Запас»</strong>.</li>
+                    <li>Считается по посчитанному порогу, поэтому под фильтр попадает и товар, у которого своего
+                        минимального запаса нет: порог для него берётся из настройки <strong>«Запас в днях»</strong>.</li>
+                    <li>Товары без учёта остатков в прогноз не попадают вовсе — у них остаток не ведётся.</li>
                 </ul>
 
                 <h4 class="font-semibold">Статус «мало данных»</h4>

@@ -99,7 +99,7 @@ def _sales_by_product(db, start: date, end: date) -> dict[int, dict[date, int]]:
 
 def forecast_rows(
     db, *, lookback_days=LOOKBACK_DAYS, min_days=MIN_DAYS_FOR_FORECAST,
-    only_purchase=False, product_id=None, min_stock_days=None,
+    only_purchase=False, product_id=None, min_stock_days=None, below_min_stock=False,
     page=1, page_size=25, sort=None, direction=None,
 ) -> tuple[list[dict], int]:
     page = max(1, page or 1)
@@ -151,6 +151,13 @@ def forecast_rows(
         })
     if only_purchase:
         rows = [r for r in rows if r["recommended_qty"] is not None]
+    if below_min_stock:
+        # Сравниваем с ПОСЧИТАННЫМ порогом (`row["min_stock"]`, тот же, что в
+        # колонке «Запас»), а не с сырым `product.min_stock`: у товара без
+        # своего минимума порог всё равно посчитан из «Запас в днях», и такой
+        # товар подпадает под фильтр. С сырым значением он бы выпал, хотя
+        # остаток ниже порога, который человек видит на этой же странице.
+        rows = [r for r in rows if r["rest"] < r["min_stock"]]
     rows = apply_row_sort(rows, FORECAST_SORTS, _default_order, sort, direction,
                           _second_key)
     total = len(rows)

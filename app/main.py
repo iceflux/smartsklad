@@ -1235,23 +1235,31 @@ def create_app() -> FastAPI:
             return RedirectResponse("/login", status_code=303)
         ensure_permissions(user, Permission.analytics_view)
         only_purchase = request.query_params.get("only_purchase") == "1"
+        below_min_stock = request.query_params.get("below_min_stock") == "1"
         page = _page_param(request.query_params.get("page"))
         sort, direction = _sort_params(request)
         rows, total = forecast_rows(
             db,
             only_purchase=only_purchase,
+            below_min_stock=below_min_stock,
             page=page,
             sort=sort, direction=direction,
             min_stock_days=get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),
         )
         pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+        # Фильтр входит в base_qs обязательно: по нему строятся ссылки сортировки
+        # и постраничные переходы, и без него они молча сбросили бы фильтр,
+        # оставив человека на второй странице «всего» вместо второй страницы
+        # отчёта — ровно тот дефект, который ловили на живых фильтрах.
         base_qs = urlencode({k: v for k, v in {
             "only_purchase": "1" if only_purchase else None,
+            "below_min_stock": "1" if below_min_stock else None,
             "sort": sort, "dir": direction,
         }.items() if v not in (None, "")})
         return templates.TemplateResponse(request, "forecast.html", {
             "title": "Прогноз спроса", "user": user, "rows": rows, "total": total,
             "page": page, "pages": pages, "base_qs": base_qs, "only_purchase": only_purchase,
+            "below_min_stock": below_min_stock,
             "sort": sort, "direction": direction,
             "msg": request.query_params.get("msg"),
             **_page_context(user),

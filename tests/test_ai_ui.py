@@ -48,6 +48,9 @@ def _seed(db_session, rest=0, sku="SKU-UI"):
     return p
 
 
+import re
+
+
 def test_forecast_page_redirects_when_anonymous(client, db_session):
     r = client.get("/forecast", follow_redirects=False)
     assert r.status_code == 303
@@ -109,6 +112,52 @@ def test_forecast_page_only_purchase_filter(client, db_session):
     r = client.get("/forecast?only_purchase=1")
     assert r.status_code == 200
     assert "SKU-ENOUGH" not in r.text
+
+
+def test_forecast_page_below_min_stock_filter(client, db_session):
+    _admin(client, db_session)
+    _seed_low(db_session, sku="LOW", rest=2, min_stock=50)
+    _seed_low(db_session, sku="OK", rest=500, min_stock=50)
+    r = client.get("/forecast?below_min_stock=1")
+    assert r.status_code == 200
+    assert "LOW" in r.text
+    assert "OK" not in r.text, "товар выше порога попал в отчёт"
+
+
+def test_the_below_min_stock_filter_survives_pagination_and_sorting(client, db_session):
+    """Фильтр обязан пережить сортировку и постраничные ссылки.
+
+    Они строятся по `base_qs`. Если новый фильтр в него не попал, то вторая
+    страница отчёта молча превратилась бы во вторую страницу всего списка, а
+    сортировка — сбросила бы фильтр. Человек увидел бы «всего 30» и пустую
+    страницу и решил бы, что отчёт сломан.
+    """
+    _admin(client, db_session)
+    _seed_low(db_session, sku="LOW", rest=2, min_stock=50)
+
+    page = client.get("/forecast?below_min_stock=1").text
+    assert 'name="below_min_stock" value="1" checked' in page, (
+        "галочка фильтра обязана остаться отмеченной — состояние приходит из запроса")
+
+    # Ссылки сортировки несут фильтр: они строятся по base_qs.
+    sort_link = re.search(r'href="(/forecast\?[^"]*sort=[^"]*)"', page)
+    assert sort_link, "на странице нет ссылок сортировки"
+    assert "below_min_stock=1" in sort_link.group(1), (
+        f"ссылка сортировки потеряла фильтр: {sort_link.group(1)}")
+
+    # Постраничные ссылки — тоже. Страниц больше одной нужно добиться числом
+    # товаров, поэтому проверяется сам механизм на странице с сортировкой.
+    sorted_page = client.get(sort_link.group(1).replace("&amp;", "&")).text
+    assert 'name="below_min_stock" value="1" checked' in sorted_page, (
+        "переход по сортировке сбросил фильтр")
+
+
+def _seed_low(db_session, *, sku, rest, min_stock):
+    """Товар с продажами и собственным минимальным запасом — под оба фильтра."""
+    p = _seed(db_session, rest=rest, sku=sku)
+    p.min_stock = min_stock
+    db_session.commit()
+    return p
 
 
 def test_forecast_page_shows_message(client, db_session):
