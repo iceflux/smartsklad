@@ -96,7 +96,6 @@ def test_settings_shows_the_telegram_token_in_a_closed_field(client, db_session)
     r = client.get("/settings")
     assert r.status_code == 200
     assert 'type="password" name="telegram_bot_token" value="1234567890:ABC"' in r.text
-    assert "настроено" in r.text
 
 
 def test_clearing_the_telegram_fields_actually_clears_them(client, db_session):
@@ -203,45 +202,33 @@ def test_no_field_on_the_settings_form_can_be_filled_by_the_browser(client, db_s
             f"{name} — секрет, для него нужен new-password, а не off: {tag}")
 
 
-def test_an_unconfigured_secret_says_nothing_at_all(client, db_session):
-    """Пустое поле говорит само за себя — подписи под ним быть не должно.
+def test_a_secret_field_is_never_labelled(client, db_session):
+    """Под полями секретов нет ни одной надписи — ни в одном состоянии.
 
-    Владелец убрал надписи «не настроено» и «не задан»: он смотрел на пустую
-    форму и считал их лишними. Подпись в ненастроенном состоянии означала бы
-    второе место, где сказано «здесь ничего нет», а место это — само поле.
+    Владелец убрал их в два приёма: сначала «не настроено» и «не задан» — потому
+    что пустое поле и так говорит, что ничего нет, — потом и «настроено», потому
+    что точки в поле говорят то же самое про заполненное. Подпись под секретом
+    не сообщала ничего, чего не сообщало бы само поле.
 
-Настроенное состояние подпись оставляет: цвет и слово «настроено» просил
-    владелец отдельно, и там подпись ещё что-то добавляет к точкам в поле.
+    Проверка обоих состояний заодно: надпись, поставленная наоборот (зелёная в
+    пустом поле), прошла бы проверку «в настроенном есть», поэтому пустое
+    состояние тоже проверяется на отсутствие.
     """
     import re
 
     _admin(client, db_session)
-    html = client.get("/settings").text
-    form = re.search(r'<form method="post" action="/settings".*?</form>', html, re.S).group(0)
-    assert "не настроено" not in form, "пустое поле не должно подписываться"
-    assert "не задан" not in form, "пустой пароль не должен подписываться"
-    assert "text-danger" not in form, (
-        "красного статуса больше нет: ненастроенное состояние не подписано")
+    form_of = lambda: re.search(
+        r'<form method="post" action="/settings".*?</form>',
+        client.get("/settings").text, re.S).group(0)
 
+    for label in ("настроено", "не настроено", "задан", "не задан"):
+        assert label not in form_of(), f"подпись «{label}» вернулась под секретом"
 
-def test_a_configured_secret_is_labelled_green(client, db_session):
-    """Настроенный канал помечен зелёным словом «настроено».
-
-    Проверка на слово и класс вместе: забыть цвет — молчаливый дефект, слово
-    осталось бы на месте и выглядело бы исправно.
-    """
-    _admin(client, db_session)
     set_setting(db_session, "telegram_bot_token", "1234567890:ABC", user=None)
     set_setting(db_session, "smtp_password", "the-mail-password", user=None)
-    html = client.get("/settings").text
-    assert '<p class="text-sm text-success">настроено</p>' in html
-    assert '<p class="text-sm text-success">задан</p>' in html
-
-    set_setting(db_session, "telegram_bot_token", "", user=None)
-    set_setting(db_session, "smtp_password", "", user=None)
-    html = client.get("/settings").text
-    assert "настроено" not in html, "подпись должна исчезать вместе со значением"
-    assert ">задан<" not in html, "подпись должна исчезать вместе со значением"
+    filled = form_of()
+    for label in ("настроено", "не настроено", "задан", "не задан"):
+        assert label not in filled, f"подпись «{label}» появилась и у заполненного поля"
 
 
 def test_settings_page_shows_password_generation_fields(client, db_session):

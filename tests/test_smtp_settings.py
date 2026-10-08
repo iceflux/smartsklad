@@ -343,21 +343,26 @@ def test_the_api_and_the_audit_still_hide_the_password(client, db_session):
     assert SMTP_PASSWORD_KEY in {s["key"] for s in r.json()}
 
 
-def test_the_settings_page_shows_that_a_password_is_saved(client, db_session):
-    """Поле закрыто точками, поэтому настроенное состояние помечено словом.
+def test_the_settings_page_does_not_label_the_password(client, db_session):
+    """Под полем пароля нет надписи ни когда он есть, ни когда его нет.
 
-    Ненастроенное состояние не помечается ничего: пустое поле и так говорит,
-    что пароля нет, и владелец попросил эти надписи убрать.
+    Надписи убраны по требованию владельца в два приёма: сначала «не задан»
+    (пустое поле и так говорит), потом и «задан» (точки в поле говорят то же
+    про заполненное). Проверяется оба состояния, иначе надпись, поставленная
+    наоборот, прошла бы проверку по одному из них.
     """
+    import re
+
     _admin(client, db_session)
+    form_of = lambda: re.search(
+        r'<form method="post" action="/settings".*?</form>',
+        client.get("/settings").text, re.S).group(0)
+
     set_setting(db_session, SMTP_PASSWORD_KEY, "the-mail-password")
-    page = client.get("/settings").text
-    assert '<p class="text-sm text-success">задан</p>' in page
-    assert "не задан" not in page
+    assert "задан" not in form_of()
 
     set_setting(db_session, SMTP_PASSWORD_KEY, "")
-    page = client.get("/settings").text
-    assert ">задан<" not in page, "пустое поле не должно подписываться"
+    assert "задан" not in form_of()
 
 
 def test_the_password_key_is_in_the_one_masked_list():
