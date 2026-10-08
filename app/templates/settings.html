@@ -15,8 +15,8 @@
         </div>
         <div class="border-t pt-4">
             <label class="block mb-1">Telegram-бот (токен)</label>
-            <input type="password" name="telegram_bot_token" autocomplete="new-password" placeholder="{% if telegram_configured %}{{ telegram_token_mask }}{% else %}не настроен{% endif %}" class="border p-2 w-full">
-            <p class="text-sm text-muted">Для замены введите новый токен. {% if telegram_token_mask %}Сейчас: {{ telegram_token_mask }}{% endif %}</p>
+            <input type="password" name="telegram_bot_token" autocomplete="new-password" class="border p-2 w-full">
+            <p class="text-sm text-muted">{% if telegram_token_mask %}Сейчас сохранено: {{ telegram_token_mask }}.{% else %}Сейчас не настроено.{% endif %} Для замены введите новый токен, для отключения очистите поле — токен будет стёрт.</p>
         </div>
         <div>
             <label class="block mb-1">Telegram chat_id получателя</label>
@@ -40,8 +40,8 @@
         </div>
         <div>
             <label class="block mb-1">Пароль</label>
-            <input type="password" name="smtp_password" autocomplete="new-password" placeholder="{% if smtp_password_mask %}{{ smtp_password_mask }}{% else %}не задан{% endif %}" class="border p-2 w-full">
-            <p class="text-sm text-muted">Пустое поле — оставить прежний пароль, а не стереть его: вводить пароль заново при каждой правке адреса не нужно. {% if smtp_password_mask %}Сейчас: {{ smtp_password_mask }}. {% endif %}Сам пароль не показывается и в журнале попадает только замаскированным.</p>
+            <input type="password" name="smtp_password" autocomplete="new-password" class="border p-2 w-full">
+            <p class="text-sm text-muted">{% if smtp_password_mask %}Сейчас сохранено: {{ smtp_password_mask }}.{% else %}Сейчас не задан.{% endif %} Пустое поле — оставить прежний пароль, а не стереть его: вводить пароль заново при каждой правке адреса не нужно. Сам пароль не показывается и в журнале попадает только замаскированным.</p>
             <label class="block mt-1"><input autocomplete="off" type="checkbox" name="smtp_password_clear"> Стереть сохранённый пароль</label>
         </div>
         <div>

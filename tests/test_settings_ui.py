@@ -128,9 +128,37 @@ def test_clearing_the_telegram_fields_actually_clears_them(client, db_session):
         "пустое поле обязано стирать чат получателя")
 
     body = client.get("/settings").text
-    assert "не настроен" in body, (
+    assert "Сейчас не настроено" in body, (
         "после очистки канал обязан показываться как ненастроенный")
     assert "-100123" not in body, "старый чат продолжает светиться в форме"
+
+
+def test_the_settings_form_has_no_placeholders(client, db_session):
+    """На форме настроек не должно быть ни одного placeholder.
+
+    Владелец заметил, что два поля из девятнадцати несли подсказку внутри, а
+    остальные — нет, и вид формы был неоднородным. Подсказка перенесена в текст
+    под полем, потому что состояние секрета и раньше там дублировалось.
+
+    Почему не наоборот — «добавить placeholder во все поля»: у семнадцати полей
+    есть `value`, а placeholder показывается только на пустом поле, то есть на
+    них он был бы невидим. Единообразие достигается только удалением.
+    """
+    import re
+
+    _admin(client, db_session)
+    set_setting(db_session, "telegram_bot_token", "1234567890:ABC", user=None)
+    r = client.get("/settings")
+    assert r.status_code == 200
+
+    form = re.search(r'<form method="post" action="/settings".*?</form>', r.text, re.S)
+    assert form, "форма настроек не найдена"
+    assert "placeholder" not in form.group(0), (
+        "на форме настроек остались подсказки внутри полей")
+
+    # Состояние секрета обязано остаться видимым — иначе очистку нечем подтвердить.
+    assert "Сейчас сохранено" in r.text, "пропал статус сохранённого токена"
+    assert "****" in r.text, "пропала маска сохранённого токена"
 
 
 def test_no_field_on_the_settings_form_can_be_filled_by_the_browser(client, db_session):
