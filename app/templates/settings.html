@@ -15,8 +15,9 @@
         </div>
         <div class="border-t pt-4">
             <label class="block mb-1">Telegram-бот (токен)</label>
-            <input type="password" name="telegram_bot_token" autocomplete="new-password" class="border p-2 w-full">
-            <p class="text-sm text-muted">{% if telegram_token_mask %}Сейчас сохранено: {{ telegram_token_mask }}.{% else %}Сейчас не настроено.{% endif %} Для замены введите новый токен, для отключения очистите поле — токен будет стёрт.</p>
+            <input type="password" name="telegram_bot_token" value="{{ telegram_bot_token }}" autocomplete="new-password" class="border p-2 w-full">
+            <p class="text-sm {% if telegram_bot_token %}text-success{% else %}text-danger{% endif %}">{% if telegram_bot_token %}настроено{% else %}не настроено{% endif %}</p>
+            <p class="text-sm text-muted">Поле закрыто точками, но значение в нём есть. Очистите поле и сохраните — токен будет стёрт и уведомления в Telegram отключатся.</p>
         </div>
         <div>
             <label class="block mb-1">Telegram chat_id получателя</label>
@@ -40,9 +41,9 @@
         </div>
         <div>
             <label class="block mb-1">Пароль</label>
-            <input type="password" name="smtp_password" autocomplete="new-password" class="border p-2 w-full">
-            <p class="text-sm text-muted">{% if smtp_password_mask %}Сейчас сохранено: {{ smtp_password_mask }}.{% else %}Сейчас не задан.{% endif %} Пустое поле — оставить прежний пароль, а не стереть его: вводить пароль заново при каждой правке адреса не нужно. Сам пароль не показывается и в журнале попадает только замаскированным.</p>
-            <label class="block mt-1"><input autocomplete="off" type="checkbox" name="smtp_password_clear"> Стереть сохранённый пароль</label>
+            <input type="password" name="smtp_password" value="{{ smtp.password }}" autocomplete="new-password" class="border p-2 w-full">
+            <p class="text-sm {% if smtp.password %}text-success{% else %}text-danger{% endif %}">{% if smtp.password %}задан{% else %}не задан{% endif %}</p>
+            <p class="text-sm text-muted">Поле закрыто точками, но значение в нём есть. Очистите поле и сохраните — пароль будет стёрт. В журнале изменений пароль попадает только замаскированным.</p>
         </div>
         <div>
             <label class="block mb-1">Отправитель</label>

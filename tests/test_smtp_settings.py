@@ -315,21 +315,44 @@ def test_the_api_never_returns_the_password(client, db_session):
     assert any(s["key"] == "stock_track_default" for s in r.json())
 
 
-def test_the_settings_page_never_renders_the_password(client, db_session):
+def test_the_password_reaches_the_page_only_as_a_closed_field(client, db_session):
+    """Секрет отдаётся в поле, но остаётся закрытым на экране.
+
+    Раньше значение не отдавалось вовсе, и человек правил настройки вслепую:
+    поле выглядело пустым, хотя пароль был сохранён. Теперь значение в поле
+    есть, а `type="password"` показывает точки, так что на экране пароля нет.
+
+    Честная оговорка: значение лежит в HTML, то есть в исходнике страницы его
+    видно. Это осознанный размен — видимость значения для человека против
+    секретности исходника. Секретность, которая осталась в силе, проверяется
+    отдельно: API и журнал по-прежнему отдают маску.
+    """
     _admin(client, db_session)
     set_setting(db_session, SMTP_PASSWORD_KEY, "the-mail-password")
     page = client.get("/settings").text
-    assert "the-mail-password" not in page, "пароль почты виден на странице настроек"
+    assert 'type="password" name="smtp_password" value="the-mail-password"' in page
 
 
-def test_the_password_field_is_empty_and_carries_a_mask(client, db_session):
-    """Пароль не подставляется в поле: браузер вернул бы его в ответе страницы."""
+def test_the_api_and_the_audit_still_hide_the_password(client, db_session):
+    """Раз секрет теперь есть в HTML страницы, маска обязана остаться в другом
+    месте: `/api/settings` и журнал изменений — их читает не только владелец."""
+    _admin(client, db_session)
+    set_setting(db_session, SMTP_PASSWORD_KEY, "the-mail-password")
+    r = client.get("/api/settings")
+    assert "the-mail-password" not in r.text, "пароль почты вернулся из API открытым"
+    assert SMTP_PASSWORD_KEY in {s["key"] for s in r.json()}
+
+
+def test_the_settings_page_shows_that_a_password_is_saved(client, db_session):
+    """Поле закрыто точками, поэтому статус обязан говорить, что значение есть."""
     _admin(client, db_session)
     set_setting(db_session, SMTP_PASSWORD_KEY, "the-mail-password")
     page = client.get("/settings").text
-    assert f'value="{"the-mail-password"}"' not in page
-    assert 'type="password" name="smtp_password"' in page
-    assert "the-ma****ord" in page or "****" in page
+    assert "задан" in page and "не задан" not in page
+
+    set_setting(db_session, SMTP_PASSWORD_KEY, "")
+    page = client.get("/settings").text
+    assert "не задан" in page
 
 
 def test_the_password_key_is_in_the_one_masked_list():
@@ -342,43 +365,51 @@ def test_the_password_key_is_in_the_one_masked_list():
     assert "telegram_bot_token" in MASKED_KEYS
 
 
-# --- пустое поле пароля -------------------------------------------------
+# --- очистка пароля -----------------------------------------------------
 
 
-def test_an_empty_password_field_leaves_the_password_alone(client, db_session):
+def test_an_empty_password_field_clears_the_password(client, db_session):
+    """Очистил поле — сохранил — пароля нет.
+
+    Раньше пустое поле означало «оставить», а стирать надо было галочкой, и для
+    этого пришлось завести отдельный контрол. Владелец назвал это перебором: поле
+    и так видно, очистил — сохранил.
+    """
     _admin(client, db_session)
     client.post("/settings", data=_fill(**{SMTP_PASSWORD_KEY: "первый-пароль"}),
                 follow_redirects=False)
     client.post("/settings", data=_fill(**{SMTP_HOST_KEY: "другой.example.org"}),
                 follow_redirects=False)
     db_session.expire_all()
-    assert get_setting(db_session, SMTP_PASSWORD_KEY) == "первый-пароль", (
-        "смена адреса сервера стёрла пароль — его пришлось бы вводить заново")
+    assert get_setting(db_session, SMTP_PASSWORD_KEY) == "", (
+        "пустое поле обязано стирать пароль, а не молча оставлять прежний")
     assert get_setting(db_session, SMTP_HOST_KEY) == "другой.example.org"
 
 
-def test_the_checkbox_is_what_clears_the_password(client, db_session):
-    """Иначе ошибочно введённый пароль было бы уже не убрать из интерфейса."""
+def test_the_password_survives_a_change_of_another_field(client, db_session):
+    """Правка соседнего поля не должна затирать пароль.
+
+    Раз пароль теперь едет в форме, смена адреса сервера его приносит с собой —
+    но это поведение страницы, а не сервера: сервер получает то, что в полях.
+    Проверяется ровно то, что форма отдаёт значение на сервер при повторном
+    сохранении, иначе «очистил одно поле — потерял другое» стало бы реальной
+    поломкой интерфейса.
+    """
     _admin(client, db_session)
-    client.post("/settings", data=_fill(**{SMTP_PASSWORD_KEY: "первый-пароль"}),
-                follow_redirects=False)
-    client.post("/settings", data=_fill(**{"smtp_password_clear": "on"}),
-                follow_redirects=False)
-    db_session.expire_all()
-    assert get_setting(db_session, SMTP_PASSWORD_KEY) == ""
+    set_setting(db_session, SMTP_PASSWORD_KEY, "the-mail-password")
+    page = client.get("/settings").text
+    assert 'name="smtp_password" value="the-mail-password"' in page
+    assert 'name="smtp_password" value=""' not in page, (
+        "поле пароля должно приходить заполненным, иначе правка любого соседнего "
+        "поля стёрла бы пароль")
 
 
-def test_the_checkbox_wins_over_a_typed_password(client, db_session):
-    """Галочка «стереть» и введённый пароль — противоречие, и разрешается оно
-    в пользу галочки: человек нажал её, чтобы убрать."""
+def test_there_is_no_clear_checkbox_left(client, db_session):
+    """Галочка удалена вместе с «оставлять прежний пароль» — обе вещи ушли вместе."""
     _admin(client, db_session)
-    client.post("/settings", data=_fill(**{SMTP_PASSWORD_KEY: "первый-пароль"}),
-                follow_redirects=False)
-    client.post("/settings", data=_fill(**{SMTP_PASSWORD_KEY: "второй",
-                                           "smtp_password_clear": "on"}),
-                follow_redirects=False)
-    db_session.expire_all()
-    assert get_setting(db_session, SMTP_PASSWORD_KEY) == ""
+    page = client.get("/settings").text
+    assert "smtp_password_clear" not in page
+    assert "Стереть сохранённый пароль" not in page
 
 
 # --- порт ---------------------------------------------------------------

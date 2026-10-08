@@ -84,13 +84,19 @@ def test_detail_shows_track_rest(client, db_session):
     assert "нет" in r2.text  # «Учёт остатков: нет»
 
 
-def test_settings_shows_masked_telegram_token(client, db_session):
+def test_settings_shows_the_telegram_token_in_a_closed_field(client, db_session):
+    """Токен едет в поле, чтобы человек видел, что он сохранён.
+
+    Раньше токен отдавался маской и в поле не попадал, из-за чего страница
+    выглядела так, будто настройки нет. На экране поле закрыто (`type="password"`),
+    а маска в API и журнале осталась — это проверяет test_smtp_settings.
+    """
     _admin(client, db_session)
     set_setting(db_session, "telegram_bot_token", "1234567890:ABC", user=None)
     r = client.get("/settings")
     assert r.status_code == 200
-    assert "1234567890" not in r.text  # полный токен не светится
-    assert "****" in r.text  # маска
+    assert 'type="password" name="telegram_bot_token" value="1234567890:ABC"' in r.text
+    assert "настроено" in r.text
 
 
 def test_clearing_the_telegram_fields_actually_clears_them(client, db_session):
@@ -128,7 +134,7 @@ def test_clearing_the_telegram_fields_actually_clears_them(client, db_session):
         "пустое поле обязано стирать чат получателя")
 
     body = client.get("/settings").text
-    assert "Сейчас не настроено" in body, (
+    assert "не настроено" in body, (
         "после очистки канал обязан показываться как ненастроенный")
     assert "-100123" not in body, "старый чат продолжает светиться в форме"
 
@@ -157,8 +163,7 @@ def test_the_settings_form_has_no_placeholders(client, db_session):
         "на форме настроек остались подсказки внутри полей")
 
     # Состояние секрета обязано остаться видимым — иначе очистку нечем подтвердить.
-    assert "Сейчас сохранено" in r.text, "пропал статус сохранённого токена"
-    assert "****" in r.text, "пропала маска сохранённого токена"
+    assert "настроено" in r.text, "пропал статус сохранённого токена"
 
 
 def test_no_field_on_the_settings_form_can_be_filled_by_the_browser(client, db_session):
@@ -196,6 +201,48 @@ def test_no_field_on_the_settings_form_can_be_filled_by_the_browser(client, db_s
                    if f'name="{name}"' in t)
         assert 'autocomplete="new-password"' in tag, (
             f"{name} — секрет, для него нужен new-password, а не off: {tag}")
+
+
+def test_the_secret_status_is_coloured_by_state(client, db_session):
+    """Статус настроенного канала зелёный, ненастроенного — красный.
+
+    Просил владелец, и без проверки правка шаблона могла бы убрать цвет молча:
+    слово «настроено» осталось бы на месте и выглядело бы исправно.
+
+    Проверяется пара «слово + класс» на обоих секретах и в обоих состояниях,
+    потому что ошибка здесь — перепутать местами насыщенность, а не забыть её.
+    """
+    import re
+
+    _admin(client, db_session)
+
+    def status_paragraph(html: str) -> str:
+        """Абзац со статусом — тот, где слово «настроено»/«не настроено»."""
+        found = [p for p in re.findall(r"<p class=\"[^\"]*\">[^<]*настроено[^<]*</p>", html)]
+        return found[0] if found else ""
+
+    set_setting(db_session, "telegram_bot_token", "1234567890:ABC", user=None)
+    set_setting(db_session, "smtp_password", "the-mail-password", user=None)
+    html = client.get("/settings").text
+    token_p = status_paragraph(html)
+    assert "настроено" in token_p and "text-success" in token_p, (
+        f"настроенный токен должен быть зелёным: {token_p!r}")
+
+    set_setting(db_session, "telegram_bot_token", "", user=None)
+    set_setting(db_session, "smtp_password", "", user=None)
+    html = client.get("/settings").text
+    token_p = status_paragraph(html)
+    assert "не настроено" in token_p and "text-danger" in token_p, (
+        f"ненастроенный токен должен быть красным: {token_p!r}")
+    mail_p = next((p for p in re.findall(r"<p class=\"[^\"]*\">[^<]*</p>", html)
+                   if "не задан" in p), "")
+    assert "text-danger" in mail_p, f"ненастроенный пароль должен быть красным: {mail_p!r}"
+
+    set_setting(db_session, "smtp_password", "the-mail-password", user=None)
+    html = client.get("/settings").text
+    mail_p = next((p for p in re.findall(r"<p class=\"[^\"]*\">[^<]*</p>", html)
+                   if "задан" in p and "не задан" not in p), "")
+    assert "text-success" in mail_p, f"заданный пароль должен быть зелёным: {mail_p!r}"
 
 
 def test_settings_page_shows_password_generation_fields(client, db_session):

@@ -611,13 +611,13 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "settings.html", {
             "title": "Настройки", "user": user,
             "stock_track_default": get_setting(db, STOCK_TRACK_DEFAULT_KEY),
-            "telegram_token_mask": (token[:3] + "****" + token[-3:]) if len(token) > 6 else ("****" if token else ""),
-            "telegram_configured": bool(token and chat_id),
+            # Секреты отдаются в поле как есть, а не маской: пустое поле выглядело
+            # как «ничего не сохранено», хотя значение было, и человек правил
+            # настройки вслепую. Поле остаётся type="password", то есть на экране
+            # точки, и маскирование в API и журнале на этом не меняется.
+            "telegram_bot_token": token,
             "telegram_chat_id": chat_id,
-            # Пароль в шаблон не попадает — только маска. Отдать в контекст само
-            # значение значило бы оставить секрет в руках любого правки шаблона.
-            "smtp": {key: value for key, value in mail.items() if key != "password"},
-            "smtp_password_mask": mask_secret(mail["password"]),
+            "smtp": mail,
             "msg": request.query_params.get("msg"),
             "user_password_charset": get_setting(db, USER_PASSWORD_CHARSET_KEY) or DEFAULT_PASSWORD_CHARSET,
             "user_password_length": get_setting(db, USER_PASSWORD_LENGTH_KEY) or DEFAULT_PASSWORD_LENGTH,
@@ -678,14 +678,11 @@ def create_app() -> FastAPI:
                            (SMTP_USER_KEY, (form.get(SMTP_USER_KEY) or [""])[0].strip()),
                            (SMTP_FROM_KEY, (form.get(SMTP_FROM_KEY) or [""])[0].strip())):
             set_setting(db, key, value, user=user)
-        # Пустой пароль означает «оставить как есть», а не «стереть»: иначе
-        # смена адреса сервера требовала бы вводить пароль заново. Стереть можно
-        # галочкой — без неё ошибочно введённый пароль было бы уже не убрать.
+        # Пустой пароль означает «стереть», как и у остальных полей. Раньше здесь
+        # было «оставить как есть» плюс галочка «стереть», а владелец назвал это
+        # перебором: поле и так видно, очистил — сохранил, и секрет ушёл.
         smtp_password = (form.get(SMTP_PASSWORD_KEY) or [""])[0].strip()
-        if (form.get("smtp_password_clear") or [""])[0] == "on":
-            set_setting(db, SMTP_PASSWORD_KEY, "", user=user)
-        elif smtp_password:
-            set_setting(db, SMTP_PASSWORD_KEY, smtp_password, user=user)
+        set_setting(db, SMTP_PASSWORD_KEY, smtp_password, user=user)
         for key, _label in COMPANY_FIELDS:
             set_setting(db, key, (form.get(key) or [""])[0].strip(), user=user)
         return RedirectResponse("/settings?msg=Сохранено", status_code=303)
