@@ -119,6 +119,58 @@ def test_bulk_category_page_action(client, db_session):
     assert client.get(f"/api/products/{p['id']}").json()["category_id"] == cat["id"]
 
 
+def test_the_product_card_shows_the_minimum_stock_and_where_it_comes_from(client, db_session):
+    """Карточка показывает «Минимальный запас», а если его нет — откуда берётся.
+
+    Раньше значение можно было заполнить в форме товара и потом нигде не увидеть,
+    то есть сохранить и не проверить. Три состояния различаются не украшением,
+    а смыслом расчёта, поэтому проверяются все три:
+
+    * NULL — своего минимума нет, порог считается из «Запас в днях»;
+    * 0 — страховка отключена осознанно, и «Запас в днях» на этот товар не действует;
+    * число — своя страховка в единицах.
+    """
+    _admin(client, db_session)
+
+    unset = _make_product(client, sku="MS-NONE")
+    zero = _make_product(client, sku="MS-ZERO", min_stock=0)
+    own = _make_product(client, sku="MS-OWN", min_stock=25)
+
+    page = client.get(f"/products/{unset['id']}").text
+    assert "Не задан" in page, "пустой минимальный запас должен называться прямо"
+    assert "Запас в днях" in page, "пустое значение обязано сказать, откуда возьмётся порог"
+
+    page = client.get(f"/products/{zero['id']}").text
+    assert "страховка не нужна" in page, (
+        "ноль — это осознанный отказ от страховки, а не отсутствие значения")
+    assert "задано явно" in page, (
+        "без этих слов неясно, почему «Запас в днях» не действует на этот товар")
+
+    page = client.get(f"/products/{own['id']}").text
+    assert "25" in page, "заданный минимальный запас должен быть виден числом"
+
+
+def test_the_product_card_names_the_current_days_setting_not_the_default(client, db_session):
+    """В подписи стоит то «Запас в днях», которое сейчас в настройках.
+
+    Число дней берётся из настроек, а не из кода, иначе после смены настройки
+    страница продолжала бы называть 14 дней при фактических 30 — и человек
+    посчитал бы по ней неверный порог.
+    """
+    from app.modules.settings.service import MIN_STOCK_DAYS_KEY, set_setting
+
+    _admin(client, db_session)
+    set_setting(db_session, MIN_STOCK_DAYS_KEY, "30")
+    db_session.expire_all()
+
+    product = _make_product(client, sku="MS-DAYS")
+    page = client.get(f"/products/{product['id']}").text
+    assert "(30 дней)" in page, "подпись обязана называть текущее число дней из настроек"
+    assert "(14 дней)" not in page, (
+        "в подписи осталось значение по умолчанию — настройку сменили, а страница "
+        "об этом не знает")
+
+
 def test_product_new_page_shows_min_stock_field(client, db_session):
     _admin(client, db_session)
     r = client.get("/products/new")

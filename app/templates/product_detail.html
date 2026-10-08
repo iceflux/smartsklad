@@ -25,6 +25,7 @@
             <tr class="border-b"><th class="p-2 text-left">Единица измерения</th><td class="p-2">{{ product.unit }}</td></tr>
             <tr class="border-b"><th class="p-2 text-left">Цена</th><td class="p-2">{{ product.price|num }}</td></tr>
             <tr class="border-b"><th class="p-2 text-left">Остаток</th><td class="p-2">{{ product.rest|num }}</td></tr>
+            <tr class="border-b"><th class="p-2 text-left">Минимальный запас</th><td class="p-2">{% if product.min_stock is none %}Не задан — считается из настройки «Запас в днях» ({{ min_stock_days_hint }} дней){% elif product.min_stock == 0 %}0 — страховка не нужна (задано явно){% else %}{{ product.min_stock|num }} шт.{% endif %}</td></tr>
             <tr class="border-b"><th class="p-2 text-left">Учёт остатков</th><td class="p-2">{% if product.track_rest %}да{% else %}нет{% endif %}</td></tr>
             <tr class="border-b"><th class="p-2 text-left">Статус</th><td class="p-2">{% if product.is_deleted %}удалён{% else %}активен{% endif %}</td></tr>
         </tbody>

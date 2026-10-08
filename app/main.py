@@ -360,6 +360,11 @@ def _products_listing(db: Session, request: Request) -> dict:
         "id": p.id, "name": p.name, "sku": p.sku,
         "category_name": _category_label(p.category),
         "unit": p.unit, "price": p.price, "rest": p.rest,
+        # `min_stock` здесь обязателен, а не украшение: список рисуется по этому
+        # словарю, а не по ORM-объекту, и без ключа в шаблоне `p.min_stock`
+        # будет Undefined — сравнение либо молча не сработает, либо уронит
+        # страницу. Тот же список читают страница товаров и окно выбора в заказе.
+        "min_stock": p.min_stock,
         "is_deleted": p.is_deleted,
     } for p in items]
     return _listing(request, rows, {
@@ -1277,6 +1282,10 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "product_detail.html", {
             "title": product.name, "user": user, "product": product,
             "category_name": _category_label(product.category),
+            # Карточка показывает, из чего считается порог, когда у товара нет
+            # своего минимального запаса, — значит, ей нужно текущее число дней
+            # из настроек, а не значение по умолчанию из кода.
+            "min_stock_days_hint": get_int_setting(db, MIN_STOCK_DAYS_KEY, DEFAULT_MIN_STOCK_DAYS),
             "characteristic": product.characteristic or {},
             "price_history": price_history,
             "msg": request.query_params.get("msg"),
