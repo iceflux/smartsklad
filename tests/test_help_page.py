@@ -446,6 +446,36 @@ def _section(body: str, start: str, end: str) -> str:
     return body[body.index(f'id="{start}"'):body.index(f'id="{end}"')]
 
 
+def test_the_help_says_where_to_get_a_missing_right(client, db_session):
+    """Человек без права должен узнать, что раздела нет из-за роли и куда идти.
+
+    Смысл в том, что этот текст отвечает на вопрос «почему я не вижу раздел» —
+    а вопрос возникает у того, у кого прав меньше всего, то есть у новичка.
+    Поэтому место проверяется строго: внутри раздела о ролях, а не где попало,
+    и рядом должен быть адрес страницы, где право выдают.
+    """
+    _admin(client, db_session)
+    r = client.get("/help")
+    assert r.status_code == 200
+    body = r.text
+
+    roles = _section(body, "roles", "settings")
+    text = _text(roles)
+    assert "Если раздела нет в меню" in text, (
+        "в разделе о ролях должно быть сказано, что отсутствие раздела — это право")
+    assert "у вашей роли нет на него права" in text, (
+        "причина должна быть названа прямо: дело в роли, а не в настройке")
+    assert "выдаёт администратор" in text, "не сказано, кто выдаёт права"
+    assert 'href="/roles"' in roles, (
+        "рядом должен быть адрес страницы, где право выдают, а не только слово «роли»")
+
+    # Смысл проверяется в обе стороны: та же фраза в другом разделе — это
+    # не то место, и проверка «есть где-то на странице» её бы пропустила.
+    for other in ("interface", "settings", "mvp"):
+        assert "Если раздела нет в меню" not in _text(_section(body, other, "orders")), (
+            f"фраза продублирована в разделе {other}")
+
+
 def test_the_mvp_limits_and_the_known_problems_are_two_separate_lists(client, db_session):
     """Ограничения и дефекты — разные списки, и смешивать их нельзя.
 
