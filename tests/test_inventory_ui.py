@@ -171,6 +171,74 @@ def test_the_product_card_names_the_current_days_setting_not_the_default(client,
         "об этом не знает")
 
 
+BELOW_MIN = "Ниже минимума в карточке"
+
+
+def test_the_products_list_marks_a_product_below_its_own_minimum(client, db_session):
+    """В списке товаров остаток сравнивается с минимумом ИЗ КАРТОЧКИ.
+
+    Именно из карточки, то есть по сырому `min_stock`, а не по посчитанному
+    порогу прогноза: список строится на остатке и карточке, средние продажи
+    здесь не считаются. Порог «Запас в днях» живёт на прогнозе, и справка
+    говорит, что это два разных порога.
+    """
+    _admin(client, db_session)
+    low = _make_product(client, sku="LOW", rest=5, min_stock=10)
+    enough = _make_product(client, sku="ENOUGH", rest=15, min_stock=10)
+    unset = _make_product(client, sku="UNSET", rest=1)
+
+    page = client.get("/products").text
+    assert BELOW_MIN in page, "товар с остатком ниже минимума должен быть помечен"
+
+    # Помечен только тот, у кого помечен именно он: у «ENOUGH» и у товара без
+    # минимума отметки быть не должно, иначе строка в списке ничего не значит.
+    rows = _rest_cells(page)
+    assert rows["LOW"].endswith(BELOW_MIN), "отметка должна стоять у нужного товара"
+    assert BELOW_MIN not in rows["ENOUGH"], "остаток выше минимума — отметки быть не должно"
+    assert BELOW_MIN not in rows["UNSET"], (
+        "без своего минимума товар не помечается: считать не с чем")
+
+
+def test_the_below_minimum_mark_shows_in_the_order_picker_window(client, db_session):
+    """Отметка видна и в окне выбора товара в заказе.
+
+    Это решение владельца, а не побочный эффект: менеджер замечает, что товар
+    на исходе, ещё до добавления позиции. Список и окно рисует один кусок
+    шаблона, поэтому отметка приходит вместе с ним — и проверка закрепляет
+    именно это, иначе следующая правка partial уберёт её молча.
+    """
+    _admin(client, db_session)
+    _make_product(client, sku="LOW", rest=5, min_stock=10)
+    window = client.get("/api/lookup/products/table").text
+    assert BELOW_MIN in window, (
+        "в окне выбора товара отметки нет — решение владельца нарушено")
+
+
+def _rest_cells(page_html):
+    """Остаток каждого товара по его артикулу: строки таблицы → {sku: ячейка}.
+
+    Колонка берётся по позиции заголовка, а не по номеру: у страницы товаров
+    впереди стоит ячейка с галочкой, а в окне выбора её нет, так что «шестая
+    ячейка» означала бы разные колонки в двух разных таблицах.
+    """
+    def plain(cell):
+        return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", cell)).strip()
+
+    header = re.search(r"<thead>(.*?)</thead>", page_html, re.S)
+    heads = [plain(h) for h in re.findall(r"<th[^>]*>(.*?)</th>", header.group(1), re.S)]
+    sku_at = heads.index("Артикул")
+    rest_at = heads.index("Остаток")
+
+    out = {}
+    body = re.search(r"<tbody>(.*?)</tbody>", page_html, re.S)
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", body.group(1), re.S):
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+        if len(cells) <= rest_at:
+            continue
+        out[plain(cells[sku_at])] = plain(cells[rest_at])
+    return out
+
+
 def test_product_new_page_shows_min_stock_field(client, db_session):
     _admin(client, db_session)
     r = client.get("/products/new")

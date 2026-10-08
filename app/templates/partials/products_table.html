@@ -42,7 +42,7 @@
             <td class="p-2">{{ p.category_name }}</td>
             <td class="p-2">{{ p.unit }}</td>
             <td class="p-2">{{ p.price|num }}</td>
-            <td class="p-2">{{ p.rest|num }}</td>
+            <td class="p-2">{{ p.rest|num }}{% if p.min_stock is not none and p.rest < p.min_stock %}<br><span class="text-xs text-danger">Ниже минимума в карточке</span>{% endif %}</td>
             {% if actions %}
             <td class="p-2">
                 {% if p.is_deleted %}
