@@ -1,112 +1,158 @@
-# СмартСклад
+English | [Русский](README.ru.md)
 
-Внутреннее приложение для торговли: клиенты, товары, заказы, склад, печать документов,
-уведомления, аналитика продаж и прогноз спроса.
+# SmartSklad
 
-Написано на FastAPI с синхронным SQLAlchemy. Всё, включая вёрстку, — без сборщика
-фреймворков в рантайме: готовый CSS лежит в репозитории и подключается как есть.
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![FastAPI](https://img.shields.io/badge/framework-FastAPI-teal?logo=fastapi)
+![Database](https://img.shields.io/badge/database-PostgreSQL-336791?logo=postgresql)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## Что умеет
+A web app for a small shop: customers, products, orders, stock, document printing,
+notifications, sales analytics and demand forecasting.
+**Stack:** FastAPI, synchronous SQLAlchemy, PostgreSQL, Jinja2, ReportLab, Tailwind.
 
-| Раздел | Что делает |
-|---|---|
-| Заказы | создание и правка, подстановка клиента и товара поиском, статусы, списание остатков при переводе в «Выполнен» |
-| Клиенты | карточка, поиск, персональная скидка, история заказов |
-| Товары | карточка, категории, справочник единиц измерения, учёт остатков, минимальный запас |
-| Склад | остатки, резервные копии по расписанию, восстановление |
-| Импорт из 1С | выгрузка JSON: товары, клиенты, заказы; сопоставление с уже заведёнными записями |
-| Печать | документ заказа, предпросмотр, PDF, отправка на почту и в Telegram |
-| Уведомления | письмо клиенту и сообщение в Telegram с PDF-вложением |
-| Аналитика | продажи за период, график, топ товаров и клиентов, выгрузка CSV |
-| Прогноз спроса | линейная регрессия на продажах за 90 дней, рекомендация «к закупке» |
-| Роли и права | четыре системные роли, выдача прав администратором |
-| Журнал аудита | кто, что и когда изменил |
+The layout ships as prebuilt CSS, so no bundler runs in production - `app/static/app.css`
+is committed and served as is. Node is needed only to rebuild it after a style change.
 
-Подробности — в [docs/user_guide.md](docs/user_guide.md) (как пользоваться) и
-[docs/admin_guide.md](docs/admin_guide.md) (установка и обслуживание).
+## Features
 
-## Требования
+- **Orders** - create and edit, customer and product lookup by typing, four statuses,
+  stock write-off on "Done" and return on rollback, per-line and per-order discounts,
+  copy of an order, audit trail on the card
+- **Products** - card with description, categories, units of measure, price history,
+  stock tracking, per-product minimum stock
+- **Customers** - card, search by name, phone or INN, personal discount, order
+  statistics
+- **Stock** - balances, scheduled and manual backups (`pg_dump`), restore with a
+  countdown
+- **1C import** - JSON export of products, customers and orders; matching against
+  already existing records by id or name, no duplicates on a repeated run
+- **Printing** - one order document for print preview, PDF, email and Telegram;
+  print straight from the order page
+- **Notifications** - email to the customer and a Telegram message, both with a PDF
+  attachment
+- **Analytics** - sales by period, chart, top products and customers, CSV export
+- **Demand forecast** - linear regression over 90 days of sales, a "to purchase"
+  recommendation and a below-threshold filter
+- **Roles and permissions** - four system roles (seller, warehouseman, manager,
+  admin), grants managed from the UI, login rate limiting
+- **Audit log** - who changed what, when, from which address, with old and new values
 
-- PostgreSQL 15 или новее;
-- Python 3.11 или новее;
-- `pg_dump` и `pg_restore` в `PATH` — без них резервные копии не создаются.
+## How it works
 
-Проверено на PostgreSQL 18.6 и Python 3.13. Более старшие версии не проверялись.
+1. A customer places an order. The order is the central record: customer, line items,
+   discounts, total.
+2. On "Done" the app writes off stock. On rollback it returns the stock.
+3. The order document is generated from the same data for preview, print, PDF, email
+   and Telegram - one source of truth.
+4. Analytics and the demand forecast read the same orders and stock.
 
-## Установка
+## Project structure
+
+```
+├── app/
+│   ├── main.py                 - FastAPI entry point, page routes
+│   ├── config.py               - settings
+│   ├── db.py                   - SQLAlchemy engine, session, Base
+│   ├── modules/
+│   │   ├── auth/               - users, roles, sessions, password recovery
+│   │   ├── inventory/          - products, categories, units, stock, price history
+│   │   ├── customers/          - customer cards, discounts
+│   │   ├── orders/             - orders, line items, statuses, snapshots
+│   │   ├── printing/           - document generation (ReportLab PDF, Jinja2 HTML)
+│   │   ├── notifications/      - email (SMTP) and Telegram delivery
+│   │   ├── ai/                 - demand forecast (linear regression on stdlib)
+│   │   ├── dashboard/          - sales analytics
+│   │   ├── importer/           - JSON import from 1C
+│   │   ├── backup/             - pg_dump / pg_restore scheduling
+│   │   ├── audit/              - action log
+│   │   └── settings/           - app settings (key-value)
+│   ├── templates/              - Jinja2 templates
+│   └── static/                 - prebuilt CSS
+├── alembic/                    - database migrations
+├── scripts/gen_demo.py         - demo data generator
+├── tests/                      - 1560 tests
+├── docs/                       - user_guide.md, admin_guide.md, test_checklist.md
+├── requirements.txt
+└── README.md
+```
+
+## Requirements
+
+- PostgreSQL 15 or newer
+- Python 3.11 or newer
+- `pg_dump` and `pg_restore` on `PATH` - without them backups silently do not work
+
+Verified on PostgreSQL 18.6 and Python 3.13. Older versions were not tested.
+
+## How to run
 
 ```bash
-# 1. База и роль
+# 1. Database and role
 psql -U postgres -c "CREATE ROLE smartsklad LOGIN PASSWORD 'smartsklad';"
 psql -U postgres -c "CREATE DATABASE smartsklad OWNER smartsklad;"
 
-# 2. Зависимости и настройки
+# 2. Dependencies and settings
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
-cp .env.example .env      # Windows: Copy-Item .env.example .env
+cp .env.example .env
 
-# 3. Правьте DATABASE_URL и ADMIN_PASSWORD в .env
+# 3. Edit DATABASE_URL and ADMIN_PASSWORD in .env
 
-# 4. Схема базы
+# 4. Schema
 .venv/bin/alembic upgrade head
 
-# 5. Запуск
+# 5. Run
 .venv/bin/uvicorn "app.main:app"
 ```
 
-Приложение откроется на <http://127.0.0.1:8000>. Первый вход — логин и пароль
-из `ADMIN_USERNAME` и `ADMIN_PASSWORD`: при пустой базе администратор создаётся
-автоматически при первом старте.
+Open http://127.0.0.1:8000. The first login uses `ADMIN_USERNAME` and `ADMIN_PASSWORD`
+from `.env`; on an empty database the admin is created automatically on first start.
 
-> Для Windows команды выполняются в PowerShell, активация окружения —
-> `.\.venv\Scripts\Activate.ps1`, запуск — `.\.venv\Scripts\python.exe -m uvicorn "app.main:app"`.
-> Полная инструкция: [docs/admin_guide.md](docs/admin_guide.md).
+On Windows use `.\.venv\Scripts\Activate.ps1` to activate and
+`.\.venv\Scripts\python.exe -m uvicorn "app.main:app"` to run.
 
-## Настройки
+Full instructions: [docs/admin_guide.md](docs/admin_guide.md).
 
-Постоянные настройки — в файле `.env` (шаблон `.env.example`), разовые — на странице
-«Настройки» прямо в приложении: уведомления Telegram, параметры SMTP, срок хранения
-сессии, «Запас в днях», порог медленного поиска и реквизиты компании для печатного
-документа.
-
-Файл `.env` не попадает в репозиторий. Всё, что в нём есть, — подключение к базе и
-пароль первого администратора.
-
-## Демонстрационные данные
+## Demo data
 
 ```bash
 .venv/bin/python scripts/gen_demo.py --out .system_folder/1c_export/demo.json
 ```
 
-Путь для `--out` обязателен. Скрипт пишет JSON в формате, который читает сам импорт,
-поэтому файла достаточно положить в папку выгрузки, заданную на странице
-«Импорт из 1С», и применить его оттуда — данные попадут в базу обычным путём, без
-прямой записи.
+`--out` is required. The script writes JSON in the format the 1C import reads, so the
+data lands in the database through the normal import path with no direct writes. Without
+`--products`, `--customers` and `--orders` the values are 200, 60 and 400; `--seed`
+(default 1) makes the output reproducible.
 
-Без `--products`, `--customers` и `--orders` берутся значения 200, 60 и 400.
-`--seed` (по умолчанию 1) делает состав повторяемым.
-
-## Тесты
+## Tests
 
 ```bash
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest -q
 ```
 
-1557 тестов, PostgreSQL не требуется — тесты идут на SQLite в памяти.
-Часть проверок вёрстки запускает headless Chrome, часть — Node; без них такие тесты
-пропускаются.
+1560 tests. PostgreSQL is not required - the suite runs on in-memory SQLite. Some layout
+checks drive headless Chrome, some run under Node; without them those tests are skipped.
 
-## Сборка CSS
+CI runs the same suite on `ubuntu-latest`: [.github/workflows/test.yml](.github/workflows/test.yml).
 
-Только при правке оформления. Готовый `app/static/app.css` лежит в репозитории,
-поэтому в рантайме Node не нужен.
+## Building CSS
+
+Only when editing styles. The prebuilt `app/static/app.css` is committed, so Node is not
+needed at runtime.
 
 ```bash
 npm install
 npm run build:css
 ```
 
-## Лицензия
+## Documentation
 
-[MIT](LICENSE).
+- [docs/user_guide.md](docs/user_guide.md) - how to use the app
+- [docs/admin_guide.md](docs/admin_guide.md) - installation and maintenance
+- [docs/test_checklist.md](docs/test_checklist.md) - manual check list for a release
+
+## License
+
+[MIT](LICENSE)
