@@ -291,7 +291,7 @@
    нельзя писать фигурные скобки — сторож test_print_forces_the_light_palette_
    over_the_dark_one считает их глубиной и решит, что .dark уехал в слой.
    Подавление обводки здесь не используется: в браузере без :focus-visible
-   останется собственная обводка пользовательского агента. */
+   останется собственная обводка браузера. */
 :where(a, button, input, select, textarea, summary):focus-visible {
     outline: 2px solid rgb(var(--color-accent));
     outline-offset: 2px;
