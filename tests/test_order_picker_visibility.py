@@ -412,7 +412,7 @@ def _measure() -> dict:
     shell = (f'"{_chrome()}" --headless=new --disable-gpu --no-sandbox '
              f'--allow-file-access-from-files --window-size=1600,1400 '
              f'--virtual-time-budget=8000 --dump-dom "{outer.resolve().as_uri()}"')
-    out = subprocess.run(shell, capture_output=True, text=True, encoding="utf-8")
+    out = subprocess.run(shell, shell=True, capture_output=True, text=True, encoding="utf-8")
     match = re.search(r'<pre id="out">(.*?)</pre>', out.stdout, re.DOTALL)
     assert match, out.stdout[-3000:] + out.stderr[-2000:]
     raw = html_mod.unescape(match.group(1))
@@ -725,7 +725,7 @@ def _measure_flip() -> dict:
     cmd = (f'"{_chrome()}" --headless=new --disable-gpu --no-sandbox '
            f'--allow-file-access-from-files --window-size={WIDTH + 160},1400 '
            f'--virtual-time-budget=12000 --dump-dom "{outer.resolve().as_uri()}"')
-    out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+    out = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding="utf-8")
     match = re.search(r'<pre id="out">(.*?)</pre>', out.stdout, re.DOTALL)
     assert match, out.stdout[-3000:] + out.stderr[-2000:]
     raw = html_mod.unescape(match.group(1))
@@ -849,7 +849,7 @@ def _dump(inner_html: str, work: Path, width: int = 1440) -> str:
     shell = (f'"{_chrome()}" --headless=new --disable-gpu --no-sandbox '
              f'--allow-file-access-from-files --window-size={width + 160},1400 '
              f'--virtual-time-budget=8000 --dump-dom "{outer.resolve().as_uri()}"')
-    out = subprocess.run(shell, capture_output=True, text=True, encoding="utf-8")
+    out = subprocess.run(shell, shell=True, capture_output=True, text=True, encoding="utf-8")
     match = re.search(r'<pre id="out">(.*?)</pre>', out.stdout, re.DOTALL)
     assert match, out.stdout[-3000:] + out.stderr[-2000:]
     raw = html_mod.unescape(match.group(1))
@@ -890,7 +890,7 @@ def _measure_modal() -> dict:
     shell = (f'"{_chrome()}" --headless=new --disable-gpu --no-sandbox '
              f'--allow-file-access-from-files --window-size=1600,1400 '
              f'--virtual-time-budget=8000 --dump-dom "{outer.resolve().as_uri()}"')
-    out = subprocess.run(shell, capture_output=True, text=True, encoding="utf-8")
+    out = subprocess.run(shell, shell=True, capture_output=True, text=True, encoding="utf-8")
     match = re.search(r'<pre id="out">(.*?)</pre>', out.stdout, re.DOTALL)
     assert match, out.stdout[-3000:] + out.stderr[-2000:]
     raw = html_mod.unescape(match.group(1))
