@@ -32,30 +32,28 @@ JINJA.filters["dt"] = human_date
 
 
 def _register_cyrillic_font() -> dict | None:
-    candidates: list[Path] = []
-    for name in ("arial.ttf", "Arial.ttf"):
-        p = Path("C:/Windows/Fonts") / name
-        if p.exists():
-            candidates.append(p)
-            break
-    if not candidates:
-        fonts_dir = Path(reportlab.__file__).resolve().parent / "fonts"
-        for name in ("DejaVuSans.ttf", "Vera.ttf"):
-            p = fonts_dir / name
-            if p.exists():
-                candidates.append(p)
-                break
-    if not candidates:
-        return None
-    font_path = candidates[0]
-    family = font_path.stem
-    pdfmetrics.registerFont(TTFont(family, str(font_path)))
-    bold_variant = font_path.with_name(font_path.stem + "bd" + font_path.suffix)
-    family_bold = family
-    if bold_variant.exists():
-        family_bold = family + "-Bold"
-        pdfmetrics.registerFont(TTFont(family_bold, str(bold_variant)))
-    return {"family": family, "family_bold": family_bold}
+    windows = Path("C:/Windows/Fonts")
+    fonts_dir = Path(reportlab.__file__).resolve().parent / "fonts"
+    candidates = (
+        (windows / "arial.ttf", windows / "arialbd.ttf"),
+        (Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+         Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")),
+        (Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+         Path("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf")),
+        (fonts_dir / "DejaVuSans.ttf", fonts_dir / "DejaVuSans-Bold.ttf"),
+        (fonts_dir / "Vera.ttf", fonts_dir / "VeraBd.ttf"),
+    )
+    for font_path, bold_path in candidates:
+        if not font_path.exists():
+            continue
+        family = font_path.stem
+        pdfmetrics.registerFont(TTFont(family, str(font_path)))
+        family_bold = family
+        if bold_path.exists():
+            family_bold = family + "-Bold"
+            pdfmetrics.registerFont(TTFont(family_bold, str(bold_path)))
+        return {"family": family, "family_bold": family_bold}
+    return None
 
 
 def _para(text: str, style, *values) -> Paragraph:
