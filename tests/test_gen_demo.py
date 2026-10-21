@@ -18,8 +18,10 @@ from scripts.gen_demo import (
     DEFAULT_ORDERS,
     DEFAULT_PRODUCTS,
     DEFAULT_SEED,
+    GIVEN,
     PRODUCTS,
     SIZES,
+    SURNAMES,
     VARIANTS,
     VARIANTS_FEMININE,
     build_payload,
@@ -101,6 +103,29 @@ def test_customers_get_inn_of_a_valid_length(tmp_path):
         assert row["inn"].isdigit()
         assert len(row["inn"]) in (10, 12)
     assert len({row["name"] for row in payload["customers"]}) == len(payload["customers"])
+
+
+def test_personal_names_have_gender_matching_given_name_and_patronymic():
+    payload = build_payload(products=5, customers=200, orders=5, seed=SEED)
+    male_given, male_patronymics = GIVEN[0]
+    female_given, female_patronymics = GIVEN[1]
+    male_surnames = {male for male, _ in SURNAMES}
+    female_surnames = {female for _, female in SURNAMES}
+    # Компании состоят из двух слов, а редкие дубли получают «№».
+    personal = [
+        row["name"] for row in payload["customers"]
+        if len(row["name"].split()) == 3 and "№" not in row["name"]
+    ]
+    assert len(personal) >= 50
+    for name in personal:
+        surname, given, patronymic = name.split()
+        if surname in female_surnames:
+            assert given in female_given, name
+            assert patronymic in female_patronymics, name
+        else:
+            assert surname in male_surnames, name
+            assert given in male_given, name
+            assert patronymic in male_patronymics, name
 
 
 def test_product_adjective_agrees_with_the_noun(tmp_path):
