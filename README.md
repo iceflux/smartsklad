@@ -71,7 +71,7 @@ is committed and served as is. Node is needed only to rebuild it after a style c
 │   └── static/                 - prebuilt CSS
 ├── alembic/                    - database migrations
 ├── scripts/gen_demo.py         - demo data generator
-├── tests/                      - 1560 tests
+├── tests/                      - 1574 tests
 ├── docs/                       - user_guide.md, admin_guide.md, test_checklist.md
 ├── requirements.txt
 └── README.md
@@ -132,7 +132,7 @@ data lands in the database through the normal import path with no direct writes.
 .venv/bin/pytest -q
 ```
 
-1560 tests. PostgreSQL is not required - the suite runs on in-memory SQLite. Some layout
+1574 tests. PostgreSQL is not required - the suite runs on in-memory SQLite. Some layout
 checks drive headless Chrome, some run under Node; without them those tests are skipped.
 
 CI runs the same suite on `ubuntu-latest`: [.github/workflows/test.yml](.github/workflows/test.yml).

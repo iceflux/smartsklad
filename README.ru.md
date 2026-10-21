@@ -71,7 +71,7 @@
 │   └── static/                 - собранный CSS
 ├── alembic/                    - миграции базы
 ├── scripts/gen_demo.py         - генератор демо-данных
-├── tests/                      - 1560 тестов
+├── tests/                      - 1574 теста
 ├── docs/                       - user_guide.md, admin_guide.md, test_checklist.md
 ├── requirements.txt
 └── README.md
@@ -132,7 +132,7 @@ cp .env.example .env
 .venv/bin/pytest -q
 ```
 
-1560 тестов. PostgreSQL не требуется — прогон идёт на SQLite в памяти. Часть проверок
+1574 теста. PostgreSQL не требуется — прогон идёт на SQLite в памяти. Часть проверок
 вёрстки гоняет headless Chrome, часть — Node; без них такие тесты пропускаются.
 
 Тот же прогон в CI на `ubuntu-latest`:
