@@ -38,6 +38,24 @@ is committed and served as is. Node is needed only to rebuild it after a style c
   admin), grants managed from the UI, login rate limiting
 - **Audit log** - who changed what, when, from which address, with old and new values
 
+## Screenshots
+
+**Orders: search, filters and statuses**
+
+![Orders](docs/screenshots/orders.jpg)
+
+**Order card: items, totals and print actions**
+
+![Order card](docs/screenshots/order-card.jpg)
+
+**Sales analytics: metrics, daily chart, top products and customers**
+
+![Sales analytics](docs/screenshots/analytics.jpg)
+
+**Demand forecast: stock, sales per day and purchase recommendations**
+
+![Demand forecast](docs/screenshots/forecast.jpg)
+
 ## How it works
 
 1. A customer places an order. The order is the central record: customer, line items,
