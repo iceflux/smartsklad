@@ -1,176 +1,178 @@
-English | [Русский](README.ru.md)
+[English](README.en.md) | Русский
 
-# SmartSklad
+# СмартСклад
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![FastAPI](https://img.shields.io/badge/framework-FastAPI-teal?logo=fastapi)
 ![Database](https://img.shields.io/badge/database-PostgreSQL-336791?logo=postgresql)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-A web app for a small shop: customers, products, orders, stock, document printing,
-notifications, sales analytics and demand forecasting.
-**Stack:** FastAPI, synchronous SQLAlchemy, PostgreSQL, Jinja2, ReportLab, Tailwind.
+Веб-приложение для небольшого магазина: клиенты, товары, заказы, склад, печать
+документов, уведомления, аналитика продаж и прогноз спроса.
+**Стек:** FastAPI, синхронный SQLAlchemy, PostgreSQL, Jinja2, ReportLab, Tailwind.
 
-The layout ships as prebuilt CSS, so no bundler runs in production - `app/static/app.css`
-is committed and served as is. Node is needed only to rebuild it after a style change.
+Вёрстка отдаётся готовым CSS, поэтому в проде сборщик не нужен — `app/static/app.css`
+лежит в репозитории и отдаётся как есть. Node требуется только чтобы пересобрать его
+после правки оформления.
 
-## Features
+## Возможности
 
-- **Orders** - create and edit, customer and product lookup by typing, four statuses,
-  stock write-off on "Done" and return on rollback, per-line and per-order discounts,
-  copy of an order, audit trail on the card
-- **Products** - card with description, categories, units of measure, price history,
-  stock tracking, per-product minimum stock
-- **Customers** - card, search by name, phone or INN, personal discount, order
-  statistics
-- **Stock** - balances, scheduled and manual backups (`pg_dump`), restore with a
-  countdown
-- **1C import** - JSON export of products, customers and orders; matching against
-  already existing records by id or name, no duplicates on a repeated run
-- **Printing** - one order document for print preview, PDF, email and Telegram;
-  print straight from the order page
-- **Notifications** - email to the customer and a Telegram message, both with a PDF
-  attachment
-- **Analytics** - sales by period, chart, top products and customers, CSV export
-- **Demand forecast** - linear regression over 90 days of sales, a "to purchase"
-  recommendation and a below-threshold filter
-- **Roles and permissions** - four system roles (seller, warehouseman, manager,
-  admin), grants managed from the UI, login rate limiting
-- **Audit log** - who changed what, when, from which address, with old and new values
+- **Заказы** — создание и правка, подстановка клиента и товара по набору символов,
+  четыре статуса, списание остатков при переходе в «Выполнен» и возврат при откате,
+  скидки по позиции и по заказу, копирование заказа, история изменений на карточке
+- **Товары** — карточка с описанием, категории, справочник единиц измерения, история
+  цен, учёт остатков, собственный минимальный запас
+- **Клиенты** — карточка, поиск по имени, телефону и ИНН, персональная скидка,
+  статистика заказов
+- **Склад** — остатки, копии по расписанию и вручную (`pg_dump`), восстановление с
+  обратным отсчётом
+- **Импорт из 1С** — выгрузка JSON с товарами, клиентами и заказами; сопоставление с
+  уже заведёнными записями по id или имени, повторный прогон не создаёт дубли
+- **Печать** — один документ заказа для предпросмотра, печати, PDF, письма и Telegram;
+  печать прямо со страницы заказа
+- **Уведомления** — письмо клиенту и сообщение в Telegram, оба с PDF-вложением
+- **Аналитика** — продажи за период, график, топ товаров и клиентов, выгрузка CSV
+- **Прогноз спроса** — линейная регрессия по продажам за 90 дней, рекомендация
+  «К закупке» и фильтр «ниже порога»
+- **Роли и права** — четыре системные роли (продавец, кладовщик, менеджер,
+  администратор), выдача прав из интерфейса, ограничение частоты входа
+- **Журнал аудита** — кто, что и когда изменил, с какого адреса, со старым и новым
+  значениями
 
-## Screenshots
+## Скриншоты
 
-**Orders: search, filters and statuses**
+**Заказы: поиск, фильтры и статусы**
 
-![Orders](docs/screenshots/orders.jpg)
+![Заказы](docs/screenshots/orders.jpg)
 
-**Order card: items, totals and print actions**
+**Карточка заказа: позиции, суммы и печать**
 
-![Order card](docs/screenshots/order-card.jpg)
+![Карточка заказа](docs/screenshots/order-card.jpg)
 
-**Sales analytics: metrics, daily chart, top products and customers**
+**Аналитика продаж: метрики, график по дням, топ товаров и клиентов**
 
-![Sales analytics](docs/screenshots/analytics.jpg)
+![Аналитика продаж](docs/screenshots/analytics.jpg)
 
-**Demand forecast: stock, sales per day and purchase recommendations**
+**Прогноз спроса: остатки, продажи в сутки и рекомендации к закупке**
 
-![Demand forecast](docs/screenshots/forecast.jpg)
+![Прогноз спроса](docs/screenshots/forecast.jpg)
 
-## How it works
+## Как это работает
 
-1. A customer places an order. The order is the central record: customer, line items,
-   discounts, total.
-2. On "Done" the app writes off stock. On rollback it returns the stock.
-3. The order document is generated from the same data for preview, print, PDF, email
-   and Telegram - one source of truth.
-4. Analytics and the demand forecast read the same orders and stock.
+1. Клиент оформляет заказ. Заказ — центральная запись: клиент, позиции, скидки, итог.
+2. При переводе в «Выполнен» товар списывается со склада. При откате — возвращается.
+3. Документ заказа генерируется из одних и тех же данных для предпросмотра, печати,
+   PDF, письма и Telegram — один источник правды.
+4. Аналитика и прогноз спроса читают те же заказы и остатки.
 
-## Project structure
+## Структура проекта
 
 ```
 ├── app/
-│   ├── main.py                 - FastAPI entry point, page routes
-│   ├── config.py               - settings
+│   ├── main.py                 - точка входа FastAPI, страничные маршруты
+│   ├── config.py               - настройки
 │   ├── db.py                   - SQLAlchemy engine, session, Base
 │   ├── modules/
-│   │   ├── auth/               - users, roles, sessions, password recovery
-│   │   ├── inventory/          - products, categories, units, stock, price history
-│   │   ├── customers/          - customer cards, discounts
-│   │   ├── orders/             - orders, line items, statuses, snapshots
-│   │   ├── printing/           - document generation (ReportLab PDF, Jinja2 HTML)
-│   │   ├── notifications/      - email (SMTP) and Telegram delivery
-│   │   ├── ai/                 - demand forecast (linear regression on stdlib)
-│   │   ├── dashboard/          - sales analytics
-│   │   ├── importer/           - JSON import from 1C
-│   │   ├── backup/             - pg_dump / pg_restore scheduling
-│   │   ├── audit/              - action log
-│   │   └── settings/           - app settings (key-value)
-│   ├── templates/              - Jinja2 templates
-│   └── static/                 - prebuilt CSS
-├── alembic/                    - database migrations
-├── scripts/gen_demo.py         - demo data generator
-├── tests/                      - 1574 tests
+│   │   ├── auth/               - пользователи, роли, сессии, восстановление пароля
+│   │   ├── inventory/          - товары, категории, единицы, остатки, история цен
+│   │   ├── customers/          - карточки клиентов, скидки
+│   │   ├── orders/             - заказы, позиции, статусы, снимки
+│   │   ├── printing/           - генерация документа (ReportLab PDF, Jinja2 HTML)
+│   │   ├── notifications/      - доставка email (SMTP) и Telegram
+│   │   ├── ai/                 - прогноз спроса (линейная регрессия на stdlib)
+│   │   ├── dashboard/          - аналитика продаж
+│   │   ├── importer/           - импорт JSON из 1С
+│   │   ├── backup/             - планировщик pg_dump / pg_restore
+│   │   ├── audit/              - журнал действий
+│   │   └── settings/           - настройки приложения (ключ — значение)
+│   ├── templates/              - Jinja2-шаблоны
+│   └── static/                 - собранный CSS
+├── alembic/                    - миграции базы
+├── scripts/gen_demo.py         - генератор демо-данных
+├── tests/                      - 1574 теста
 ├── docs/                       - user_guide.md, admin_guide.md, test_checklist.md
 ├── requirements.txt
-└── README.md
+├── README.md                   - русская версия
+└── README.en.md                - английская версия
 ```
 
-## Requirements
+## Требования
 
-- PostgreSQL 15 or newer
-- Python 3.11 or newer
-- `pg_dump` and `pg_restore` on `PATH` - without them backups silently do not work
+- PostgreSQL 15 или новее
+- Python 3.11 или новее
+- `pg_dump` и `pg_restore` в `PATH` — без них копии молча не работают
 
-Verified on PostgreSQL 18.6 and Python 3.13. Older versions were not tested.
+Проверено на PostgreSQL 18.6 и Python 3.13. Более старшие версии не проверялись.
 
-## How to run
+## Как запустить
 
 ```bash
-# 1. Database and role
+# 1. База и роль
 psql -U postgres -c "CREATE ROLE smartsklad LOGIN PASSWORD 'smartsklad';"
 psql -U postgres -c "CREATE DATABASE smartsklad OWNER smartsklad;"
 
-# 2. Dependencies and settings
+# 2. Зависимости и настройки
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
 cp .env.example .env
 
-# 3. Edit DATABASE_URL and ADMIN_PASSWORD in .env
+# 3. Обновите DATABASE_URL и ADMIN_PASSWORD в .env
 
-# 4. Schema
+# 4. Схема базы
 .venv/bin/alembic upgrade head
 
-# 5. Run
+# 5. Запуск
 .venv/bin/uvicorn "app.main:app"
 ```
 
-Open http://127.0.0.1:8000. The first login uses `ADMIN_USERNAME` and `ADMIN_PASSWORD`
-from `.env`; on an empty database the admin is created automatically on first start.
+Откройте http://127.0.0.1:8000. Первый вход — `ADMIN_USERNAME` и `ADMIN_PASSWORD` из
+`.env`; при пустой базе администратор создаётся автоматически при первом старте.
 
-On Windows use `.\.venv\Scripts\Activate.ps1` to activate and
-`.\.venv\Scripts\python.exe -m uvicorn "app.main:app"` to run.
+В Windows активация — `.\.venv\Scripts\Activate.ps1`, запуск —
+`.\.venv\Scripts\python.exe -m uvicorn "app.main:app"`.
 
-Full instructions: [docs/admin_guide.md](docs/admin_guide.md).
+Полная инструкция: [docs/admin_guide.md](docs/admin_guide.md).
 
-## Demo data
+## Демо-данные
 
 ```bash
 .venv/bin/python scripts/gen_demo.py --out .system_folder/1c_export/demo.json
 ```
 
-`--out` is required. The script writes JSON in the format the 1C import reads, so the
-data lands in the database through the normal import path with no direct writes. Without
-`--products`, `--customers` and `--orders` the values are 200, 60 and 400; `--seed`
-(default 1) makes the output reproducible.
+`--out` обязателен. Скрипт пишет JSON в формате, который читает импорт из 1С, поэтому
+данные попадают в базу обычным путём импорта, без прямой записи. Без `--products`,
+`--customers` и `--orders` берутся значения 200, 60 и 400; `--seed` (по умолчанию 1)
+делает состав повторяемым.
 
-## Tests
+## Тесты
 
 ```bash
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest -q
 ```
 
-1574 tests. PostgreSQL is not required - the suite runs on in-memory SQLite. Some layout
-checks drive headless Chrome, some run under Node; without them those tests are skipped.
+1574 теста. PostgreSQL не требуется — прогон идёт на SQLite в памяти. Часть проверок
+вёрстки гоняет headless Chrome, часть — Node; без них такие тесты пропускаются.
 
-CI runs the same suite on `ubuntu-latest`: [.github/workflows/test.yml](.github/workflows/test.yml).
+Тот же прогон в CI на `ubuntu-latest`:
+[.github/workflows/test.yml](.github/workflows/test.yml).
 
-## Building CSS
+## Сборка CSS
 
-Only when editing styles. The prebuilt `app/static/app.css` is committed, so Node is not
-needed at runtime.
+Только при правке оформления. Готовый `app/static/app.css` лежит в репозитории, поэтому
+в рантайме Node не нужен.
 
 ```bash
 npm install
 npm run build:css
 ```
 
-## Documentation
+## Документация
 
-- [docs/user_guide.md](docs/user_guide.md) - how to use the app
-- [docs/admin_guide.md](docs/admin_guide.md) - installation and maintenance
-- [docs/test_checklist.md](docs/test_checklist.md) - manual check list for a release
+- [docs/user_guide.md](docs/user_guide.md) — как пользоваться
+- [docs/admin_guide.md](docs/admin_guide.md) — установка и обслуживание
+- [docs/test_checklist.md](docs/test_checklist.md) — ручной чек-лист перед релизом
 
-## License
+## Лицензия
 
 [MIT](LICENSE)
